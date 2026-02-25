@@ -1,12 +1,16 @@
-import React, { useState, useRef } from 'react';
+import React, { Suspense, useState, useRef } from 'react';
 import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem } from 'lucide-react';
-import { AgentTown } from '../agent-town/AgentTown';
+const AgentTown = React.lazy(() =>
+    import('../agent-town/AgentTown').then(m => ({ default: m.AgentTown }))
+);
 import { BottomDock } from './BottomDock';
 import { RightSidebar } from './RightSidebar';
 import { StudioDecorator } from '../studio/StudioDecorator';
 import { AssetInbox } from '../studio/AssetInbox';
 import { AIBuilder } from '../studio/AIBuilder';
-import { DraftPreview } from '../studio/DraftPreview';
+const DraftPreview = React.lazy(() =>
+    import('../studio/DraftPreview').then(m => ({ default: m.DraftPreview }))
+);
 import { VersionHistory } from '../studio/VersionHistory';
 import { AssetsPanel } from '../studio/AssetsPanel';
 import { RunPanel } from '../run/RunPanel';
@@ -225,7 +229,9 @@ export const MainLayout: React.FC = () => {
                     style={{ display: activeView === 'town' ? 'block' : 'none' }}
                 >
                     <AgentTownBoundary>
-                        <AgentTown />
+                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-amber-50">Loading Agent Town...</div>}>
+                            <AgentTown />
+                        </Suspense>
                     </AgentTownBoundary>
                 </div>
 
@@ -259,7 +265,11 @@ export const MainLayout: React.FC = () => {
                         <div className="flex-1 overflow-hidden" role="tabpanel" id={`studio-tabpanel-${studioTab}`} aria-labelledby={`studio-tab-${studioTab}`}>
                             {studioTab === 'inbox' && <AssetInbox />}
                             {studioTab === 'builder' && <AIBuilder onDraftGenerated={() => setStudioTab('draft')} />}
-                            {studioTab === 'draft' && <DraftPreview />}
+                            {studioTab === 'draft' && (
+                                <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-cream-50">Loading Draft Preview...</div>}>
+                                    <DraftPreview />
+                                </Suspense>
+                            )}
                             {studioTab === 'history' && <VersionHistory />}
                             {studioTab === 'assets' && <AssetsPanel />}
                         </div>

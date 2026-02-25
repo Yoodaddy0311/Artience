@@ -14,4 +14,20 @@ export default defineConfig({
             '@': path.resolve(__dirname, './src'),
         },
     },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    // Split PixiJS into its own chunk (largest dep)
+                    'vendor-pixi': ['pixi.js'],
+                    // Split React ecosystem
+                    'vendor-react': ['react', 'react-dom'],
+                    // Split Zustand + other state management
+                    'vendor-state': ['zustand'],
+                    // Split lucide icons
+                    'vendor-icons': ['lucide-react'],
+                },
+            },
+        },
+    },
 });

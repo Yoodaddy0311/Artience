@@ -11,10 +11,13 @@
     "lint": "eslint --no-error-on-unmatched-pattern apps/desktop/src packages/shared-types/src",
     "lint:fix": "eslint --no-error-on-unmatched-pattern apps/desktop/src packages/shared-types/src --fix",
     "format": "prettier --write \"apps/desktop/src/**/*.{ts,tsx,css}\" \"packages/shared-types/src/**/*.ts\"",
-    "format:check": "prettier --check \"apps/desktop/src/**/*.{ts,tsx,css}\" \"packages/shared-types/src/**/*.ts\""
+    "format:check": "prettier --check \"apps/desktop/src/**/*.{ts,tsx,css}\" \"packages/shared-types/src/**/*.ts\"",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@playwright/test": "^1.58.2",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
