@@ -79,11 +79,18 @@ export function isoDepthCompare(
 export type IsoDirection = "NW" | "NE" | "SW" | "SE";
 
 export function getIsoDirection(dx: number, dy: number): IsoDirection {
-  // dx > 0 means moving right (increasing col), dy > 0 means moving down (increasing row)
-  if (dx >= 0 && dy >= 0) return "SE"; // moving right-down
-  if (dx >= 0 && dy < 0) return "NE"; // moving right-up
-  if (dx < 0 && dy >= 0) return "SW"; // moving left-down
-  return "NW"; // moving left-up
+  // Convert grid delta to isometric screen delta:
+  //   screenDx = (dx - dy)  → positive = right on screen
+  //   screenDy = (dx + dy)  → positive = down on screen
+  const screenDx = dx - dy;
+  const screenDy = dx + dy;
+
+  if (screenDx >= 0 && screenDy > 0) return "SE";  // screen right-down
+  if (screenDx > 0 && screenDy <= 0) return "NE";  // screen right-up
+  if (screenDx <= 0 && screenDy > 0) return "SW";  // screen left-down
+  if (screenDx < 0 && screenDy <= 0) return "NW";  // screen left-up
+
+  return "SE"; // fallback (dx=0, dy=0)
 }
 
 /**

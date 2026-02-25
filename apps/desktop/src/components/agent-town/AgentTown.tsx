@@ -48,7 +48,13 @@ import {
 } from './agent-runtime';
 
 // ── Isometric agent speed: pixels per frame ──
-const AGENT_SPEED_PX = AGENT_SPEED_TILES_PER_SEC * 2;
+const AGENT_SPEED_PX = AGENT_SPEED_TILES_PER_SEC * 1.0;
+
+// ── Zoom constraints ──
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 3.0;
+const ZOOM_STEP = 0.15;
+const ZOOM_LERP_FACTOR = 0.1;
 
 // ── Per-agent isometric runtime state ──
 interface IsoAgent {
@@ -74,6 +80,14 @@ export const AgentTown: React.FC = () => {
         let wsRef: WebSocket | null = null;
         let reconnectTimerRef: ReturnType<typeof setTimeout> | null = null;
 
+        // References for cleanup of event listeners and observers
+        let wheelHandler: ((e: WheelEvent) => void) | null = null;
+        let pointerDownHandler: ((e: PointerEvent) => void) | null = null;
+        let pointerMoveHandler: ((e: PointerEvent) => void) | null = null;
+        let pointerUpHandler: ((e: PointerEvent) => void) | null = null;
+        let resizeObserver: ResizeObserver | null = null;
+        let canvasElRef: HTMLCanvasElement | null = null;
+
         const initPixi = async () => {
             try {
                 if (!containerRef.current) return;
@@ -89,35 +103,53 @@ export const AgentTown: React.FC = () => {
                 const W = isoSize.width;
                 const H = isoSize.height;
 
+                // Use higher resolution for anti-pixelation (minimum 2x)
+                const pixelRatio = Math.max(window.devicePixelRatio || 1, 2);
+
                 await app.init({
                     width: containerRef.current.clientWidth,
                     height: containerRef.current.clientHeight,
                     backgroundColor: 0xfdfaf6,
-                    resolution: window.devicePixelRatio || 1,
+                    resolution: pixelRatio,
                     autoDensity: true,
                     antialias: true,
                 });
 
                 if (!isMounted) return;
                 containerRef.current.appendChild(app.canvas);
+                canvasElRef = app.canvas as HTMLCanvasElement;
 
                 // ── World container for pan/zoom ──
                 const worldContainer = new PIXI.Container();
                 worldContainer.sortableChildren = true;
                 app.stage.addChild(worldContainer);
 
-                // Center the iso map in the viewport
+                // ── Camera / Zoom / Pan state (local variables, NOT React state) ──
                 const viewW = containerRef.current.clientWidth;
                 const viewH = containerRef.current.clientHeight;
-                const offset = getCameraOffset(viewW, viewH);
-                worldContainer.x = offset.x;
-                worldContainer.y = offset.y;
 
-                // Scale to fit the viewport
+                // Calculate initial scale: fit the iso map, then zoom in so it is clearly visible
                 const scaleX = viewW / W;
                 const scaleY = viewH / H;
-                const fitScale = Math.min(scaleX, scaleY) * 0.85;
-                worldContainer.scale.set(fitScale);
+                const fitScale = Math.min(scaleX, scaleY) * 1.5;
+
+                let currentZoom = fitScale;
+                let targetZoom = fitScale;
+
+                // Center the map in the viewport
+                // The iso map's visual center is roughly at the midpoint of the bounding box.
+                // gridToIso maps (0,0) to the "top" of the diamond.
+                // The center of a 40x25 grid in iso coords:
+                const mapCenterIso = gridToIso(20, 12);
+                // Position worldContainer so mapCenterIso lands at viewport center
+                worldContainer.x = viewW / 2 - mapCenterIso.x * currentZoom;
+                worldContainer.y = viewH / 2 - mapCenterIso.y * currentZoom;
+                worldContainer.scale.set(currentZoom);
+
+                // Drag/pan state
+                let isDragging = false;
+                let lastPointerX = 0;
+                let lastPointerY = 0;
 
                 // ── Grid World Generation ──
                 const gridWorld = createDefaultWorld();
@@ -137,7 +169,14 @@ export const AgentTown: React.FC = () => {
                 worldContainer.addChild(floorContainer);
 
                 // ── Room Asset Sprites ──
-                await createRoomSprites(worldContainer);
+                const roomSprites = await createRoomSprites(worldContainer);
+
+                // Anti-pixelation: set linear scaleMode on room sprite textures
+                for (const roomSprite of roomSprites) {
+                    if (roomSprite.texture?.source) {
+                        roomSprite.texture.source.scaleMode = 'linear';
+                    }
+                }
 
                 // ── Zone Labels ──
                 const labelsContainer = createZoneLabels(gridWorld.cells, gridWorld.cols, gridWorld.rows);
@@ -150,6 +189,13 @@ export const AgentTown: React.FC = () => {
 
                 const otterTextures: OtterTextures = await loadOtterTextures();
                 if (!isMounted) return;
+
+                // Anti-pixelation: set linear scaleMode on otter textures
+                for (const tex of [otterTextures.nw, otterTextures.ne, otterTextures.sw, otterTextures.se]) {
+                    if (tex?.source) {
+                        tex.source.scaleMode = 'linear';
+                    }
+                }
 
                 const isoAgents: IsoAgent[] = [];
                 const isoAgentMap = new Map<string, IsoAgent>();
@@ -221,6 +267,125 @@ export const AgentTown: React.FC = () => {
                         pickIsoWanderDest(agent);
                     }, i * STAGGER_DELAY_MS);
                 }
+
+                // ══════════════════════════════════════════════════════
+                // ── ZOOM (mouse wheel) ──
+                // ══════════════════════════════════════════════════════
+
+                wheelHandler = (e: WheelEvent) => {
+                    e.preventDefault();
+
+                    // Determine zoom direction
+                    const direction = e.deltaY < 0 ? 1 : -1;
+                    const newTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, targetZoom + direction * ZOOM_STEP));
+
+                    if (newTarget === targetZoom) return;
+
+                    // Zoom toward cursor position (standard map zoom behavior)
+                    // The point under the cursor should stay fixed after zoom.
+                    //
+                    // Before zoom: worldPoint = (cursorScreen - worldContainer.position) / currentZoom
+                    // After zoom:  cursorScreen = worldPoint * newZoom + newPosition
+                    // => newPosition = cursorScreen - worldPoint * newZoom
+
+                    const rect = app.canvas.getBoundingClientRect();
+                    const cursorX = e.clientX - rect.left;
+                    const cursorY = e.clientY - rect.top;
+
+                    // World-space point under cursor (using current actual zoom, not target)
+                    const worldX = (cursorX - worldContainer.x) / currentZoom;
+                    const worldY = (cursorY - worldContainer.y) / currentZoom;
+
+                    // Compute the position the container needs to be at when zoom reaches newTarget
+                    // so that the same world point remains under the cursor.
+                    // We'll apply this gradually in the ticker alongside the zoom lerp,
+                    // but we store the "target position" to lerp toward as well.
+                    const targetPosX = cursorX - worldX * newTarget;
+                    const targetPosY = cursorY - worldY * newTarget;
+
+                    targetZoom = newTarget;
+
+                    // Store target position for the ticker to lerp toward
+                    targetWorldX = targetPosX;
+                    targetWorldY = targetPosY;
+                };
+
+                // Target world position (updated by wheel handler, lerped in ticker)
+                let targetWorldX = worldContainer.x;
+                let targetWorldY = worldContainer.y;
+
+                const canvasEl = app.canvas as HTMLCanvasElement;
+                canvasEl.addEventListener('wheel', wheelHandler, { passive: false });
+
+                // ══════════════════════════════════════════════════════
+                // ── PAN (pointer drag) ──
+                // ══════════════════════════════════════════════════════
+
+                pointerDownHandler = (e: PointerEvent) => {
+                    // Allow pan on middle button, or left button
+                    if (e.button === 0 || e.button === 1) {
+                        isDragging = true;
+                        lastPointerX = e.clientX;
+                        lastPointerY = e.clientY;
+                        canvasEl.style.cursor = 'grabbing';
+                    }
+                };
+
+                pointerMoveHandler = (e: PointerEvent) => {
+                    if (!isDragging) return;
+
+                    const dx = e.clientX - lastPointerX;
+                    const dy = e.clientY - lastPointerY;
+                    lastPointerX = e.clientX;
+                    lastPointerY = e.clientY;
+
+                    worldContainer.x += dx;
+                    worldContainer.y += dy;
+
+                    // Keep target position in sync so zoom lerp does not fight the drag
+                    targetWorldX = worldContainer.x;
+                    targetWorldY = worldContainer.y;
+                };
+
+                pointerUpHandler = (_e: PointerEvent) => {
+                    if (isDragging) {
+                        isDragging = false;
+                        canvasEl.style.cursor = 'default';
+                    }
+                };
+
+                canvasEl.addEventListener('pointerdown', pointerDownHandler);
+                window.addEventListener('pointermove', pointerMoveHandler);
+                window.addEventListener('pointerup', pointerUpHandler);
+
+                // ══════════════════════════════════════════════════════
+                // ── RESIZE OBSERVER ──
+                // ══════════════════════════════════════════════════════
+
+                resizeObserver = new ResizeObserver((entries) => {
+                    if (!isMounted || !containerRef.current) return;
+
+                    for (const entry of entries) {
+                        const { width: newW, height: newH } = entry.contentRect;
+                        if (newW === 0 || newH === 0) continue;
+
+                        // Resize the renderer
+                        app.renderer.resize(newW, newH);
+
+                        // Re-center: shift worldContainer so the map center stays at viewport center
+                        const currentWorldCenterX = (newW / 2 - worldContainer.x) / currentZoom;
+                        const currentWorldCenterY = (newH / 2 - worldContainer.y) / currentZoom;
+
+                        // We want mapCenterIso to stay at viewport center
+                        worldContainer.x = newW / 2 - mapCenterIso.x * currentZoom;
+                        worldContainer.y = newH / 2 - mapCenterIso.y * currentZoom;
+
+                        targetWorldX = worldContainer.x;
+                        targetWorldY = worldContainer.y;
+                    }
+                });
+
+                resizeObserver.observe(containerRef.current);
 
                 // ── WebSocket for state changes (auto-reconnect) ──
                 let reconnectDelay = 1000;
@@ -333,6 +498,22 @@ export const AgentTown: React.FC = () => {
                 app.ticker.add(() => {
                     const now = Date.now();
 
+                    // ── Smooth zoom interpolation ──
+                    if (Math.abs(currentZoom - targetZoom) > 0.001) {
+                        currentZoom += (targetZoom - currentZoom) * ZOOM_LERP_FACTOR;
+                        worldContainer.scale.set(currentZoom);
+
+                        // Lerp position toward target (for zoom-to-cursor)
+                        worldContainer.x += (targetWorldX - worldContainer.x) * ZOOM_LERP_FACTOR;
+                        worldContainer.y += (targetWorldY - worldContainer.y) * ZOOM_LERP_FACTOR;
+                    } else if (currentZoom !== targetZoom) {
+                        // Snap to final value to avoid sub-pixel drift
+                        currentZoom = targetZoom;
+                        worldContainer.scale.set(currentZoom);
+                        worldContainer.x = targetWorldX;
+                        worldContainer.y = targetWorldY;
+                    }
+
                     for (const agent of isoAgents) {
                         // Bubble tick
                         tickOtterBubble(agent.visual);
@@ -440,6 +621,7 @@ export const AgentTown: React.FC = () => {
 
         return () => {
             isMounted = false;
+
             // Close WebSocket and cancel reconnect timer
             if (reconnectTimerRef) clearTimeout(reconnectTimerRef);
             if (wsRef) {
@@ -450,6 +632,34 @@ export const AgentTown: React.FC = () => {
                 }
                 wsRef = null;
             }
+
+            // Remove event listeners (use saved canvas ref — app.canvas may be undefined after destroy)
+            if (canvasElRef) {
+                if (wheelHandler) {
+                    canvasElRef.removeEventListener('wheel', wheelHandler);
+                    wheelHandler = null;
+                }
+                if (pointerDownHandler) {
+                    canvasElRef.removeEventListener('pointerdown', pointerDownHandler);
+                    pointerDownHandler = null;
+                }
+                canvasElRef = null;
+            }
+            if (pointerMoveHandler) {
+                window.removeEventListener('pointermove', pointerMoveHandler);
+                pointerMoveHandler = null;
+            }
+            if (pointerUpHandler) {
+                window.removeEventListener('pointerup', pointerUpHandler);
+                pointerUpHandler = null;
+            }
+
+            // Disconnect resize observer
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+                resizeObserver = null;
+            }
+
             if (appRef.current) {
                 try {
                     appRef.current.destroy();
