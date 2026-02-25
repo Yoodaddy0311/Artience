@@ -7,6 +7,8 @@ import uuid
 import re
 from pathlib import Path
 
+from app.exceptions import NotFoundError, ValidationError, ServiceError
+
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/studio", tags=["studio"])
@@ -78,7 +80,11 @@ async def upload_asset(file: UploadFile = File(...), tags: str = Form("")):
             "tags": parsed_tags,
         })
     except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        raise ServiceError(
+            message="Failed to upload asset",
+            error_code="asset_upload_failed",
+            details={"filename": file.filename},
+        )
 
 # ── S-2: AI Builder Generate ──
 GENERATED_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "generated"
@@ -260,7 +266,10 @@ async def apply_draft():
     """S-3: Apply draft to project.json + create history snapshot."""
     draft_path = GENERATED_DIR / "draft.json"
     if not draft_path.exists():
-        return JSONResponse({"message": "No draft to apply."}, status_code=404)
+        raise NotFoundError(
+            message="No draft to apply",
+            error_code="draft_not_found",
+        )
 
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
 
@@ -327,7 +336,11 @@ async def rollback_to_snapshot(snapshot_id: str):
     """S-4: Rollback to a specific snapshot."""
     snapshot_path = HISTORY_DIR / f"{snapshot_id}.json"
     if not snapshot_path.exists():
-        return JSONResponse({"message": "Snapshot not found."}, status_code=404)
+        raise NotFoundError(
+            message=f"Snapshot '{snapshot_id}' not found",
+            error_code="snapshot_not_found",
+            details={"snapshot_id": snapshot_id},
+        )
 
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     project_path = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "project.json"
@@ -371,9 +384,9 @@ async def export_project():
         )
     except Exception as e:
         _logger.exception("Export failed")
-        return JSONResponse(
-            {"status": "error", "message": f"Export failed: {str(e)}"},
-            status_code=500,
+        raise ServiceError(
+            message="Failed to export project",
+            error_code="export_failed",
         )
 
 
@@ -391,23 +404,26 @@ async def import_project(file: UploadFile = File(...)):
     Returns a JSON report of created/overwritten/skipped files.
     """
     if not file.filename or not file.filename.lower().endswith(".zip"):
-        return JSONResponse(
-            {"status": "error", "message": "Only .zip files are accepted."},
-            status_code=400,
+        raise ValidationError(
+            message="Only .zip files are accepted",
+            error_code="invalid_file_type",
+            details={"filename": file.filename},
         )
 
     try:
         content = await file.read()
     except Exception as e:
-        return JSONResponse(
-            {"status": "error", "message": f"Failed to read uploaded file: {str(e)}"},
-            status_code=400,
+        raise ServiceError(
+            message="Failed to read uploaded file",
+            error_code="file_read_failed",
+            details={"filename": file.filename},
         )
 
     if len(content) == 0:
-        return JSONResponse(
-            {"status": "error", "message": "Uploaded ZIP file is empty."},
-            status_code=400,
+        raise ValidationError(
+            message="Uploaded ZIP file is empty",
+            error_code="empty_file",
+            details={"filename": file.filename},
         )
 
     try:
@@ -416,20 +432,23 @@ async def import_project(file: UploadFile = File(...)):
         return JSONResponse(result, status_code=200)
     except ValueError as e:
         # Validation errors (bad zip, path traversal, missing project.json)
-        return JSONResponse(
-            {"status": "error", "message": str(e)},
-            status_code=400,
+        raise ValidationError(
+            message=str(e),
+            error_code="import_validation_failed",
+            details={"filename": file.filename},
         )
     except OSError as e:
         # Disk space / permission errors
         _logger.exception("Import failed due to OS error")
-        return JSONResponse(
-            {"status": "error", "message": f"File system error: {str(e)}"},
-            status_code=507,
+        raise ServiceError(
+            message=f"File system error: {str(e)}",
+            error_code="import_filesystem_error",
+            details={"filename": file.filename},
         )
     except Exception as e:
         _logger.exception("Import failed unexpectedly")
-        return JSONResponse(
-            {"status": "error", "message": f"Import failed: {str(e)}"},
-            status_code=500,
+        raise ServiceError(
+            message="Import failed unexpectedly",
+            error_code="import_failed",
+            details={"filename": file.filename},
         )

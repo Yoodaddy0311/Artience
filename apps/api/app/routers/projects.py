@@ -1,8 +1,9 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.exceptions import NotFoundError
 from app.models.project import Project
 from app.schemas.project import (
     ProjectCreate,
@@ -34,10 +35,14 @@ def _deserialize_project(project: Project) -> dict:
 
 
 def _get_project_or_404(db: Session, project_id: str) -> Project:
-    """Fetch a project by ID or raise 404."""
+    """Fetch a project by ID or raise NotFoundError."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if project is None:
-        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+        raise NotFoundError(
+            message=f"Project '{project_id}' not found",
+            error_code="project_not_found",
+            details={"project_id": project_id},
+        )
     return project
 
 

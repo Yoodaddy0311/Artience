@@ -8,6 +8,7 @@ import time
 import uuid
 
 from app.database import get_db, SessionLocal
+from app.exceptions import NotFoundError, ValidationError
 from app.models.job import Job
 from app.schemas.job import JobResponse, JobListResponse
 from app.routers.settings import get_run_settings
@@ -168,7 +169,11 @@ async def run_job(
 ):
     recipe = next((r for r in DEMO_RECIPES if r["id"] == recipe_id), None)
     if not recipe:
-        return {"error": "Recipe not found"}
+        raise NotFoundError(
+            message=f"Recipe '{recipe_id}' not found",
+            error_code="recipe_not_found",
+            details={"recipe_id": recipe_id},
+        )
 
     # Read current run settings for concurrency limit
     settings = get_run_settings()
@@ -248,7 +253,11 @@ async def _wait_and_execute(job_id: str, recipe: dict, max_concurrent: int):
 def stop_job(job_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
-        return {"error": "Job not found"}
+        raise NotFoundError(
+            message=f"Job '{job_id}' not found",
+            error_code="job_not_found",
+            details={"job_id": job_id},
+        )
 
     # Terminate the subprocess if it is still running
     runtime = _active_jobs.get(job_id, {})
@@ -282,7 +291,11 @@ def stop_job(job_id: str, db: Session = Depends(get_db)):
 def get_job(job_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
-        return {"error": "Job not found"}
+        raise NotFoundError(
+            message=f"Job '{job_id}' not found",
+            error_code="job_not_found",
+            details={"job_id": job_id},
+        )
 
     d = _job_to_dict(job)
     # Merge any buffered logs not yet flushed

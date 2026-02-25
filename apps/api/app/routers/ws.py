@@ -1,11 +1,55 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import List, Dict
-import json
 import asyncio
+import json
+import logging
+import os
 import random
-import time
+import re
+from typing import Dict, List, Optional
+
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+
+from app.middleware.sanitize import sanitize_html
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
+
+# ── WebSocket token authentication ────────────────────
+_WS_TOKEN: Optional[str] = os.getenv("DOKBA_WS_TOKEN")
+
+
+async def _authenticate_ws(
+    websocket: WebSocket,
+    token: Optional[str],
+) -> bool:
+    """Validate WebSocket token on handshake.
+
+    When ``DOKBA_WS_TOKEN`` is not set, authentication is skipped (dev mode).
+    Returns ``True`` if the connection is allowed, ``False`` if it was
+    rejected and closed with code 4001.
+    """
+    if not _WS_TOKEN:
+        return True
+
+    if not token or token != _WS_TOKEN:
+        _logger.warning(
+            "WebSocket connection rejected -- invalid or missing token"
+        )
+        await websocket.close(code=4001, reason="Unauthorized")
+        return False
+
+    return True
+
+
+# ── Chat input validation ─────────────────────────────
+_MAX_CHAT_MESSAGE_LENGTH = 2000
+_AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9\-]{1,50}$")
+
+
+def _is_valid_agent_id(agent_id: str) -> bool:
+    """Return True if *agent_id* is alphanumeric + hyphens, max 50 chars."""
+    return bool(_AGENT_ID_RE.match(agent_id))
+
 
 # ── Session-level statistics tracking ──────────────────
 _chat_stats: Dict[str, int] = {
@@ -122,7 +166,14 @@ manager = ConnectionManager()
 
 
 @router.websocket("/town")
-async def websocket_town_endpoint(websocket: WebSocket):
+async def websocket_town_endpoint(
+    websocket: WebSocket,
+    token: Optional[str] = Query(default=None),
+):
+    # Authenticate before accepting the connection.
+    if not await _authenticate_ws(websocket, token):
+        return
+
     await manager.connect(websocket)
     try:
         while True:
@@ -136,6 +187,16 @@ async def websocket_town_endpoint(websocket: WebSocket):
                     agent_id = payload.get("agentId", "")
                     agent_role = payload.get("agentRole", "")
                     content = payload.get("content", "")
+
+                    # ── Input sanitization & validation ──
+                    if not _is_valid_agent_id(agent_id):
+                        continue  # silently ignore invalid agentId
+
+                    content = sanitize_html(content)
+                    content = content[:_MAX_CHAT_MESSAGE_LENGTH]
+
+                    if not content:
+                        continue  # silently ignore empty messages
 
                     _chat_stats["total_messages_sent"] += 1
 
