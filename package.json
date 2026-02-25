@@ -7,9 +7,29 @@
     "dev": "bash scripts/dev.sh",
     "dev:desktop": "pnpm --filter @dogba/desktop dev",
     "build": "pnpm -r run build",
-    "typecheck": "pnpm --filter @dogba/desktop exec tsc --noEmit"
+    "typecheck": "pnpm --filter @dogba/desktop exec tsc --noEmit",
+    "lint": "eslint --no-error-on-unmatched-pattern apps/desktop/src packages/shared-types/src",
+    "lint:fix": "eslint --no-error-on-unmatched-pattern apps/desktop/src packages/shared-types/src --fix",
+    "format": "prettier --write \"apps/desktop/src/**/*.{ts,tsx,css}\" \"packages/shared-types/src/**/*.ts\"",
+    "format:check": "prettier --check \"apps/desktop/src/**/*.{ts,tsx,css}\" \"packages/shared-types/src/**/*.ts\""
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@eslint/js": "^9.39.3",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "prettier": "^3.8.1",
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.56.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "tar": ">=7.5.8"
+    },
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   }
 }

@@ -1,10 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+import logging
 import os
 import json
 import uuid
 import re
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/studio", tags=["studio"])
 
@@ -87,77 +90,147 @@ HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 @router.post("/generate")
 async def generate_content(request: dict = {}):
-    """S-2: Generate draft content from prompt (rule-based stub)."""
+    """S-2: Generate draft content from prompt using Claude API with rule-based fallback."""
     prompt = request.get("prompt", "")
     scope = request.get("scope", "all")
+    assets = request.get("assets", [])
 
-    # Rule-based generation stub (S-2: Text/Prompt Analysis Mock)
-    rooms = 4
-    team_size = 25
-    theme = "모던 오피스"
-    
-    if "개발" in prompt or "스타트업" in prompt or "오피스" in prompt:
-        rooms = 6
-        team_size = 15
-        theme = "IT 스타트업"
-    elif "디자인" in prompt or "스튜디오" in prompt:
-        rooms = 3
-        team_size = 8
-        theme = "크리에이티브 스튜디오"
-    elif "캠핑" in prompt or "자연" in prompt or "숲" in prompt:
-        rooms = 5
-        team_size = 10
-        theme = "숲속 캠핑"
-    elif "연구소" in prompt or "AI" in prompt:
-        rooms = 8
-        team_size = 20
-        theme = "AI 연구소 (사이버펑크)"
-        
-    draft = {
-        "summary": {
-            "rooms": rooms,
-            "collisionTiles": rooms * 30,
-            "spawnPoints": team_size,
-            "agents": team_size,
-            "recipes": 3,
-            "theme": theme,
-            "generatedAt": __import__("datetime").datetime.now().isoformat(),
-        },
-        "prompt": prompt,
-        "scope": scope,
-        "theme": {
-            "palette": {"primary": "#FFD100", "secondary": "#9DE5DC", "accent": "#E8DAFF",
-                        "background": "#FFF8E7", "surface": "#FFFFFF", "text": "#18181B"},
-            "font": {"heading": "Pretendard", "body": "Pretendard"},
-            "buttonStyle": "neo-brutal",
-        },
-        "agents": [
-            {"id": f"a{str(i+1).zfill(2)}", "name": f"Agent_{i+1}", "role": "General"}
-            for i in range(team_size)
-        ],
-        "recipes": [
-            {"id": "r01", "name": "시스템 정보", "command": "node", "args": ["-v"]},
-            {"id": "r02", "name": "파일 목록", "command": "dir" if os.name == "nt" else "ls", "args": ["-la"] if os.name != "nt" else []},
-            {"id": "r03", "name": "현재 경로", "command": "pwd" if os.name != "nt" else "cd", "args": []},
-        ],
-    }
+    draft = None
+    generation_method = "rule-based"
+
+    # ── Try LLM generation first ──
+    try:
+        from app.services.llm_service import LLMService
+
+        llm = LLMService()
+        if llm.is_available:
+            llm_result = llm.generate_draft(prompt=prompt, scope=scope, assets=assets)
+
+            if llm_result["status"] == "ok":
+                draft = llm_result["draft"]
+                generation_method = "llm"
+                # Enrich with metadata
+                draft["prompt"] = prompt
+                draft["scope"] = scope
+            else:
+                _logger.warning(
+                    "LLM generation returned status=%s: %s — falling back to rule-based.",
+                    llm_result["status"],
+                    llm_result.get("message", ""),
+                )
+    except Exception as exc:
+        _logger.warning("LLM service error: %s — falling back to rule-based.", exc)
+
+    # ── Fallback: rule-based generation ──
+    if draft is None:
+        draft = _generate_rule_based(prompt, scope)
+
+    # Build summary from draft content
+    draft["summary"] = _build_summary(draft, generation_method)
 
     # Save draft
     draft_path = GENERATED_DIR / "draft.json"
     draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    result = f"""✅ Draft 생성 완료!
+    room_count = draft["summary"]["rooms"]
+    agent_count = draft["summary"]["agents"]
+    recipe_count = draft["summary"]["recipes"]
+    theme_name = draft["summary"]["theme"]
+    method_label = "Claude AI" if generation_method == "llm" else "Rule-based"
 
-📊 요약:
-• 방 {draft['summary']['rooms']}개 (작업실, 회의실, 휴게실, 입구)
-• 충돌 타일 {draft['summary']['collisionTiles']}개
-• 에이전트 {draft['summary']['agents']}명
-• 레시피 {draft['summary']['recipes']}개
-• 테마: {draft['summary']['theme']}
+    result = f"""Draft generated! ({method_label})
 
-💡 Draft Preview 탭에서 확인 후 Apply 해주세요!"""
+Summary:
+- {room_count} rooms
+- {agent_count} agents
+- {recipe_count} recipes
+- Theme: {theme_name}
 
-    return {"result": result, "status": "ok", "draftPath": str(draft_path)}
+Check the Draft Preview tab and click Apply when ready."""
+
+    return {"result": result, "status": "ok", "draftPath": str(draft_path), "method": generation_method}
+
+
+def _generate_rule_based(prompt: str, scope: str) -> dict:
+    """Original rule-based generation logic (fallback)."""
+    rooms = 4
+    team_size = 25
+    theme = "Modern Office"
+
+    if "개발" in prompt or "스타트업" in prompt or "오피스" in prompt:
+        rooms = 6
+        team_size = 15
+        theme = "IT Startup"
+    elif "디자인" in prompt or "스튜디오" in prompt:
+        rooms = 3
+        team_size = 8
+        theme = "Creative Studio"
+    elif "캠핑" in prompt or "자연" in prompt or "숲" in prompt:
+        rooms = 5
+        team_size = 10
+        theme = "Forest Camping"
+    elif "연구소" in prompt or "AI" in prompt:
+        rooms = 8
+        team_size = 20
+        theme = "AI Lab (Cyberpunk)"
+
+    return {
+        "prompt": prompt,
+        "scope": scope,
+        "theme": {
+            "name": theme,
+            "primary_color": "#FFD100",
+            "secondary_color": "#9DE5DC",
+            "background": "#FFF8E7",
+        },
+        "world": {
+            "grid_size": 32,
+            "rooms": [
+                {"id": f"room_{i+1}", "name": f"Room {i+1}", "type": "office", "width": 8, "height": 8, "x": i * 8, "y": 0}
+                for i in range(rooms)
+            ],
+            "zones": [
+                {"id": "z01", "name": "Work Area", "type": "work"},
+                {"id": "z02", "name": "Social Area", "type": "social"},
+            ],
+        },
+        "agents": [
+            {"id": f"a{str(i+1).zfill(2)}", "name": f"Agent_{i+1}", "role": "General", "personality": "Diligent worker", "sprite": "default"}
+            for i in range(team_size)
+        ],
+        "recipes": [
+            {"id": "r01", "name": "System Info", "command": "node", "args": ["-v"], "description": "Show Node.js version"},
+            {"id": "r02", "name": "File List", "command": "dir" if os.name == "nt" else "ls", "args": [] if os.name == "nt" else ["-la"], "description": "List files in current directory"},
+            {"id": "r03", "name": "Current Path", "command": "cd" if os.name == "nt" else "pwd", "args": [], "description": "Show current working directory"},
+        ],
+    }
+
+
+def _build_summary(draft: dict, method: str) -> dict:
+    """Build a summary dict from the draft content."""
+    import datetime
+
+    theme_name = ""
+    if isinstance(draft.get("theme"), dict):
+        theme_name = draft["theme"].get("name", "")
+
+    room_count = 0
+    if isinstance(draft.get("world"), dict):
+        room_count = len(draft["world"].get("rooms", []))
+
+    agent_count = len(draft.get("agents", []))
+    recipe_count = len(draft.get("recipes", []))
+
+    return {
+        "rooms": room_count,
+        "collisionTiles": room_count * 30,
+        "spawnPoints": agent_count,
+        "agents": agent_count,
+        "recipes": recipe_count,
+        "theme": theme_name,
+        "generatedAt": datetime.datetime.now().isoformat(),
+        "method": method,
+    }
 
 
 @router.get("/draft")
@@ -264,12 +337,9 @@ async def rollback_to_snapshot(snapshot_id: str):
 
 
 # ── S-5: Export / Import Project (Enhanced) ──
-import logging
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 from app.services.export_service import ExportService, ImportService
-
-_logger = logging.getLogger(__name__)
 
 PUBLIC_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public"
 
