@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app.models import Project, Job  # noqa: F401 — ensure models are registered
-from app.routers import cli, studio, ws, documents, export, jobs, projects
+from app.routers import cli, studio, ws, documents, export, jobs, projects, settings, stats
 
 
 @asynccontextmanager
@@ -38,6 +38,8 @@ app.include_router(documents.router)
 app.include_router(export.router)
 app.include_router(jobs.router)
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(stats.router)
 
 @app.get("/api/health")
 def health_check():

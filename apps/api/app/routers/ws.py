@@ -1,9 +1,95 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import List
+from typing import List, Dict
 import json
 import asyncio
+import random
+import time
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
+
+# ── Session-level statistics tracking ──────────────────
+_chat_stats: Dict[str, int] = {
+    "total_messages_sent": 0,
+    "total_responses": 0,
+}
+
+
+def get_chat_stats() -> Dict[str, int]:
+    """Return current chat statistics."""
+    return {**_chat_stats}
+
+
+# ── Role-based response templates ──────────────────────
+_ROLE_RESPONSES: Dict[str, List[str]] = {
+    "developer": [
+        "코드 분석을 완료했습니다. 몇 가지 개선 사항을 제안드립니다.",
+        "해당 기능은 현재 구현 가능합니다. 모듈 구조를 먼저 설계하겠습니다.",
+        "코드 리뷰를 진행했습니다. 전반적으로 깔끔하지만, 리팩토링이 필요한 부분이 있습니다.",
+        "빌드 파이프라인을 확인했습니다. 의존성 문제 없이 정상 작동 중입니다.",
+        "해당 버그를 확인했습니다. 원인을 분석 중이며 곧 수정 패치를 준비하겠습니다.",
+    ],
+    "qa": [
+        "테스트 시나리오를 작성했습니다. 총 15개의 테스트 케이스를 준비했습니다.",
+        "회귀 테스트를 완료했습니다. 모든 기존 기능이 정상 동작합니다.",
+        "버그 리포트를 검토했습니다. 재현 가능하며, 우선순위를 높여야 할 것 같습니다.",
+        "E2E 테스트 결과가 나왔습니다. 95% 통과율을 기록했습니다.",
+        "품질 지표를 분석했습니다. 코드 커버리지가 82%입니다.",
+    ],
+    "pm": [
+        "프로젝트 진행 상황을 업데이트했습니다. 현재 Sprint 목표 달성률은 78%입니다.",
+        "일정을 검토했습니다. 예상 마감일까지 충분한 여유가 있습니다.",
+        "이해관계자 미팅을 정리했습니다. 주요 피드백을 공유드리겠습니다.",
+        "리스크 분석을 완료했습니다. 현재 3가지 잠재적 이슈를 파악했습니다.",
+        "요구사항을 분석했습니다. 우선순위를 재조정해야 할 항목이 있습니다.",
+    ],
+    "designer": [
+        "디자인 시안을 준비했습니다. 모바일/데스크톱 모두 반응형으로 설계했습니다.",
+        "UI 컴포넌트 라이브러리를 업데이트했습니다. 새로운 컬러 팔레트를 적용했습니다.",
+        "사용자 플로우를 검토했습니다. UX 개선 포인트 5가지를 제안합니다.",
+        "와이어프레임을 완성했습니다. 피드백 주시면 프로토타입으로 발전시키겠습니다.",
+        "접근성 감사를 실시했습니다. WCAG 2.1 기준에 부합하도록 수정이 필요합니다.",
+    ],
+    "devops": [
+        "배포 파이프라인을 확인했습니다. 현재 모든 환경이 정상 작동 중입니다.",
+        "서버 모니터링 결과, CPU 사용률이 안정적입니다.",
+        "CI/CD 빌드가 성공적으로 완료되었습니다. 모든 테스트를 통과했습니다.",
+        "인프라 구성을 최적화했습니다. 응답 시간이 20% 개선되었습니다.",
+        "컨테이너 이미지를 업데이트했습니다. 보안 패치가 적용되었습니다.",
+    ],
+}
+
+_DEFAULT_RESPONSES = [
+    "요청하신 내용을 확인했습니다. 분석 후 결과를 공유드리겠습니다.",
+    "작업을 시작했습니다. 진행 상황을 계속 업데이트하겠습니다.",
+    "확인했습니다. 해당 건에 대해 검토 후 답변드리겠습니다.",
+    "네, 이해했습니다. 바로 처리하겠습니다.",
+    "좋은 의견 감사합니다. 반영하여 진행하겠습니다.",
+]
+
+
+def _classify_role(role: str) -> str:
+    """Map agent role string to a response category."""
+    role_lower = role.lower()
+
+    if any(k in role_lower for k in ["develop", "engineer", "frontend", "backend", "full"]):
+        return "developer"
+    if any(k in role_lower for k in ["qa", "test", "quality"]):
+        return "qa"
+    if any(k in role_lower for k in ["pm", "project", "manager", "product"]):
+        return "pm"
+    if any(k in role_lower for k in ["design", "ui", "ux"]):
+        return "designer"
+    if any(k in role_lower for k in ["devops", "infra", "ops", "deploy", "sre"]):
+        return "devops"
+    return "default"
+
+
+def _generate_response(agent_role: str, user_message: str) -> str:
+    """Generate a contextual MVP response based on agent role."""
+    category = _classify_role(agent_role)
+    pool = _ROLE_RESPONSES.get(category, _DEFAULT_RESPONSES)
+    return random.choice(pool)
+
 
 class ConnectionManager:
     def __init__(self):
@@ -14,7 +100,8 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
@@ -23,7 +110,16 @@ class ConnectionManager:
             except Exception:
                 continue
 
+    async def send_personal(self, websocket: WebSocket, message: dict):
+        """Send a message to a specific connection only."""
+        try:
+            await websocket.send_text(json.dumps(message))
+        except Exception:
+            pass
+
+
 manager = ConnectionManager()
+
 
 @router.websocket("/town")
 async def websocket_town_endpoint(websocket: WebSocket):
@@ -31,31 +127,55 @@ async def websocket_town_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            # For demonstration, we simply parse and broadcast tasks to the town
             try:
                 payload = json.loads(data)
-                if payload.get("type") == "CHAT_COMMAND":
+                msg_type = payload.get("type")
+
+                # ── FE-5: Handle CHAT_MESSAGE for agent chat ──
+                if msg_type == "CHAT_MESSAGE":
+                    agent_id = payload.get("agentId", "")
+                    agent_role = payload.get("agentRole", "")
+                    content = payload.get("content", "")
+
+                    _chat_stats["total_messages_sent"] += 1
+
+                    # Simulate agent "thinking" with a short delay (0.8-2s)
+                    delay = random.uniform(0.8, 2.0)
+                    await asyncio.sleep(delay)
+
+                    response_text = _generate_response(agent_role, content)
+                    _chat_stats["total_responses"] += 1
+
+                    # Send response back to the sender only
+                    await manager.send_personal(websocket, {
+                        "type": "CHAT_RESPONSE",
+                        "agentId": agent_id,
+                        "content": response_text,
+                    })
+
+                # ── Existing: Handle CHAT_COMMAND for claude CLI ──
+                elif msg_type == "CHAT_COMMAND":
                     agent = payload.get("target_agent", "Sera")
                     prompt = payload.get("text", "")
-                    
+
+                    _chat_stats["total_messages_sent"] += 1
+
                     # 1. Send initial THINKING state
                     await manager.broadcast({
                         "type": "AGENT_STATE_CHANGE",
-                        "agentId": "a01" if agent.lower() == "sera" else "a01", # TODO: map by name
+                        "agentId": "a01" if agent.lower() == "sera" else "a01",  # TODO: map by name
                         "state": "THINKING"
                     })
-                    
+
                     # 2. Spawn actual claude CLI process
-                    # 2. Spawn actual claude CLI process
-                    import asyncio
                     import os
-                    
+
                     full_cmd = f'npx @anthropic-ai/claude-code -p "{prompt}" --print'
                     print(f"Executing: {full_cmd}")
-                    
+
                     env = os.environ.copy()
                     env["FORCE_COLOR"] = "1"
-                    
+
                     async def run_claude():
                         try:
                             proc = await asyncio.create_subprocess_shell(
@@ -64,20 +184,22 @@ async def websocket_town_endpoint(websocket: WebSocket):
                                 stderr=asyncio.subprocess.STDOUT,
                                 env=env
                             )
-                            
+
                             stdout, _ = await proc.communicate()
-                            
+
                             if stdout:
                                 text = stdout.decode('utf-8', errors='replace').strip()
                                 print(f"Claude OUT: {text}")
-                                
+
                                 # Send the full output as a single chunk
                                 await manager.broadcast({
                                     "type": "TASK_ASSIGNED",
                                     "agent": agent,
                                     "taskContent": text
                                 })
-                            
+
+                                _chat_stats["total_responses"] += 1
+
                             # Return agent to IDLE after process finishes
                             state = "SUCCESS" if proc.returncode == 0 else "ERROR"
                             await manager.broadcast({
@@ -99,11 +221,11 @@ async def websocket_town_endpoint(websocket: WebSocket):
                                 "agentId": "a01" if agent.lower() == "sera" else "a01",
                                 "state": "ERROR"
                             })
-                    
+
                     asyncio.create_task(run_claude())
 
             except json.JSONDecodeError:
                 pass
-                
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)

@@ -10,6 +10,7 @@ import uuid
 from app.database import get_db, SessionLocal
 from app.models.job import Job
 from app.schemas.job import JobResponse, JobListResponse
+from app.routers.settings import get_run_settings
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -61,6 +62,43 @@ def _serialize_logs(logs: list) -> str:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# ── Log verbosity levels (ordered by severity) ────────
+_VERBOSITY_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
+
+def _should_broadcast_log(log_text: str, stream: str, verbosity: str) -> bool:
+    """Decide whether a log entry should be broadcast based on verbosity setting.
+
+    Heuristic: stderr lines are treated as 'error' level, stdout lines are
+    checked for common level prefixes (DEBUG, WARN/WARNING, ERROR).
+    If no prefix is found, stdout defaults to 'info'.
+    """
+    min_level = _VERBOSITY_LEVELS.get(verbosity, 1)
+
+    if stream == "stderr":
+        log_level = _VERBOSITY_LEVELS["error"]
+    else:
+        lower = log_text.lower()
+        if lower.startswith("debug") or "[debug]" in lower:
+            log_level = _VERBOSITY_LEVELS["debug"]
+        elif lower.startswith("warn") or "[warn" in lower:
+            log_level = _VERBOSITY_LEVELS["warn"]
+        elif lower.startswith("error") or "[error]" in lower:
+            log_level = _VERBOSITY_LEVELS["error"]
+        else:
+            log_level = _VERBOSITY_LEVELS["info"]
+
+    return log_level >= min_level
+
+
+def _count_running_jobs() -> int:
+    """Count the number of currently RUNNING jobs in runtime state."""
+    return sum(
+        1 for rt in _active_jobs.values()
+        if rt.get("process") is not None and rt["process"].poll() is None
+    )
 
 
 # ── Endpoints ──────────────────────────────────────────
@@ -132,6 +170,10 @@ async def run_job(
     if not recipe:
         return {"error": "Recipe not found"}
 
+    # Read current run settings for concurrency limit
+    settings = get_run_settings()
+    max_concurrent = settings.get("maxConcurrentAgents", 5)
+
     job_id = f"job_{uuid.uuid4().hex[:8]}"
     job = Job(
         id=job_id,
@@ -153,8 +195,53 @@ async def run_job(
 
     # Return the job dict immediately -- execution continues in background
     job_dict = _job_to_dict(job)
-    asyncio.create_task(_execute_job(job_id, recipe))
+
+    # Check concurrency: if already at limit, keep as QUEUED and defer
+    running_count = _count_running_jobs()
+    if running_count >= max_concurrent:
+        asyncio.create_task(_wait_and_execute(job_id, recipe, max_concurrent))
+    else:
+        asyncio.create_task(_execute_job(job_id, recipe))
+
     return {"job": job_dict}
+
+
+async def _wait_and_execute(job_id: str, recipe: dict, max_concurrent: int):
+    """Wait until a slot opens up, then execute the queued job."""
+    from app.routers.ws import manager
+
+    # Poll every 2 seconds to check if we can start
+    for _ in range(150):  # up to ~5 minutes of waiting
+        await asyncio.sleep(2)
+
+        # Check if job was canceled while waiting
+        db = SessionLocal()
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if not job or job.status == "CANCELED":
+                _active_jobs.pop(job_id, None)
+                return
+        finally:
+            db.close()
+
+        if _count_running_jobs() < max_concurrent:
+            await _execute_job(job_id, recipe)
+            return
+
+    # Timed out waiting for a slot -- mark as error
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job and job.status == "QUEUED":
+            job.status = "ERROR"
+            job.error = "Timed out waiting for available concurrency slot"
+            job.completed_at = _now_utc()
+            db.commit()
+            db.refresh(job)
+            await manager.broadcast({"type": "JOB_UPDATE", "job": _job_to_dict(job)})
+    finally:
+        _active_jobs.pop(job_id, None)
+        db.close()
 
 
 @router.post("/stop")
@@ -237,6 +324,11 @@ async def _execute_job(job_id: str, recipe: dict):
     import subprocess
     import threading
 
+    # Read run settings for timeout and log verbosity
+    settings = get_run_settings()
+    timeout_seconds = settings.get("runTimeoutSeconds", 300)
+    log_verbosity = settings.get("logVerbosity", "info")
+
     # Open a dedicated session for this background task
     db = SessionLocal()
     try:
@@ -265,6 +357,7 @@ async def _execute_job(job_id: str, recipe: dict):
         full_command = f"{command} {' '.join(args)}"
 
         loop = asyncio.get_running_loop()
+        timed_out = False
 
         try:
             proc = subprocess.Popen(
@@ -303,7 +396,8 @@ async def _execute_job(job_id: str, recipe: dict):
                             rt["log_buffer"].append(log_entry)
 
                         # Broadcast each line in real-time via WebSocket
-                        async def do_broadcast(t=text, l=log_entry):
+                        # (filtered by log verbosity setting)
+                        async def do_broadcast(t=text, l=log_entry, sn=stream_name):
                             lower_text = t.lower()
                             if "[think]" in lower_text or "[plan]" in lower_text:
                                 await manager.broadcast({
@@ -317,7 +411,9 @@ async def _execute_job(job_id: str, recipe: dict):
                                     "agentId": job.assigned_agent_id,
                                     "state": "RUNNING",
                                 })
-                            await manager.broadcast({"type": "JOB_LOG", "log": l})
+                            # Apply log verbosity filter before broadcasting
+                            if _should_broadcast_log(t, sn, log_verbosity):
+                                await manager.broadcast({"type": "JOB_LOG", "log": l})
 
                         asyncio.run_coroutine_threadsafe(do_broadcast(), loop)
                 except Exception:
@@ -338,13 +434,41 @@ async def _execute_job(job_id: str, recipe: dict):
             flush_task = asyncio.create_task(periodic_flush())
 
             # Wait for process completion without blocking the async loop
+            # Apply timeout: kill process if it exceeds runTimeoutSeconds
             def wait_func():
                 code = proc.wait()
                 t_out.join(timeout=2)
                 t_err.join(timeout=2)
                 return code
 
-            exit_code = await asyncio.to_thread(wait_func)
+            try:
+                exit_code = await asyncio.wait_for(
+                    asyncio.to_thread(wait_func),
+                    timeout=timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                # Process exceeded the configured timeout
+                timed_out = True
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                # Wait briefly for cleanup
+                t_out.join(timeout=1)
+                t_err.join(timeout=1)
+                exit_code = -1
+
+                # Broadcast a timeout log entry
+                timeout_log = {
+                    "ts": time.time(),
+                    "stream": "stderr",
+                    "text": f"Job timed out after {timeout_seconds}s and was killed.",
+                    "jobId": job_id,
+                }
+                rt = _active_jobs.get(job_id)
+                if rt is not None:
+                    rt["log_buffer"].append(timeout_log)
+                await manager.broadcast({"type": "JOB_LOG", "log": timeout_log})
 
             # Stop periodic flushing
             flush_task.cancel()
@@ -381,10 +505,14 @@ async def _execute_job(job_id: str, recipe: dict):
 
         # Update job final state in DB
         db.refresh(job)
-        is_success = (exit_code == 0) and (job.status != "CANCELED")
+        is_success = (exit_code == 0) and (job.status != "CANCELED") and not timed_out
 
         if job.status != "CANCELED":
-            job.status = "SUCCESS" if is_success else "ERROR"
+            if timed_out:
+                job.status = "ERROR"
+                job.error = f"Timed out after {timeout_seconds}s"
+            else:
+                job.status = "SUCCESS" if is_success else "ERROR"
 
         job.exit_code = exit_code
         job.completed_at = _now_utc()

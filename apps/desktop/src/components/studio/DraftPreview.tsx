@@ -13,6 +13,7 @@ interface DraftSummary {
     recipes: number;
     theme: string;
     generatedAt: string;
+    method?: 'llm' | 'rule-based';
 }
 
 interface DraftFile {
@@ -22,19 +23,96 @@ interface DraftFile {
     size: number;
 }
 
+/** Room definition from the server draft world data. */
+interface DraftRoom {
+    id: string;
+    name: string;
+    type: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+}
+
+/** Zone definition from the server draft world data. */
+interface DraftZone {
+    id: string;
+    name: string;
+    type: string;
+}
+
+/** Theme shape from the server draft (rule-based or LLM). */
+interface DraftThemeRaw {
+    name?: string;
+    primary_color?: string;
+    secondary_color?: string;
+    background?: string;
+    palette?: ProjectTheme['palette'];
+}
+
+/** Agent shape from the server draft (may lack full AgentDefinition fields). */
+interface DraftAgent {
+    id: string;
+    name: string;
+    role?: string;
+    personality?: string;
+    sprite?: string;
+    skills?: string[];
+    systemPrompt?: string;
+}
+
+/** Recipe shape from the server draft. */
+interface DraftRecipe {
+    id: string;
+    name: string;
+    description?: string;
+    command: string;
+    args: string[];
+    tags?: string[];
+}
+
+/** World data from the server draft. */
+interface DraftWorld {
+    grid_size?: number;
+    gridCols?: number;
+    gridRows?: number;
+    rooms?: DraftRoom[];
+    zones?: DraftZone[];
+}
+
 /**
  * DA-5: DraftData now uses ProjectData-compatible types.
- * - theme: ProjectTheme (from project.ts)
- * - agents: AgentDefinition[] (from project.ts)
- * - recipes: RecipeDefinition[] (from project.ts)
+ * Extended to hold the full draft response including world data.
  */
 interface DraftData {
     summary: DraftSummary;
     prompt?: string;
     scope?: string;
-    theme?: ProjectTheme;
-    agents?: AgentDefinition[];
-    recipes?: RecipeDefinition[];
+    theme?: DraftThemeRaw;
+    world?: DraftWorld;
+    agents?: DraftAgent[];
+    recipes?: DraftRecipe[];
+}
+
+// ── Error state type ──
+
+type FetchState = 'idle' | 'loading' | 'success' | 'error';
+
+// ── Theme color extraction helpers ──
+
+function extractThemeColors(theme?: DraftThemeRaw): {
+    primary: string;
+    secondary: string;
+    background: string;
+} {
+    if (!theme) {
+        return { primary: '#FFD100', secondary: '#9DE5DC', background: '#FFF8E7' };
+    }
+    // Handle both raw server format and ProjectTheme palette format
+    const primary = theme.primary_color ?? theme.palette?.primary ?? '#FFD100';
+    const secondary = theme.secondary_color ?? theme.palette?.secondary ?? '#9DE5DC';
+    const background = theme.background ?? theme.palette?.background ?? '#FFF8E7';
+    return { primary, secondary, background };
 }
 
 // ── Zone Color Map ──
@@ -55,105 +133,23 @@ const ZONE_LABELS: Record<ZoneType, string> = {
     hallway: 'Hallway',
 };
 
-// ── Procedural Layout Generator ──
+// ── Room color assignment based on theme ──
 
-interface RoomRect {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    zone: ZoneType;
-}
-
-interface SpawnDot {
-    x: number;
-    y: number;
-    zone: ZoneType;
-}
-
-function generateProceduralLayout(summary: DraftSummary): {
-    rooms: RoomRect[];
-    walls: Array<{ x: number; y: number; w: number; h: number }>;
-    spawns: SpawnDot[];
-    gridCols: number;
-    gridRows: number;
-} {
-    const gridCols = 40;
-    const gridRows = 25;
-    const zoneOrder: ZoneType[] = ['work', 'meeting', 'rest', 'entrance'];
-    const rooms: RoomRect[] = [];
-    const walls: Array<{ x: number; y: number; w: number; h: number }> = [];
-    const spawns: SpawnDot[] = [];
-
-    const roomCount = Math.max(summary.rooms, 2);
-
-    // Divide grid into quadrants, place rooms proportionally
-    const quadrants: Array<{ x: number; y: number; w: number; h: number; zone: ZoneType }> = [
-        { x: 1, y: 1, w: 18, h: 11, zone: 'work' },
-        { x: 20, y: 1, w: 19, h: 11, zone: 'meeting' },
-        { x: 1, y: 17, w: 18, h: 7, zone: 'rest' },
-        { x: 20, y: 17, w: 19, h: 7, zone: 'entrance' },
+function getRoomColor(index: number, themeColors: { primary: string; secondary: string }): string {
+    const palette = [
+        themeColors.primary,
+        themeColors.secondary,
+        '#FBBF24',
+        '#34D399',
+        '#60A5FA',
+        '#A78BFA',
+        '#F87171',
+        '#FB923C',
     ];
-
-    // Hallway strip
-    rooms.push({ x: 1, y: 13, w: 38, h: 3, zone: 'hallway' });
-
-    // Build rooms from quadrants, distributing extras
-    for (let i = 0; i < Math.min(roomCount, quadrants.length); i++) {
-        const q = quadrants[i % quadrants.length];
-        rooms.push({
-            x: q.x,
-            y: q.y,
-            w: q.w,
-            h: q.h,
-            zone: q.zone,
-        });
-    }
-
-    // Extra rooms subdivide existing quadrants
-    if (roomCount > 4) {
-        const extraCount = roomCount - 4;
-        for (let i = 0; i < extraCount; i++) {
-            const base = quadrants[i % quadrants.length];
-            const halfW = Math.floor(base.w / 2) - 1;
-            rooms.push({
-                x: base.x + halfW + 2,
-                y: base.y + 1,
-                w: halfW,
-                h: base.h - 2,
-                zone: zoneOrder[(4 + i) % zoneOrder.length],
-            });
-        }
-    }
-
-    // Outer walls
-    walls.push({ x: 0, y: 0, w: gridCols, h: 1 });           // top
-    walls.push({ x: 0, y: gridRows - 1, w: gridCols, h: 1 }); // bottom
-    walls.push({ x: 0, y: 0, w: 1, h: gridRows });             // left
-    walls.push({ x: gridCols - 1, y: 0, w: 1, h: gridRows });  // right
-
-    // Room divider walls
-    walls.push({ x: 19, y: 1, w: 1, h: 11 });   // vertical mid top
-    walls.push({ x: 1, y: 12, w: 38, h: 1 });    // horizontal mid top
-    walls.push({ x: 1, y: 16, w: 38, h: 1 });    // horizontal mid bottom
-    walls.push({ x: 19, y: 17, w: 1, h: 7 });    // vertical mid bottom
-
-    // Distribute spawn points across rooms (excluding hallway)
-    const spawnableRooms = rooms.filter(r => r.zone !== 'hallway');
-    const spawnCount = summary.spawnPoints || summary.agents || 0;
-
-    for (let i = 0; i < spawnCount; i++) {
-        const room = spawnableRooms[i % spawnableRooms.length];
-        const margin = 2;
-        const sx = room.x + margin + ((i * 3) % Math.max(room.w - margin * 2, 1));
-        const sy = room.y + margin + (Math.floor((i * 2) / Math.max(room.w - margin * 2, 1)) % Math.max(room.h - margin * 2, 1));
-        spawns.push({ x: sx, y: sy, zone: room.zone });
-    }
-
-    return { rooms, walls, spawns, gridCols, gridRows };
+    return palette[index % palette.length];
 }
 
-// ── Canvas World Renderer ──
+// ── Canvas World Renderer (Real Data) ──
 
 const CANVAS_WIDTH = 480;
 const CANVAS_HEIGHT = 300;
@@ -163,140 +159,271 @@ function renderWorldPreview(
     summary: DraftSummary,
     draftData: DraftData | null,
 ): void {
-    const { rooms, walls, spawns, gridCols, gridRows } = generateProceduralLayout(summary);
-    const cellW = CANVAS_WIDTH / gridCols;
-    const cellH = CANVAS_HEIGHT / gridRows;
+    const themeColors = extractThemeColors(draftData?.theme);
+    const rooms = draftData?.world?.rooms ?? [];
+    const zones = draftData?.world?.zones ?? [];
+    const agents = draftData?.agents ?? [];
 
-    // Background (use theme background if available)
-    ctx.fillStyle = draftData?.theme?.palette?.background || '#F9FAFB';
+    // Determine grid bounds from room data
+    let maxX = 40;
+    let maxY = 25;
+
+    if (rooms.length > 0) {
+        for (const room of rooms) {
+            const rx = room.x + room.width;
+            const ry = room.y + room.height;
+            if (rx > maxX) maxX = rx;
+            if (ry > maxY) maxY = ry;
+        }
+        // Add margin
+        maxX = Math.max(maxX + 2, 20);
+        maxY = Math.max(maxY + 2, 12);
+    }
+
+    const cellW = CANVAS_WIDTH / maxX;
+    const cellH = CANVAS_HEIGHT / maxY;
+
+    // ── Background ──
+    ctx.fillStyle = themeColors.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Grid lines (subtle)
+    // ── Grid lines (subtle) ──
     ctx.strokeStyle = '#E5E7EB';
     ctx.lineWidth = 0.5;
-    for (let x = 0; x <= gridCols; x++) {
+    for (let x = 0; x <= maxX; x++) {
         ctx.beginPath();
         ctx.moveTo(x * cellW, 0);
         ctx.lineTo(x * cellW, CANVAS_HEIGHT);
         ctx.stroke();
     }
-    for (let y = 0; y <= gridRows; y++) {
+    for (let y = 0; y <= maxY; y++) {
         ctx.beginPath();
         ctx.moveTo(0, y * cellH);
         ctx.lineTo(CANVAS_WIDTH, y * cellH);
         ctx.stroke();
     }
 
-    // Zone fills
-    for (const room of rooms) {
-        const color = ZONE_COLORS[room.zone] || '#E5E7EB';
-        ctx.fillStyle = color + '40'; // 25% opacity
-        ctx.fillRect(room.x * cellW, room.y * cellH, room.w * cellW, room.h * cellH);
+    // ── Draw rooms as colored rectangles ──
+    if (rooms.length > 0) {
+        rooms.forEach((room, idx) => {
+            const color = getRoomColor(idx, themeColors);
+            const rx = room.x * cellW;
+            const ry = room.y * cellH;
+            const rw = room.width * cellW;
+            const rh = room.height * cellH;
 
-        // Zone border
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(room.x * cellW, room.y * cellH, room.w * cellW, room.h * cellH);
+            // Room fill (semi-transparent)
+            ctx.fillStyle = color + '35';
+            ctx.fillRect(rx, ry, rw, rh);
 
-        // Zone label
-        ctx.fillStyle = '#374151';
-        ctx.font = 'bold 9px Pretendard, sans-serif';
+            // Room border (Neo-Brutalist thick border)
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(rx, ry, rw, rh);
+
+            // Inner color accent border
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(rx + 2, ry + 2, rw - 4, rh - 4);
+
+            // Room name label (centered)
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 9px Pretendard, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const label = room.name || room.id;
+            const labelX = rx + rw / 2;
+            const labelY = ry + rh / 2;
+
+            // Label background pill
+            const textMetrics = ctx.measureText(label);
+            const pillW = textMetrics.width + 8;
+            const pillH = 14;
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.fillRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH);
+
+            ctx.fillStyle = '#000000';
+            ctx.fillText(label, labelX, labelY);
+        });
+    } else {
+        // Fallback: no room data -- show placeholder message
+        ctx.fillStyle = '#9CA3AF';
+        ctx.font = 'bold 12px Pretendard, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const label = ZONE_LABELS[room.zone] || room.zone;
-        ctx.fillText(
-            label,
-            (room.x + room.w / 2) * cellW,
-            (room.y + room.h / 2) * cellH,
-        );
+        ctx.fillText('No room layout data available', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
     }
 
-    // Walls (collision areas)
-    ctx.fillStyle = '#1F2937';
-    for (const wall of walls) {
-        ctx.fillRect(wall.x * cellW, wall.y * cellH, wall.w * cellW, wall.h * cellH);
+    // ── Draw zone labels at top ──
+    if (zones.length > 0) {
+        const zoneBarY = 4;
+        ctx.font = 'bold 8px Pretendard, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        zones.forEach((zone, idx) => {
+            const zx = 6 + idx * 80;
+            const zoneType = zone.type as ZoneType;
+            const color = ZONE_COLORS[zoneType] ?? '#D1D5DB';
+
+            // Zone badge
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.fillRect(zx - 2, zoneBarY - 1, 76, 13);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(zx - 2, zoneBarY - 1, 76, 13);
+
+            // Color dot
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(zx + 4, zoneBarY + 5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+            // Zone name
+            ctx.fillStyle = '#374151';
+            ctx.fillText(zone.name, zx + 10, zoneBarY + 1);
+        });
     }
 
-    // Door gaps (holes in walls)
-    ctx.fillStyle = '#FDE68A'; // warm yellow for doors
-    const doorPositions = [
-        { x: 8, y: 12, w: 2, h: 1 },   // work -> hallway
-        { x: 28, y: 12, w: 2, h: 1 },  // meeting -> hallway
-        { x: 8, y: 16, w: 2, h: 1 },   // hallway -> rest
-        { x: 28, y: 16, w: 2, h: 1 },  // hallway -> entrance
-        { x: 19, y: 5, w: 1, h: 2 },   // work <-> meeting
-        { x: 19, y: 19, w: 1, h: 2 },  // rest <-> entrance
-    ];
-    for (const door of doorPositions) {
-        ctx.fillRect(door.x * cellW, door.y * cellH, door.w * cellW, door.h * cellH);
+    // ── Draw agent spawn points ──
+    if (agents.length > 0 && rooms.length > 0) {
+        // Distribute agents across rooms for spawn visualization
+        agents.forEach((agent, idx) => {
+            const room = rooms[idx % rooms.length];
+            // Distribute within room bounds with margin
+            const margin = 1;
+            const slotsPerRow = Math.max(Math.floor((room.width - margin * 2) / 1.5), 1);
+            const col = idx % slotsPerRow;
+            const row = Math.floor(idx / slotsPerRow) % Math.max(Math.floor((room.height - margin * 2) / 1.5), 1);
+
+            const ax = (room.x + margin + col * 1.5 + 0.5) * cellW;
+            const ay = (room.y + margin + row * 1.5 + 0.5) * cellH;
+
+            const dotRadius = Math.min(cellW, cellH) * 0.35;
+
+            // Agent dot with theme-based color
+            const agentColor = getRoomColor(idx, themeColors);
+            ctx.fillStyle = agentColor;
+            ctx.beginPath();
+            ctx.arc(ax, ay, dotRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Outline
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Agent initial letter inside the dot
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = `bold ${Math.max(Math.floor(dotRadius * 1.2), 6)}px Pretendard, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(agent.name.charAt(0).toUpperCase(), ax, ay);
+        });
     }
 
-    // Spawn points
-    for (const sp of spawns) {
-        const zoneColor = ZONE_COLORS[sp.zone] || '#6B7280';
-        ctx.fillStyle = zoneColor;
-        ctx.beginPath();
-        ctx.arc(
-            sp.x * cellW + cellW / 2,
-            sp.y * cellH + cellH / 2,
-            Math.min(cellW, cellH) * 0.4,
-            0,
-            Math.PI * 2,
-        );
-        ctx.fill();
-
-        // Outline
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+    // ── Legend overlay (bottom-right) ──
+    const legendEntries: Array<{ color: string; label: string }> = [];
+    if (rooms.length > 0) {
+        rooms.slice(0, 5).forEach((room, idx) => {
+            legendEntries.push({
+                color: getRoomColor(idx, themeColors),
+                label: room.name || room.id,
+            });
+        });
+        if (rooms.length > 5) {
+            legendEntries.push({ color: '#9CA3AF', label: `+${rooms.length - 5} more` });
+        }
     }
 
-    // Legend overlay (bottom-right)
-    const legendX = CANVAS_WIDTH - 110;
-    const legendY = CANVAS_HEIGHT - 72;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.fillRect(legendX - 4, legendY - 4, 112, 74);
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(legendX - 4, legendY - 4, 112, 74);
+    if (legendEntries.length > 0) {
+        const legendH = legendEntries.length * 13 + 10;
+        const legendW = 112;
+        const legendX = CANVAS_WIDTH - legendW - 6;
+        const legendY = CANVAS_HEIGHT - legendH - 6;
 
-    const legendItems: Array<{ color: string; label: string }> = [
-        { color: ZONE_COLORS.work, label: 'Work' },
-        { color: ZONE_COLORS.meeting, label: 'Meeting' },
-        { color: ZONE_COLORS.rest, label: 'Rest' },
-        { color: ZONE_COLORS.entrance, label: 'Entrance' },
-        { color: '#1F2937', label: 'Wall' },
-    ];
-
-    ctx.font = 'bold 8px Pretendard, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-
-    legendItems.forEach((item, i) => {
-        const ly = legendY + 6 + i * 13;
-        ctx.fillStyle = item.color;
-        ctx.fillRect(legendX + 2, ly - 4, 10, 10);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.fillRect(legendX - 4, legendY - 4, legendW, legendH);
         ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(legendX + 2, ly - 4, 10, 10);
-        ctx.fillStyle = '#374151';
-        ctx.fillText(item.label, legendX + 16, ly + 1);
-    });
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(legendX - 4, legendY - 4, legendW, legendH);
 
-    // Stats overlay (top-left)
-    const statsText = `${summary.rooms} rooms | ${summary.collisionTiles} walls | ${spawns.length} spawns`;
+        ctx.font = 'bold 8px Pretendard, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        legendEntries.forEach((item, i) => {
+            const ly = legendY + 6 + i * 13;
+            ctx.fillStyle = item.color;
+            ctx.fillRect(legendX + 2, ly - 4, 10, 10);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(legendX + 2, ly - 4, 10, 10);
+            ctx.fillStyle = '#374151';
+            ctx.fillText(item.label, legendX + 16, ly + 1);
+        });
+    }
+
+    // ── Stats overlay (top-left, below zones) ──
+    const agentCount = agents.length || summary.agents;
+    const statsText = `${rooms.length || summary.rooms} rooms | ${agentCount} agents | ${summary.spawnPoints} spawns`;
     ctx.font = 'bold 9px Pretendard, sans-serif';
     const statsWidth = ctx.measureText(statsText).width + 12;
+    const statsY = zones.length > 0 ? 20 : 4;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.fillRect(4, 4, statsWidth, 18);
+    ctx.fillRect(4, statsY, statsWidth, 18);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(4, 4, statsWidth, 18);
+    ctx.strokeRect(4, statsY, statsWidth, 18);
     ctx.fillStyle = '#000';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(statsText, 10, 14);
+    ctx.fillText(statsText, 10, statsY + 10);
 }
+
+// ── Skeleton Loader ──
+
+const SkeletonPulse: React.FC<{ className?: string }> = ({ className }) => (
+    <div className={`animate-pulse bg-gray-200 rounded ${className ?? ''}`} />
+);
+
+const DraftSkeleton: React.FC = () => (
+    <div className="flex-1 overflow-y-auto">
+        {/* Stat card skeletons */}
+        <div className="p-4 grid grid-cols-3 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                    key={i}
+                    className="p-3 rounded-lg border-2 border-gray-200 bg-white text-center"
+                >
+                    <SkeletonPulse className="w-3 h-3 rounded-full mx-auto mb-2" />
+                    <SkeletonPulse className="h-6 w-12 mx-auto mb-1" />
+                    <SkeletonPulse className="h-3 w-10 mx-auto" />
+                </div>
+            ))}
+        </div>
+        {/* Canvas skeleton */}
+        <div className="px-4 mb-3">
+            <SkeletonPulse className="h-4 w-28 mb-2" />
+            <SkeletonPulse className="h-[300px] w-full rounded-lg border-2 border-gray-200" />
+        </div>
+        {/* List skeletons */}
+        <div className="px-4 mb-3">
+            <SkeletonPulse className="h-4 w-20 mb-2" />
+            <div className="flex flex-wrap gap-1.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <SkeletonPulse key={i} className="h-6 w-16 rounded" />
+                ))}
+            </div>
+        </div>
+    </div>
+);
 
 // ── Refine Modal ──
 
@@ -365,6 +492,41 @@ const RefineModal: React.FC<RefineModalProps> = ({ open, onClose, onSubmit, load
     );
 };
 
+// ── Color Swatch ──
+
+const ColorSwatch: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+    <div className="flex items-center gap-1.5">
+        <div
+            className="w-4 h-4 rounded border-2 border-black shrink-0"
+            style={{ backgroundColor: color }}
+        />
+        <span className="text-[10px] font-bold text-gray-600 truncate">{label}</span>
+        <code className="text-[9px] font-mono text-gray-400 uppercase">{color}</code>
+    </div>
+);
+
+// ── Method Badge ──
+
+const MethodBadge: React.FC<{ method?: string }> = ({ method }) => {
+    if (!method) return null;
+
+    const isLLM = method === 'llm';
+    return (
+        <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-black rounded border-2 border-black shadow-[1px_1px_0_0_#000] ${
+                isLLM
+                    ? 'bg-[#A78BFA]/20 text-[#7C3AED]'
+                    : 'bg-[#FBBF24]/20 text-[#92400E]'
+            }`}
+        >
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{
+                backgroundColor: isLLM ? '#7C3AED' : '#92400E',
+            }} />
+            {isLLM ? 'Claude AI' : 'Rule-based'}
+        </span>
+    );
+};
+
 // ── Main Component ──
 
 export const DraftPreview: React.FC = () => {
@@ -372,31 +534,52 @@ export const DraftPreview: React.FC = () => {
     const [draftData, setDraftData] = useState<DraftData | null>(null);
     const [draft, setDraft] = useState<DraftSummary | null>(null);
     const [files, setFiles] = useState<DraftFile[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [fetchState, setFetchState] = useState<FetchState>('idle');
     const [applying, setApplying] = useState(false);
     const [refining, setRefining] = useState(false);
     const [refineOpen, setRefineOpen] = useState(false);
     const [message, setMessage] = useState('');
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
+    const loading = fetchState === 'loading';
+
     const fetchDraft = useCallback(async () => {
-        setLoading(true);
+        setFetchState('loading');
+        setMessage('');
         try {
+            // Fetch summary + files from the API
             const res = await fetch(`${apiUrl}/api/studio/draft`);
             const data = await res.json();
+
             if (data.summary) {
                 setDraft(data.summary as DraftSummary);
+            } else {
+                setDraft(null);
             }
             if (data.files) {
                 setFiles(data.files as DraftFile[]);
             }
-            // Use the full response as DraftData for canvas rendering
-            setDraftData(data as DraftData);
+
+            // Fetch the full draft.json for canvas rendering (theme, world, agents, recipes)
+            try {
+                const fullRes = await fetch('/generated/draft.json');
+                if (fullRes.ok) {
+                    const fullDraft = await fullRes.json();
+                    setDraftData(fullDraft as DraftData);
+                } else {
+                    // Fall back to the summary-only data
+                    setDraftData(data as DraftData);
+                }
+            } catch {
+                setDraftData(data as DraftData);
+            }
+
+            setFetchState('success');
         } catch {
             setMessage('Draft loading failed. Check server connection.');
+            setFetchState('error');
         }
-        setLoading(false);
-    }, []);
+    }, [apiUrl]);
 
     useEffect(() => {
         fetchDraft();
@@ -477,26 +660,54 @@ export const DraftPreview: React.FC = () => {
         setRefining(false);
     };
 
+    // Extract theme colors for display
+    const themeColors = extractThemeColors(draftData?.theme);
+    const themeName = draftData?.theme?.name ?? draft?.theme ?? 'Default';
+    const rooms = draftData?.world?.rooms ?? [];
+    const agents = draftData?.agents ?? [];
+    const recipes = draftData?.recipes ?? [];
+
     return (
         <div className="flex flex-col h-full bg-white">
             {/* Header */}
             <div className="p-4 border-b-2 border-black bg-[#FFD100]">
-                <h2 className="font-black text-lg text-black">Draft Preview</h2>
-                <p className="text-xs text-gray-700 mt-1">
-                    Review the AI-generated draft and apply to your project
-                </p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="font-black text-lg text-black">Draft Preview</h2>
+                        <p className="text-xs text-gray-700 mt-1">
+                            Review the AI-generated draft and apply to your project
+                        </p>
+                    </div>
+                    {draft?.method && <MethodBadge method={draft.method} />}
+                </div>
             </div>
 
-            {loading ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400 font-bold animate-pulse">
-                    Loading draft...
+            {/* Loading state: skeleton */}
+            {loading && <DraftSkeleton />}
+
+            {/* Error state */}
+            {fetchState === 'error' && !loading && (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-4 p-8">
+                    <div className="w-16 h-16 rounded-full bg-red-50 border-2 border-black flex items-center justify-center shadow-[2px_2px_0_0_#000]">
+                        <span className="text-2xl font-black text-red-400">!</span>
+                    </div>
+                    <p className="font-bold text-sm text-center text-red-600">
+                        {message || 'Failed to load draft data.'}
+                    </p>
+                    <button
+                        onClick={fetchDraft}
+                        className="text-xs font-black px-4 py-2 bg-white border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
+                    >
+                        Retry
+                    </button>
                 </div>
-            ) : !draft ? (
+            )}
+
+            {/* Empty state */}
+            {fetchState === 'success' && !draft && !loading && (
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-4 p-8">
-                    <div className="text-4xl">
-                        <span role="img" aria-label="empty">
-                            {''}
-                        </span>
+                    <div className="w-16 h-16 rounded-full bg-gray-50 border-2 border-black flex items-center justify-center shadow-[2px_2px_0_0_#000]">
+                        <span className="text-2xl font-black text-gray-300">?</span>
                     </div>
                     <p className="font-bold text-sm text-center">
                         No draft generated yet.
@@ -505,21 +716,67 @@ export const DraftPreview: React.FC = () => {
                     </p>
                     <button
                         onClick={fetchDraft}
-                        className="text-xs font-black px-4 py-2 bg-white border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:shadow-[3px_3px_0_0_#000] transition-all"
+                        className="text-xs font-black px-4 py-2 bg-white border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
                     >
                         Refresh
                     </button>
                 </div>
-            ) : (
+            )}
+
+            {/* Success state with data */}
+            {fetchState === 'success' && draft && !loading && (
                 <div className="flex-1 overflow-y-auto">
+                    {/* Theme Section */}
+                    <div className="px-4 pt-4 pb-2">
+                        <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
+                            Theme
+                        </h3>
+                        <div className="p-3 rounded-lg border-2 border-black bg-white shadow-[2px_2px_0_0_#000]">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="font-black text-sm text-black">{themeName}</span>
+                                {draft.method && <MethodBadge method={draft.method} />}
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                <ColorSwatch color={themeColors.primary} label="Primary" />
+                                <ColorSwatch color={themeColors.secondary} label="Secondary" />
+                                <ColorSwatch color={themeColors.background} label="Background" />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Summary Cards */}
                     <div className="p-4 grid grid-cols-3 gap-3">
-                        <StatCard label="Rooms" value={draft.rooms} color="#FBBF24" />
-                        <StatCard label="Collision" value={draft.collisionTiles} color="#EF4444" />
-                        <StatCard label="Spawns" value={draft.spawnPoints} color="#A78BFA" />
-                        <StatCard label="Agents" value={draftData?.agents?.length ?? draft.agents} color="#34D399" />
-                        <StatCard label="Recipes" value={draftData?.recipes?.length ?? draft.recipes} color="#60A5FA" />
-                        <StatCard label="Theme" value={draft.theme} color="#E8DAFF" isText />
+                        <StatCard
+                            label="Rooms"
+                            value={rooms.length || draft.rooms}
+                            color={themeColors.primary}
+                        />
+                        <StatCard
+                            label="Collision"
+                            value={draft.collisionTiles}
+                            color="#EF4444"
+                        />
+                        <StatCard
+                            label="Spawns"
+                            value={draft.spawnPoints}
+                            color="#A78BFA"
+                        />
+                        <StatCard
+                            label="Agents"
+                            value={agents.length || draft.agents}
+                            color="#34D399"
+                        />
+                        <StatCard
+                            label="Recipes"
+                            value={recipes.length || draft.recipes}
+                            color="#60A5FA"
+                        />
+                        <StatCard
+                            label="Theme"
+                            value={themeName}
+                            color={themeColors.primary}
+                            isText
+                        />
                     </div>
 
                     {/* Canvas World Preview */}
@@ -536,38 +793,65 @@ export const DraftPreview: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Agent List (compact) */}
-                    {draftData?.agents && draftData.agents.length > 0 && (
+                    {/* Room List (compact) */}
+                    {rooms.length > 0 && (
                         <div className="px-4 mb-3">
                             <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
-                                Agents ({draftData.agents.length})
+                                Rooms ({rooms.length})
                             </h3>
                             <div className="flex flex-wrap gap-1.5">
-                                {draftData.agents.slice(0, 30).map(agent => (
+                                {rooms.map((room, idx) => (
+                                    <span
+                                        key={room.id}
+                                        className="text-[10px] font-bold px-2 py-1 rounded border-2 border-black bg-white shadow-[1px_1px_0_0_#000] flex items-center gap-1"
+                                    >
+                                        <span
+                                            className="inline-block w-2 h-2 rounded-sm border border-black shrink-0"
+                                            style={{ backgroundColor: getRoomColor(idx, themeColors) }}
+                                        />
+                                        {room.name || room.id}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Agent List (compact, with roles) */}
+                    {agents.length > 0 && (
+                        <div className="px-4 mb-3">
+                            <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
+                                Agents ({agents.length})
+                            </h3>
+                            <div className="flex flex-wrap gap-1.5">
+                                {agents.slice(0, 30).map(agent => (
                                     <span
                                         key={agent.id}
                                         className="text-[10px] font-bold px-2 py-1 rounded border-2 border-black bg-[#34D399]/20 shadow-[1px_1px_0_0_#000]"
+                                        title={agent.role ? `Role: ${agent.role}` : undefined}
                                     >
                                         {agent.name}
+                                        {agent.role && agent.role !== 'General' && (
+                                            <span className="text-gray-400 ml-1">({agent.role})</span>
+                                        )}
                                     </span>
                                 ))}
-                                {draftData.agents.length > 30 && (
+                                {agents.length > 30 && (
                                     <span className="text-[10px] font-bold px-2 py-1 text-gray-400">
-                                        +{draftData.agents.length - 30} more
+                                        +{agents.length - 30} more
                                     </span>
                                 )}
                             </div>
                         </div>
                     )}
 
-                    {/* Recipe List (compact) */}
-                    {draftData?.recipes && draftData.recipes.length > 0 && (
+                    {/* Recipe List (sidebar-style list) */}
+                    {recipes.length > 0 && (
                         <div className="px-4 mb-3">
                             <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
-                                Recipes ({draftData.recipes.length})
+                                Recipes ({recipes.length})
                             </h3>
                             <div className="space-y-1.5">
-                                {draftData.recipes.map(recipe => (
+                                {recipes.map(recipe => (
                                     <div
                                         key={recipe.id}
                                         className="flex items-center gap-2 p-2 rounded-lg border-2 border-black bg-white shadow-[1px_1px_0_0_#000]"
@@ -617,7 +901,7 @@ export const DraftPreview: React.FC = () => {
             {/* Action Buttons (fixed bottom) */}
             {draft && !loading && (
                 <div className="p-4 border-t-2 border-black bg-gray-50 space-y-3">
-                    {message && (
+                    {message && fetchState !== 'error' && (
                         <p
                             className={`text-xs font-bold text-center ${
                                 message.toLowerCase().includes('fail') ? 'text-red-500' : 'text-green-600'

@@ -344,3 +344,87 @@ export function validateWorld(world: GridWorld): { valid: boolean; unreachable: 
 
     return { valid: unreachable.length === 0, unreachable };
 }
+
+// ── Helper: collect all walkable cells ──
+export function getWalkableCells(world: GridWorld): { x: number; y: number }[] {
+    const result: { x: number; y: number }[] = [];
+    for (let y = 0; y < world.rows; y++) {
+        for (let x = 0; x < world.cols; x++) {
+            const cell = world.cells[y][x];
+            if (!cell.collision && !cell.wall) {
+                result.push({ x, y });
+            }
+        }
+    }
+    return result;
+}
+
+// ── Helper: collect walkable cells within a specific zone ──
+export function getZoneCells(world: GridWorld, zone: ZoneType): { x: number; y: number }[] {
+    const result: { x: number; y: number }[] = [];
+    for (let y = 0; y < world.rows; y++) {
+        for (let x = 0; x < world.cols; x++) {
+            const cell = world.cells[y][x];
+            if (cell.zone === zone && !cell.collision && !cell.wall) {
+                result.push({ x, y });
+            }
+        }
+    }
+    return result;
+}
+
+// ── Helper: find nearest walkable cell to a given position ──
+export function getNearestWalkable(world: GridWorld, px: number, py: number): { x: number; y: number } {
+    // If the given cell is already walkable, return it
+    if (
+        px >= 0 && px < world.cols && py >= 0 && py < world.rows &&
+        !world.cells[py][px].collision && !world.cells[py][px].wall
+    ) {
+        return { x: px, y: py };
+    }
+    // BFS outward to find nearest walkable
+    const visited = new Set<string>();
+    const queue: { x: number; y: number }[] = [{ x: px, y: py }];
+    while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const k = `${cur.x},${cur.y}`;
+        if (visited.has(k)) continue;
+        visited.add(k);
+        if (cur.x < 0 || cur.x >= world.cols || cur.y < 0 || cur.y >= world.rows) continue;
+        const cell = world.cells[cur.y][cur.x];
+        if (!cell.collision && !cell.wall) return { x: cur.x, y: cur.y };
+        queue.push(
+            { x: cur.x - 1, y: cur.y },
+            { x: cur.x + 1, y: cur.y },
+            { x: cur.x, y: cur.y - 1 },
+            { x: cur.x, y: cur.y + 1 },
+        );
+    }
+    // Fallback: center of the map
+    return { x: Math.floor(world.cols / 2), y: Math.floor(world.rows / 2) };
+}
+
+// ── Helper: get a random walkable cell within Manhattan radius of a point ──
+export function getRandomWalkableNear(
+    world: GridWorld,
+    cx: number,
+    cy: number,
+    radius: number,
+): { x: number; y: number } | null {
+    const candidates: { x: number; y: number }[] = [];
+    const minX = Math.max(0, cx - radius);
+    const maxX = Math.min(world.cols - 1, cx + radius);
+    const minY = Math.max(0, cy - radius);
+    const maxY = Math.min(world.rows - 1, cy + radius);
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            if (Math.abs(x - cx) + Math.abs(y - cy) > radius) continue;
+            const cell = world.cells[y][x];
+            if (!cell.collision && !cell.wall) {
+                candidates.push({ x, y });
+            }
+        }
+    }
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+}

@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { AgentProfile, Job, LogEntry, Recipe, AgentState } from '../../types/platform';
 import { DEFAULT_AGENTS, DEFAULT_RECIPES } from '../../types/platform';
 import { useAppStore, type LogVerbosity } from '../../store/useAppStore';
 import { parseLogState, getStateColor } from '../../lib/logParser';
 import { Activity, Search, FolderOpen, Image, FileText, Package } from 'lucide-react';
+
+type SettingsSyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 type RunTab = 'agents' | 'jobs' | 'logs' | 'artifacts' | 'settings';
 
@@ -46,6 +48,91 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     // P2-7: Run settings from store
     const runSettings = useAppStore((s) => s.runSettings);
     const updateRunSettings = useAppStore((s) => s.updateRunSettings);
+    const appSettings = useAppStore((s) => s.appSettings);
+
+    // FE-4: Settings sync status
+    const [settingsSyncStatus, setSettingsSyncStatus] = useState<SettingsSyncStatus>('idle');
+    const settingsInitializedRef = useRef(false);
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // FE-4: Fetch run settings from backend on mount (server takes precedence)
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const res = await fetch(`${appSettings.apiUrl}/api/settings/run`);
+                if (res.ok) {
+                    const data = await res.json();
+                    updateRunSettings({
+                        maxConcurrentAgents: data.maxConcurrentAgents,
+                        logVerbosity: data.logVerbosity as LogVerbosity,
+                        runTimeoutSeconds: data.runTimeoutSeconds,
+                    });
+                }
+            } catch {
+                // Backend unavailable -- keep local defaults
+            } finally {
+                settingsInitializedRef.current = true;
+            }
+        };
+        fetchSettings();
+    }, [appSettings.apiUrl, updateRunSettings]);
+
+    // FE-4: Debounced save -- 500ms after last change, sync to backend
+    const syncSettingsToServer = useCallback(async (settings: {
+        maxConcurrentAgents: number;
+        logVerbosity: string;
+        runTimeoutSeconds: number;
+    }) => {
+        setSettingsSyncStatus('saving');
+        try {
+            const res = await fetch(`${appSettings.apiUrl}/api/settings/run`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            if (res.ok) {
+                setSettingsSyncStatus('saved');
+                // Clear "Saved" after 2 seconds
+                if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+                savedTimerRef.current = setTimeout(() => setSettingsSyncStatus('idle'), 2000);
+            } else {
+                setSettingsSyncStatus('error');
+            }
+        } catch {
+            setSettingsSyncStatus('error');
+        }
+    }, [appSettings.apiUrl]);
+
+    useEffect(() => {
+        // Skip the initial render and the server-fetch merge
+        if (!settingsInitializedRef.current) return;
+
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+            syncSettingsToServer({
+                maxConcurrentAgents: runSettings.maxConcurrentAgents,
+                logVerbosity: runSettings.logVerbosity,
+                runTimeoutSeconds: runSettings.runTimeoutSeconds,
+            });
+        }, 500);
+
+        return () => {
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        };
+    }, [
+        runSettings.maxConcurrentAgents,
+        runSettings.logVerbosity,
+        runSettings.runTimeoutSeconds,
+        syncSettingsToServer,
+    ]);
+
+    // Cleanup timers on unmount
+    useEffect(() => {
+        return () => {
+            if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        };
+    }, []);
 
     // R-4: Log filtering
     const [logFilter, setLogFilter] = useState<LogFilter>('all');
@@ -502,10 +589,21 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* ─── Settings Tab (P2-7) ─── */}
+                {/* ─── Settings Tab (P2-7 + FE-4: Server Sync) ─── */}
                 {tab === 'settings' && (
                     <div className="p-4 space-y-5">
-                        <h3 className="text-xs font-black text-black uppercase mb-3">실행 설정</h3>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-xs font-black text-black uppercase">실행 설정</h3>
+                            {settingsSyncStatus === 'saving' && (
+                                <span className="text-xs font-bold text-gray-500 animate-pulse">저장 중...</span>
+                            )}
+                            {settingsSyncStatus === 'saved' && (
+                                <span className="text-xs font-bold text-emerald-600 px-2 py-0.5 bg-emerald-50 border border-emerald-300 rounded-md">Saved</span>
+                            )}
+                            {settingsSyncStatus === 'error' && (
+                                <span className="text-xs font-bold text-red-600 px-2 py-0.5 bg-red-50 border border-red-300 rounded-md">저장 실패</span>
+                            )}
+                        </div>
 
                         {/* Max Concurrent Agents */}
                         <div className="space-y-1.5">

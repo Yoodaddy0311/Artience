@@ -1,8 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import { type AgentState } from '../../types/platform';
-import { createDefaultWorld, findPath, TILE_SIZE, TileType, type ZoneType } from '../../systems/grid-world';
+import {
+    createDefaultWorld,
+    findPath,
+    TILE_SIZE,
+    TileType,
+    type ZoneType,
+    type GridWorld,
+    getWalkableCells,
+    getZoneCells,
+    getNearestWalkable,
+    getRandomWalkableNear,
+} from '../../systems/grid-world';
 import { useAppStore } from '../../store/useAppStore';
+import { DEFAULT_AGENTS, type AgentProfile } from '../../types/platform';
 
 const TARGET_FPS = 60;
 const FRAME_MS = 1000 / TARGET_FPS;
@@ -29,13 +41,13 @@ const STATE_COLORS_CSS: Record<string, string> = {
 };
 
 const STATE_LABELS: Record<AgentState, string> = {
-    IDLE: '대기',
-    WALK: '이동',
-    THINKING: '고민 중',
-    RUNNING: '작업 중',
-    SUCCESS: '성공',
-    ERROR: '오류',
-    NEEDS_INPUT: '입력 대기',
+    IDLE: '\uB300\uAE30',
+    WALK: '\uC774\uB3D9',
+    THINKING: '\uACE0\uBBFC \uC911',
+    RUNNING: '\uC791\uC5C5 \uC911',
+    SUCCESS: '\uC131\uACF5',
+    ERROR: '\uC624\uB958',
+    NEEDS_INPUT: '\uC785\uB825 \uB300\uAE30',
 };
 
 const RACCOON_AGENT_ID = 'raccoon';
@@ -58,6 +70,17 @@ const ZONE_LABEL_COLORS: Record<ZoneType, number> = {
     hallway: 0xe5e7eb,
 };
 
+// ── Agent movement constants ──
+const AGENT_SPEED_TILES_PER_SEC = 2; // 2 tiles per second
+const AGENT_SPEED_PX = AGENT_SPEED_TILES_PER_SEC * TILE_SIZE / TARGET_FPS; // pixels per frame
+const IDLE_WANDER_RADIUS = 5; // tiles
+const IDLE_PAUSE_MIN_MS = 2000;
+const IDLE_PAUSE_MAX_MS = 5000;
+const SUCCESS_ANIM_FRAMES = 72; // ~1.2s at 60fps
+const ERROR_ANIM_FRAMES = 72;
+const AGENT_SPRITE_HEIGHT = 48; // target sprite height in pixels
+const STAGGER_DELAY_MS = 80; // ms between initial path calculations
+
 interface LogItem {
     ts: number;
     text: string;
@@ -68,6 +91,35 @@ interface InspectorData {
     visible: boolean;
     screenX: number;
     screenY: number;
+}
+
+// ── Per-agent runtime state (mutable, not React state) ──
+interface AgentRuntime {
+    id: string;
+    name: string;
+    profile: AgentProfile;
+    state: AgentState;
+    // PIXI objects
+    container: PIXI.Container;
+    sprite: PIXI.Sprite;
+    shadow: PIXI.Graphics;
+    nameLabel: PIXI.Text;
+    stateDot: PIXI.Graphics;
+    // Pathfinding
+    gridX: number;
+    gridY: number;
+    path: { x: number; y: number }[]; // pixel coords
+    // Pause / state timers
+    pauseTimer: number; // frames remaining in pause
+    stateAnimTimer: number; // frames since entering SUCCESS/ERROR
+    // Movement
+    baseScaleX: number;
+    // Speech bubble
+    bubbleContainer: PIXI.Container | null;
+    bubbleFadeTimer: number;
+    bubbleFading: boolean;
+    // Error flash
+    errorFlashTimer: number;
 }
 
 export const AgentTown: React.FC = () => {
@@ -158,6 +210,16 @@ export const AgentTown: React.FC = () => {
 
                 // ── Grid World Generation ──
                 const gridWorld = createDefaultWorld();
+
+                // Pre-compute walkable cells and zone cells for performance
+                const allWalkable = getWalkableCells(gridWorld);
+                const zoneCellsCache: Record<string, { x: number; y: number }[]> = {};
+                const getZoneCellsCached = (zone: ZoneType): { x: number; y: number }[] => {
+                    if (!zoneCellsCache[zone]) {
+                        zoneCellsCache[zone] = getZoneCells(gridWorld, zone);
+                    }
+                    return zoneCellsCache[zone];
+                };
 
                 // ── Grid Background with Walls/Desks ──
                 const grid = new PIXI.Graphics();
@@ -250,10 +312,9 @@ export const AgentTown: React.FC = () => {
                     app.stage.addChild(zoneLabelContainer);
                 }
 
-                // DC-7: agentsToSpawn kept as empty array (raccoon-only mode)
-                const agentsToSpawn: [] = [];
-
-                // ── Raccoon Spritesheet Character (frame-based animation) ──
+                // ══════════════════════════════════════════════════════
+                // ── RACCOON: Spritesheet Character (kept as-is) ──
+                // ══════════════════════════════════════════════════════
                 const SPRITESHEET_PATH = '/assets/characters/raccoon_spritesheet.png';
                 const COLS = 5;
                 const ROWS = 3;
@@ -293,10 +354,8 @@ export const AgentTown: React.FC = () => {
                 ];
 
                 const pickNewDestination = () => {
-                    // Find a random walkable cell
-                    const walkableCells = gridWorld.cells.flatMap((row, y) => row.map((cell, x) => ({ cell, x, y }))).filter(c => !c.cell.collision && !c.cell.wall);
-                    if (walkableCells.length === 0) return;
-                    const targetCell = walkableCells[Math.floor(Math.random() * walkableCells.length)];
+                    if (allWalkable.length === 0) return;
+                    const targetCell = allWalkable[Math.floor(Math.random() * allWalkable.length)];
 
                     // Current grid position
                     const startX = Math.floor(Math.max(0, Math.min(W, raccoonContainer?.x || W / 2)) / TILE_SIZE);
@@ -316,10 +375,8 @@ export const AgentTown: React.FC = () => {
                 };
 
                 // Navigate raccoon to a specific zone using A* pathfinding
-                const pickZoneDestination = (zone: 'work' | 'meeting' | 'rest' | 'entrance' | 'hallway') => {
-                    const zoneCells = gridWorld.cells.flatMap((row, y) =>
-                        row.map((cell, x) => ({ cell, x, y }))
-                    ).filter(c => c.cell.zone === zone && !c.cell.collision && !c.cell.wall);
+                const pickZoneDestination = (zone: ZoneType) => {
+                    const zoneCells = getZoneCellsCached(zone);
 
                     if (zoneCells.length === 0) {
                         pickNewDestination();
@@ -504,6 +561,240 @@ export const AgentTown: React.FC = () => {
                     console.warn('[AgentTown] Failed to load raccoon spritesheet:', e);
                 }
 
+                // ══════════════════════════════════════════════════════
+                // ── 25 DEFAULT AGENTS: Load sprites + create runtime ──
+                // ══════════════════════════════════════════════════════
+
+                // Deduplicate sprite paths for texture loading
+                const uniqueSpritePaths = [...new Set(DEFAULT_AGENTS.map(a => a.sprite))];
+                const textureCache: Record<string, PIXI.Texture> = {};
+
+                // Load all unique textures in parallel
+                try {
+                    const texturePromises = uniqueSpritePaths.map(async (path) => {
+                        try {
+                            const tex = await PIXI.Assets.load(path);
+                            textureCache[path] = tex;
+                        } catch (err) {
+                            console.warn(`[AgentTown] Failed to load sprite: ${path}`, err);
+                        }
+                    });
+                    await Promise.all(texturePromises);
+                } catch (err) {
+                    console.warn('[AgentTown] Error loading agent textures:', err);
+                }
+
+                if (!isMounted) return;
+
+                // Create agent runtime objects
+                const agentRuntimes: AgentRuntime[] = [];
+                const agentRuntimeMap = new Map<string, AgentRuntime>();
+
+                for (let i = 0; i < DEFAULT_AGENTS.length; i++) {
+                    const profile = DEFAULT_AGENTS[i];
+                    const tex = textureCache[profile.sprite];
+                    if (!tex) continue;
+
+                    // Find walkable spawn position near home
+                    const spawnPos = getNearestWalkable(gridWorld, profile.home.x, profile.home.y);
+
+                    // Create container
+                    const agentContainer = new PIXI.Container();
+                    agentContainer.x = (spawnPos.x + 0.5) * TILE_SIZE;
+                    agentContainer.y = (spawnPos.y + 0.5) * TILE_SIZE;
+
+                    // Shadow
+                    const shadow = new PIXI.Graphics();
+                    shadow.ellipse(0, 0, 14, 5);
+                    shadow.fill({ color: 0x000000, alpha: 0.12 });
+                    shadow.y = 2;
+                    agentContainer.addChild(shadow);
+
+                    // Sprite
+                    const agentSprite = new PIXI.Sprite(tex);
+                    agentSprite.anchor.set(0.5, 1);
+                    const spriteScale = AGENT_SPRITE_HEIGHT / tex.height;
+                    agentSprite.scale.set(spriteScale);
+                    agentContainer.addChild(agentSprite);
+
+                    // Name label (small, below sprite)
+                    const nameLabel = new PIXI.Text({
+                        text: profile.name,
+                        style: {
+                            fontSize: 9,
+                            fontFamily: 'system-ui, sans-serif',
+                            fontWeight: '700',
+                            fill: 0x374151,
+                        },
+                    });
+                    nameLabel.anchor.set(0.5, 0);
+                    nameLabel.y = 4;
+                    agentContainer.addChild(nameLabel);
+
+                    // State dot
+                    const stateDot = new PIXI.Graphics();
+                    stateDot.circle(0, 0, 3);
+                    stateDot.fill(STATE_COLORS.IDLE);
+                    stateDot.x = nameLabel.width / 2 + 6;
+                    stateDot.y = 10;
+                    agentContainer.addChild(stateDot);
+
+                    app.stage.addChild(agentContainer);
+
+                    const runtime: AgentRuntime = {
+                        id: profile.id,
+                        name: profile.name,
+                        profile,
+                        state: 'IDLE',
+                        container: agentContainer,
+                        sprite: agentSprite,
+                        shadow,
+                        nameLabel,
+                        stateDot,
+                        gridX: spawnPos.x,
+                        gridY: spawnPos.y,
+                        path: [],
+                        pauseTimer: Math.floor(Math.random() * 120) + 60, // random initial pause
+                        stateAnimTimer: 0,
+                        baseScaleX: spriteScale,
+                        bubbleContainer: null,
+                        bubbleFadeTimer: 0,
+                        bubbleFading: false,
+                        errorFlashTimer: 0,
+                    };
+
+                    agentRuntimes.push(runtime);
+                    agentRuntimeMap.set(profile.id, runtime);
+                    // Also map by name (lowercase) for TASK_ASSIGNED matching
+                    agentRuntimeMap.set(profile.name.toLowerCase(), runtime);
+                }
+
+                // ── Helper: pick wandering destination for an agent ──
+                const pickAgentWanderDest = (agent: AgentRuntime) => {
+                    const near = getRandomWalkableNear(
+                        gridWorld,
+                        agent.gridX,
+                        agent.gridY,
+                        IDLE_WANDER_RADIUS,
+                    );
+                    if (!near) return;
+                    const path = findPath(gridWorld, agent.gridX, agent.gridY, near.x, near.y);
+                    agent.path = path.map(p => ({
+                        x: (p.x + 0.5) * TILE_SIZE,
+                        y: (p.y + 0.5) * TILE_SIZE,
+                    }));
+                };
+
+                // ── Helper: pick zone destination for an agent ──
+                const pickAgentZoneDest = (agent: AgentRuntime, zone: ZoneType) => {
+                    const cells = getZoneCellsCached(zone);
+                    if (cells.length === 0) {
+                        pickAgentWanderDest(agent);
+                        return;
+                    }
+                    const target = cells[Math.floor(Math.random() * cells.length)];
+                    const path = findPath(gridWorld, agent.gridX, agent.gridY, target.x, target.y);
+                    agent.path = path.map(p => ({
+                        x: (p.x + 0.5) * TILE_SIZE,
+                        y: (p.y + 0.5) * TILE_SIZE,
+                    }));
+                };
+
+                // ── Helper: update agent state dot ──
+                const updateAgentStateDot = (agent: AgentRuntime, state: AgentState) => {
+                    agent.stateDot.clear();
+                    agent.stateDot.circle(0, 0, 3);
+                    agent.stateDot.fill(STATE_COLORS[state] || STATE_COLORS.IDLE);
+                };
+
+                // ── Helper: show speech bubble on an agent ──
+                const showAgentBubble = (agent: AgentRuntime, text: string) => {
+                    // Remove existing bubble
+                    if (agent.bubbleContainer) {
+                        agent.container.removeChild(agent.bubbleContainer);
+                        agent.bubbleContainer = null;
+                    }
+
+                    const bubble = new PIXI.Container();
+                    bubble.y = -70;
+
+                    const truncatedText = text.length > 30 ? text.slice(0, 30) + '...' : text;
+                    const bubbleText = new PIXI.Text({
+                        text: truncatedText,
+                        style: {
+                            fontSize: 9,
+                            fontFamily: 'system-ui, sans-serif',
+                            fontWeight: '700',
+                            fill: 0x18181b,
+                            wordWrap: true,
+                            wordWrapWidth: 100,
+                        },
+                    });
+                    bubbleText.anchor.set(0.5, 0.5);
+
+                    const padX = 6;
+                    const padY = 4;
+                    const bg = new PIXI.Graphics();
+                    const bw = bubbleText.width + padX * 2;
+                    const bh = bubbleText.height + padY * 2;
+                    bg.roundRect(-bw / 2, -bh / 2, bw, bh, 4);
+                    bg.fill({ color: 0xffffff, alpha: 1 });
+                    bg.stroke({ width: 1.5, color: 0x18181b });
+
+                    bg.moveTo(-4, bh / 2);
+                    bg.lineTo(0, bh / 2 + 5);
+                    bg.lineTo(4, bh / 2);
+                    bg.closePath();
+                    bg.fill({ color: 0xffffff });
+                    bg.stroke({ width: 1.5, color: 0x18181b });
+
+                    bubble.addChild(bg);
+                    bubble.addChild(bubbleText);
+                    bubble.alpha = 1;
+
+                    agent.container.addChild(bubble);
+                    agent.bubbleContainer = bubble;
+                    agent.bubbleFadeTimer = 0;
+                    agent.bubbleFading = false;
+                };
+
+                // ── Helper: handle state change for a non-raccoon agent ──
+                const handleAgentStateChange = (agent: AgentRuntime, newState: AgentState) => {
+                    agent.state = newState;
+                    agent.stateAnimTimer = 0;
+                    updateAgentStateDot(agent, newState);
+
+                    if (newState === 'RUNNING') {
+                        pickAgentZoneDest(agent, 'work');
+                    } else if (newState === 'THINKING') {
+                        // Stop and sway
+                        agent.path = [];
+                        agent.pauseTimer = 0;
+                    } else if (newState === 'SUCCESS') {
+                        agent.path = [];
+                        agent.pauseTimer = 0;
+                        agent.stateAnimTimer = 0;
+                    } else if (newState === 'ERROR') {
+                        agent.path = [];
+                        agent.pauseTimer = 0;
+                        agent.stateAnimTimer = 0;
+                        agent.errorFlashTimer = 0;
+                    } else if (newState === 'IDLE' || newState === 'WALK') {
+                        if (agent.path.length === 0) {
+                            pickAgentWanderDest(agent);
+                        }
+                    }
+                };
+
+                // Stagger initial pathfinding for the 25 agents
+                for (let i = 0; i < agentRuntimes.length; i++) {
+                    const agent = agentRuntimes[i];
+                    setTimeout(() => {
+                        if (!isMounted) return;
+                        pickAgentWanderDest(agent);
+                    }, i * STAGGER_DELAY_MS);
+                }
+
                 // ── WebSocket for state changes (auto-reconnect) ────────────
                 let reconnectDelay = 1000;
 
@@ -518,9 +809,10 @@ export const AgentTown: React.FC = () => {
                             const data = JSON.parse(event.data);
 
                             if (data.type === 'AGENT_STATE_CHANGE') {
+                                const newState = data.state as AgentState;
+
                                 // ── Handle Raccoon state changes ──
                                 if (data.agentId === RACCOON_AGENT_ID || data.agentId === 'raccoon') {
-                                    const newState = data.state as AgentState;
                                     raccoonState = newState;
                                     raccoonStateAnimTimer = 0;
 
@@ -530,7 +822,7 @@ export const AgentTown: React.FC = () => {
                                         setLogs(prev => {
                                             const entry: LogItem = {
                                                 ts: Date.now(),
-                                                text: `상태 변경: ${STATE_LABELS[newState]}`,
+                                                text: `\uC0C1\uD0DC \uBCC0\uACBD: ${STATE_LABELS[newState]}`,
                                                 state: newState,
                                             };
                                             return [...prev.slice(-19), entry];
@@ -555,6 +847,13 @@ export const AgentTown: React.FC = () => {
                                         }
                                     }
                                 }
+
+                                // ── Handle 25 agent state changes ──
+                                const agentId = data.agentId as string;
+                                const agent = agentRuntimeMap.get(agentId);
+                                if (agent) {
+                                    handleAgentStateChange(agent, newState);
+                                }
                             }
 
                             if (data.type === 'TASK_ASSIGNED') {
@@ -564,7 +863,7 @@ export const AgentTown: React.FC = () => {
                                         setLogs(prev => {
                                             const entry: LogItem = {
                                                 ts: Date.now(),
-                                                text: `작업 할당: ${data.taskContent.length > 50 ? data.taskContent.slice(0, 50) + '...' : data.taskContent}`,
+                                                text: `\uC791\uC5C5 \uD560\uB2F9: ${data.taskContent.length > 50 ? data.taskContent.slice(0, 50) + '...' : data.taskContent}`,
                                                 state: raccoonState,
                                             };
                                             return [...prev.slice(-19), entry];
@@ -572,7 +871,31 @@ export const AgentTown: React.FC = () => {
                                     }
 
                                     // P2-11: Show speech bubble above raccoon
-                                    showRaccoonBubble(data.taskContent || '새 작업 수신');
+                                    showRaccoonBubble(data.taskContent || '\uC0C8 \uC791\uC5C5 \uC218\uC2E0');
+                                }
+
+                                // Show speech bubble on matched agent
+                                const agentName = (data.agent as string || '').toLowerCase();
+                                const agent = agentRuntimeMap.get(agentName);
+                                if (agent) {
+                                    showAgentBubble(agent, data.taskContent || '\uC0C8 \uC791\uC5C5 \uC218\uC2E0');
+                                }
+                            }
+
+                            if (data.type === 'JOB_UPDATE') {
+                                // When a job completes, find the assigned agent and update state
+                                const job = data.job;
+                                if (job && job.assignedAgentId) {
+                                    const agent = agentRuntimeMap.get(job.assignedAgentId);
+                                    if (agent) {
+                                        if (job.state === 'SUCCESS') {
+                                            handleAgentStateChange(agent, 'SUCCESS');
+                                        } else if (job.state === 'ERROR') {
+                                            handleAgentStateChange(agent, 'ERROR');
+                                        } else if (job.state === 'RUNNING') {
+                                            handleAgentStateChange(agent, 'RUNNING');
+                                        }
+                                    }
                                 }
                             }
 
@@ -601,11 +924,156 @@ export const AgentTown: React.FC = () => {
                 };
                 connectWs();
 
-                // ── Animation Loop (R-5: State-aware character animations) ──
+                // ══════════════════════════════════════════════════════
+                // ── Animation Loop ──
+                // ══════════════════════════════════════════════════════
                 app.ticker.add(() => {
-                    // DC-8: Agent animation loop removed (agentsToSpawn is empty, no agent sprites)
+                    const now = Date.now();
 
-                    // ── Raccoon: waypoint-based movement + spritesheet + state animations ──
+                    // ────────────────────────────────────────────
+                    // ── 25 AGENTS: Movement + Animation ──
+                    // ────────────────────────────────────────────
+                    for (let ai = 0; ai < agentRuntimes.length; ai++) {
+                        const agent = agentRuntimes[ai];
+                        const { container, sprite, shadow } = agent;
+
+                        // ── Speech bubble fade ──
+                        if (agent.bubbleContainer) {
+                            agent.bubbleFadeTimer++;
+                            if (!agent.bubbleFading && agent.bubbleFadeTimer >= BUBBLE_DISPLAY_FRAMES) {
+                                agent.bubbleFading = true;
+                                agent.bubbleFadeTimer = 0;
+                            }
+                            if (agent.bubbleFading) {
+                                const fadeProgress = agent.bubbleFadeTimer / BUBBLE_FADE_FRAMES;
+                                agent.bubbleContainer.alpha = Math.max(0, 1 - fadeProgress);
+                                if (fadeProgress >= 1) {
+                                    container.removeChild(agent.bubbleContainer);
+                                    agent.bubbleContainer = null;
+                                    agent.bubbleFading = false;
+                                    agent.bubbleFadeTimer = 0;
+                                }
+                            }
+                        }
+
+                        // ── SUCCESS animation: bounce ──
+                        if (agent.state === 'SUCCESS') {
+                            agent.stateAnimTimer++;
+                            const jumpT = (now % 600) / 600;
+                            const jumpY = Math.sin(jumpT * Math.PI) * 10;
+                            sprite.y = -jumpY;
+                            sprite.rotation = Math.sin(now * 0.01) * 0.08;
+
+                            if (agent.stateAnimTimer >= SUCCESS_ANIM_FRAMES) {
+                                agent.state = 'IDLE';
+                                agent.stateAnimTimer = 0;
+                                sprite.y = 0;
+                                sprite.rotation = 0;
+                                updateAgentStateDot(agent, 'IDLE');
+                                pickAgentWanderDest(agent);
+                            }
+                            continue;
+                        }
+
+                        // ── ERROR animation: shake + red tint ──
+                        if (agent.state === 'ERROR') {
+                            agent.stateAnimTimer++;
+                            agent.errorFlashTimer++;
+                            const shakeX = Math.sin(now * 0.03) * 4;
+                            sprite.x = shakeX;
+                            sprite.rotation = Math.sin(now * 0.02) * 0.08;
+
+                            // Red tint for first 30 frames
+                            if (agent.errorFlashTimer < 30) {
+                                sprite.tint = 0xff6666;
+                            } else {
+                                sprite.tint = 0xffffff;
+                            }
+
+                            if (agent.stateAnimTimer >= ERROR_ANIM_FRAMES) {
+                                agent.state = 'IDLE';
+                                agent.stateAnimTimer = 0;
+                                sprite.x = 0;
+                                sprite.rotation = 0;
+                                sprite.tint = 0xffffff;
+                                updateAgentStateDot(agent, 'IDLE');
+                                pickAgentWanderDest(agent);
+                            }
+                            continue;
+                        }
+
+                        // Reset offsets from SUCCESS/ERROR
+                        sprite.x = 0;
+                        sprite.tint = 0xffffff;
+
+                        // ── THINKING: sway animation, no movement ──
+                        if (agent.state === 'THINKING') {
+                            sprite.rotation = Math.sin(now * 0.0015) * 0.06;
+                            // Subtle bob
+                            sprite.y = Math.sin(now * 0.002) * 2;
+                            continue;
+                        }
+
+                        sprite.rotation = 0;
+                        sprite.y = 0;
+
+                        // ── Movement along path ──
+                        if (agent.path.length > 0) {
+                            const target = agent.path[0];
+                            const dx = target.x - container.x;
+                            const dy = target.y - container.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+
+                            // Speed adjustment based on state
+                            const speed = agent.state === 'RUNNING'
+                                ? AGENT_SPEED_PX * 1.6
+                                : AGENT_SPEED_PX;
+
+                            if (dist > speed) {
+                                // Lerp towards target
+                                container.x += (dx / dist) * speed;
+                                container.y += (dy / dist) * speed;
+
+                                // Flip sprite based on horizontal direction
+                                if (Math.abs(dx) > 0.5) {
+                                    sprite.scale.x = dx > 0 ? agent.baseScaleX : -agent.baseScaleX;
+                                }
+
+                                // Subtle bob while walking
+                                sprite.y = Math.sin(now * 0.008) * 1.5;
+                            } else {
+                                // Reached waypoint
+                                container.x = target.x;
+                                container.y = target.y;
+                                agent.path.shift();
+
+                                // Update grid position
+                                agent.gridX = Math.floor(container.x / TILE_SIZE);
+                                agent.gridY = Math.floor(container.y / TILE_SIZE);
+                            }
+                        } else {
+                            // ── Pause at destination, then pick new target ──
+                            agent.pauseTimer++;
+                            const pauseFrames = (IDLE_PAUSE_MIN_MS + Math.random() * (IDLE_PAUSE_MAX_MS - IDLE_PAUSE_MIN_MS)) / (1000 / TARGET_FPS);
+
+                            if (agent.pauseTimer >= pauseFrames) {
+                                agent.pauseTimer = 0;
+                                if (agent.state === 'IDLE' || agent.state === 'WALK') {
+                                    pickAgentWanderDest(agent);
+                                } else if (agent.state === 'RUNNING') {
+                                    // Stay at work zone, pick new position within it
+                                    pickAgentZoneDest(agent, 'work');
+                                }
+                            }
+                        }
+
+                        // Shadow alpha
+                        shadow.alpha = agent.path.length > 0 ? 0.12 : 0.08 + Math.sin(now * 0.003) * 0.02;
+                    }
+
+                    // ────────────────────────────────────────────
+                    // ── RACCOON: Waypoint movement + spritesheet + state animations ──
+                    // ────────────────────────────────────────────
                     if (raccoonSprite && raccoonContainer && raccoonFrames.length > 0) {
                         // Recalculate state dot x on first rendered frame (text width now reliable)
                         if (raccoonStateDotNeedsRecalc && raccoonStateDotGfx && raccoonLabel) {
@@ -621,9 +1089,9 @@ export const AgentTown: React.FC = () => {
                         // P2-9: Highlight glow pulse animation
                         const glow = highlightGlowRef.current;
                         if (glow && glow.visible) {
-                            const pulse = 0.2 + Math.sin(Date.now() * 0.006) * 0.15;
+                            const pulse = 0.2 + Math.sin(now * 0.006) * 0.15;
                             glow.alpha = pulse;
-                            glow.scale.set(1 + Math.sin(Date.now() * 0.004) * 0.08);
+                            glow.scale.set(1 + Math.sin(now * 0.004) * 0.08);
                         }
 
                         // P2-11: Speech bubble fade management
@@ -646,7 +1114,6 @@ export const AgentTown: React.FC = () => {
                         }
 
                         let isMoving = false;
-                        const now = Date.now();
 
                         // ── SUCCESS animation: celebration jump (freeze in place) ──
                         if (raccoonState === 'SUCCESS') {
@@ -713,7 +1180,7 @@ export const AgentTown: React.FC = () => {
 
                             // THINKING sway animation (gentle rotation oscillation)
                             if (raccoonState === 'THINKING') {
-                                raccoonSprite.rotation = Math.sin(Date.now() * 0.0015) * 0.08;
+                                raccoonSprite.rotation = Math.sin(now * 0.0015) * 0.08;
                             } else {
                                 raccoonSprite.rotation = 0;
                             }
@@ -792,8 +1259,8 @@ export const AgentTown: React.FC = () => {
                         // Subtle shadow pulse when idle
                         if (raccoonShadow) {
                             raccoonShadow.alpha = (raccoonState === 'SUCCESS' || raccoonState === 'ERROR')
-                                ? 0.1 + Math.sin(Date.now() * 0.005) * 0.05
-                                : (raccoonPath.length > 0 ? 0.15 : 0.12 + Math.sin(Date.now() * 0.003) * 0.03);
+                                ? 0.1 + Math.sin(now * 0.005) * 0.05
+                                : (raccoonPath.length > 0 ? 0.15 : 0.12 + Math.sin(now * 0.003) * 0.03);
                         }
 
                         // Update screen position ref for inspector card placement
@@ -890,7 +1357,7 @@ export const AgentTown: React.FC = () => {
 
                     {/* State */}
                     <div className="px-3 py-2 border-b border-gray-200">
-                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">현재 상태</div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{'\uD604\uC7AC \uC0C1\uD0DC'}</div>
                         <div className="flex items-center gap-1.5">
                             <span
                                 className="inline-block w-2 h-2 rounded-full"
@@ -904,9 +1371,9 @@ export const AgentTown: React.FC = () => {
 
                     {/* Recent Logs */}
                     <div className="px-3 py-2">
-                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">최근 로그</div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{'\uCD5C\uADFC \uB85C\uADF8'}</div>
                         {recentLogs.length === 0 ? (
-                            <div className="text-xs text-gray-300 italic py-1">로그 없음</div>
+                            <div className="text-xs text-gray-300 italic py-1">{'\uB85C\uADF8 \uC5C6\uC74C'}</div>
                         ) : (
                             <div className="space-y-0.5 max-h-32 overflow-y-auto">
                                 {recentLogs.map((log, i) => (
