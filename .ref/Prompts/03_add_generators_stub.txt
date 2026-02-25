@@ -1,0 +1,5 @@
+Studio generator 모듈을 구현해라(MVP 규칙 기반).
+- 입력: builder prompt + asset 메타
+- 출력: /generated/{timestamp}/ 아래에 theme.json, world.json, agents.json, recipes.json 생성
+- Draft Preview는 generated 결과를 읽어 렌더
+- Apply는 project.json에 병합 + history 스냅샷 저장

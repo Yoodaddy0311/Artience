@@ -1,0 +1,31 @@
+너는 시니어 데스크탑/프론트엔드 엔지니어다.
+목표: Electron + Vite + TypeScript + Phaser 3 기반 “AI Studio CLI Town” MVP 레포를 생성하라.
+사용자는 비개발자이므로 npm install → npm run dev 한 번에 동작해야 한다.
+
+[요구]
+1) Studio 모드(기본)
+- Asset Inbox(드래그&드롭 파일 등록)
+- AI Builder Chat(규칙 기반 generator 스텁 호출)
+- Draft Preview + Apply(버전 스냅샷 저장) + Version History + Rollback
+- Export/Import(project.json + assets + generated)
+
+2) Run 모드
+- 25 에이전트 이동 + 장애물 회피(A* 또는 easystarjs)
+- Jobs/Logs 패널
+- demo recipe(예: node -v) 실행/중지 + stdout/stderr 스트리밍 + 상태 전환
+
+3) 데이터
+- /project/project.json 로드/저장
+- /history/ 스냅샷 저장
+- /generated/ generator 산출물 저장
+
+4) 에셋
+- 프로젝트 루트 assets/ 폴더에 스프라이트가 존재한다고 가정:
+  - assets/doggo_idle_12x1_256.png (12 frames, 256)
+  - assets/doggo_walk_8x1_256.png (8 frames, 256)
+- Phaser에서 애니메이션 정의하여 적용(scale 0.25~0.35)
+
+[산출물]
+- 레포 전체 파일 생성
+- README에 설치/실행/사용법(Studio→Generate→Apply→Run) 기재
+- npm scripts: dev/build

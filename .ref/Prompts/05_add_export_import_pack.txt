@@ -1,0 +1,4 @@
+Export/Import를 완성해라.
+- Export: project/ + generated/ + assets/를 선택 경로에 ZIP로 내보내기
+- Import: ZIP을 읽어 임시 디렉토리에 풀고, project.json을 로드해 현재 프로젝트로 교체
+- 충돌 시(파일명 겹침) 해결 규칙: 새 폴더명에 suffix 부여

@@ -1,0 +1,4 @@
+Version History를 고도화해라.
+- Apply 시 snapshot 저장(history/{id}.json)
+- 버전 리스트에서 Rollback/Compare 지원
+- Compare는 “방 개수 변화/충돌 타일 수 변화/레시피 추가/에이전트 수 변화” 요약 출력

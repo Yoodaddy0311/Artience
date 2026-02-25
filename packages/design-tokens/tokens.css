@@ -1,0 +1,66 @@
+:root {
+    /* Primary — Warm Cream */
+    --color-cream-50: #FFF9F0;
+    --color-cream-100: #FFF3E0;
+    --color-cream-200: #FFE8CC;
+    --color-cream-300: #FFD9A8;
+
+    /* Secondary — Soft Brown */
+    --color-brown-400: #D4A574;
+    --color-brown-500: #B8886E;
+    --color-brown-600: #8B6F5E;
+    --color-brown-700: #5D4E42;
+    --color-brown-800: #3E342D;
+    --color-brown-900: #2A231E;
+
+    /* Accents */
+    --color-pink: #FFB5B5;
+    --color-gray: #A0AEC0;
+    --color-amber: #F6C67C;
+    --color-lavender: #D6BCFA;
+    --color-blue: #90CDF4;
+    --color-peach: #FEB2B2;
+
+    /* Status */
+    --color-success: #9AE6B4;
+    --color-error: #FEB2B2;
+    --color-warning: #FEFCBF;
+    --color-info: #BEE3F8;
+    --color-running: #C4B5FD;
+
+    /* Spacing */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --space-16: 64px;
+
+    /* Rounding */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(93, 78, 66, 0.06);
+    --shadow-md: 0 2px 8px rgba(93, 78, 66, 0.08);
+    --shadow-lg: 0 4px 16px rgba(93, 78, 66, 0.12);
+    --shadow-xl: 0 8px 32px rgba(93, 78, 66, 0.16);
+    --shadow-glow: 0 0 20px rgba(255, 181, 181, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-cream-50: #1A1612;
+        --color-cream-100: #2D2520;
+        --color-cream-200: #4A3F36;
+        --color-brown-700: #E8DDD4;
+        --color-brown-800: #FFF9F0;
+    }
+}

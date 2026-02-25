@@ -1,0 +1,4 @@
+경로탐색과 Validate 기능을 강화해라.
+- easystarjs 사용(또는 A* 구현)
+- collision 레이어 기반으로 walkable 계산
+- Validate 버튼 클릭 시 spawn→랜덤 목표 5개 경로 검사 후 리포트 출력

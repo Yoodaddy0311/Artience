@@ -1,0 +1,7 @@
+{
+    "name": "@dogba/design-tokens",
+    "version": "1.0.0",
+    "main": "tokens.ts",
+    "deprecated": "This package is not consumed by any app. Design tokens are inlined in Tailwind config. See DC-13.",
+    "dependencies": {}
+}

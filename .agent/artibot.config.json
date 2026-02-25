@@ -1,0 +1,212 @@
+{
+  "version": "1.6.0",
+
+  "agents": {
+    "modelPolicy": {
+      "high": { "model": "opus", "agents": ["orchestrator", "architect", "security-reviewer"] },
+      "medium": { "model": "sonnet", "agents": ["frontend-developer", "backend-developer", "code-reviewer", "tdd-guide", "database-reviewer", "mcp-developer", "typescript-pro", "planner", "refactor-cleaner", "build-error-resolver", "llm-architect", "devops-engineer", "performance-engineer"] },
+      "low": { "model": "haiku", "agents": ["doc-updater", "content-marketer", "e2e-runner", "marketing-strategist", "data-analyst", "presentation-designer", "seo-specialist", "cro-specialist", "ad-specialist", "repo-benchmarker"] }
+    },
+    "categories": {
+      "manager": ["orchestrator", "planner", "architect"],
+      "expert": ["security-reviewer", "frontend-developer", "backend-developer", "database-reviewer", "performance-engineer", "mcp-developer", "llm-architect", "typescript-pro", "devops-engineer"],
+      "builder": ["code-reviewer", "tdd-guide", "build-error-resolver", "refactor-cleaner"],
+      "support": ["doc-updater", "content-marketer", "e2e-runner", "marketing-strategist", "data-analyst", "presentation-designer", "seo-specialist", "cro-specialist", "ad-specialist", "repo-benchmarker"]
+    },
+    "taskBased": {
+      "code review": "code-reviewer",
+      "security review": "security-reviewer",
+      "architecture": "architect",
+      "frontend": "frontend-developer",
+      "backend": "backend-developer",
+      "database": "database-reviewer",
+      "build error": "build-error-resolver",
+      "e2e test": "e2e-runner",
+      "tdd": "tdd-guide",
+      "plan": "planner",
+      "refactor": "refactor-cleaner",
+      "documentation": "doc-updater",
+      "content": "content-marketer",
+      "devops": "devops-engineer",
+      "llm": "llm-architect",
+      "mcp": "mcp-developer",
+      "performance": "performance-engineer",
+      "typescript": "typescript-pro",
+      "email": "content-marketer",
+      "social media": "content-marketer",
+      "excel": "data-analyst",
+      "analytics": "data-analyst",
+      "benchmark": "repo-benchmarker",
+      "marketing strategy": "marketing-strategist",
+      "data analysis": "data-analyst",
+      "presentation": "presentation-designer",
+      "seo": "seo-specialist",
+      "cro": "cro-specialist",
+      "advertising": "ad-specialist",
+      "ad": "ad-specialist",
+      "crm": "marketing-strategist",
+      "mkt": "marketing-strategist",
+      "ppt": "presentation-designer",
+      "social": "content-marketer",
+      "swarm": "orchestrator",
+      "team": "orchestrator"
+    }
+  },
+
+  "team": {
+    "enabled": true,
+    "engine": "claude-agent-teams",
+    "envVar": "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+    "maxTeammates": null,
+    "ctoAgent": "orchestrator",
+    "delegationMode": true,
+    "displayMode": "auto",
+    "spawnStrategy": "on-demand-parallel",
+    "api": {
+      "lifecycle": ["TeamCreate", "TeamDelete"],
+      "communication": ["SendMessage"],
+      "taskManagement": ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"],
+      "spawning": "Task(subagent_type, team_name, name)"
+    },
+    "gracefulDegradation": {
+      "detection": "runtime-tool-availability",
+      "modes": {
+        "agent-teams": {
+          "condition": "TeamCreate tool available",
+          "requires": "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
+          "capabilities": ["team-lifecycle", "p2p-messaging", "shared-tasks", "parallel-spawning"],
+          "platforms": ["claude-code"]
+        },
+        "sub-agent": {
+          "condition": "Task tool available BUT TeamCreate unavailable",
+          "requires": "Claude Code (any version)",
+          "capabilities": ["fire-and-forget-delegation", "parallel-spawning", "result-aggregation"],
+          "platforms": ["claude-code"],
+          "fallbackFrom": "agent-teams"
+        },
+        "direct": {
+          "condition": "Neither TeamCreate nor Task tool available",
+          "requires": "Any AI coding assistant",
+          "capabilities": ["sequential-execution", "self-review"],
+          "platforms": ["gemini-cli", "codex-cli", "cursor", "windsurf", "antigravity"],
+          "fallbackFrom": "sub-agent"
+        }
+      },
+      "detectionPriority": ["agent-teams", "sub-agent", "direct"]
+    },
+    "delegationModeSelection": {
+      "subAgent": {
+        "condition": "complexity < 0.4 AND single domain AND steps < 3",
+        "tools": ["Task"],
+        "communication": "one-way (result return only)"
+      },
+      "agentTeam": {
+        "condition": "complexity >= 0.4 OR multi-domain OR steps >= 3",
+        "tools": ["TeamCreate", "SendMessage", "TaskCreate", "TaskUpdate", "TaskList", "TeamDelete"],
+        "communication": "P2P bidirectional + shared task list"
+      }
+    },
+    "levels": {
+      "solo": {
+        "teammates": 0,
+        "mode": "subAgent",
+        "trigger": "single file edit, simple question, quick fix"
+      },
+      "squad": {
+        "teammates": "2-4",
+        "mode": "agentTeam",
+        "trigger": "feature implementation, bugfix, refactoring"
+      },
+      "platoon": {
+        "teammates": "5+",
+        "mode": "agentTeam",
+        "trigger": "large feature, architecture change, security audit, benchmarking"
+      }
+    },
+    "orchestrationPatterns": {
+      "plan": "leader",
+      "design": "council",
+      "do": "swarm",
+      "check": "council",
+      "act": "leader"
+    },
+    "playbooks": {
+      "feature": "[leader] plan -> [council] design -> [swarm] implement -> [council] review -> [leader] merge",
+      "bugfix": "[leader] analyze -> [pipeline] fix -> [council] verify",
+      "refactor": "[council] assess -> [pipeline] refactor -> [swarm] test -> [council] review",
+      "security": "[leader] scan -> [council] assess -> [pipeline] fix -> [council] verify",
+      "marketing-campaign": "[leader] strategy -> [council] plan -> [swarm] create -> [council] review -> [leader] launch",
+      "marketing-audit": "[leader] scan -> [council] assess -> [pipeline] optimize -> [council] verify",
+      "content-launch": "[leader] plan -> [swarm] create -> [council] review -> [leader] publish",
+      "competitive-analysis": "[council] research -> [swarm] analyze -> [council] synthesize -> [leader] report"
+    },
+    "playbookMeta": {
+      "feature": { "description": "End-to-end feature implementation", "domain": "development", "tags": ["feature", "implementation"] },
+      "bugfix": { "description": "Bug analysis and fix workflow", "domain": "development", "tags": ["bugfix", "debug"] },
+      "refactor": { "description": "Code refactoring and quality improvement", "domain": "development", "tags": ["refactor", "quality"] },
+      "security": { "description": "Security audit and vulnerability remediation", "domain": "security", "tags": ["security", "audit"] },
+      "marketing-campaign": { "description": "Full marketing campaign execution", "domain": "marketing", "tags": ["marketing", "campaign", "launch"] },
+      "marketing-audit": { "description": "Marketing performance audit and optimization", "domain": "marketing", "tags": ["marketing", "audit", "optimize"] },
+      "content-launch": { "description": "Content creation and publication workflow", "domain": "marketing", "tags": ["content", "publish", "launch"] },
+      "competitive-analysis": { "description": "Competitive landscape research and reporting", "domain": "marketing", "tags": ["research", "competitive", "analysis"] }
+    },
+    "messageTypes": ["message", "broadcast", "shutdown_request", "shutdown_response", "plan_approval_response"],
+    "teamStorage": {
+      "config": "~/.claude/teams/{team-name}/config.json",
+      "tasks": "~/.claude/tasks/{team-name}/"
+    }
+  },
+
+  "automation": {
+    "intentDetection": true,
+    "ambiguityThreshold": 50,
+    "supportedLanguages": ["en", "ko", "ja"]
+  },
+
+  "context": {
+    "importCacheTTL": 30000
+  },
+
+  "cognitive": {
+    "router": {
+      "threshold": 0.4,
+      "adaptRate": 0.05
+    },
+    "system1": {
+      "maxLatency": 100,
+      "minConfidence": 0.6
+    },
+    "system2": {
+      "maxRetries": 3,
+      "sandboxEnabled": true
+    }
+  },
+
+  "learning": {
+    "memoryScopes": {
+      "user": "~/.claude/artibot/",
+      "project": ".artibot/",
+      "session": "in-memory"
+    },
+    "lifelong": {
+      "batchSize": 50,
+      "grpoGroupSize": 5
+    },
+    "knowledgeTransfer": {
+      "promotionThreshold": 3,
+      "demotionThreshold": 2
+    }
+  },
+
+  "visual": {
+    "maxIterations": 3,
+    "threshold": 0.95,
+    "disableAnimations": true,
+    "excludeSelectors": []
+  },
+
+  "output": {
+    "maxContextLength": 500,
+    "defaultStyle": "artibot-default"
+  }
+}

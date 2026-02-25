@@ -1,0 +1,145 @@
+/**
+ * OpenAI Codex CLI adapter.
+ * Converts Artibot skills/agents/commands to Codex CLI format.
+ *
+ * Codex CLI compatibility score: 8/10 (SKILL.md format originated here).
+ * - plugin.json -> agents/openai.yaml metadata
+ * - CLAUDE.md -> AGENTS.md (instruction chain)
+ * - skills/ -> .agents/skills/ (SKILL.md directly compatible)
+ * - agents/*.md -> consolidated AGENTS.md sections
+ * - commands/ -> SKILL.md-based workflows
+ *
+ * @module lib/adapters/codex-adapter
+ */
+
+import path from 'node:path';
+import { BaseAdapter } from './base-adapter.js';
+import { buildFrontmatter, cleanDescription, stripAgentTeamsRefs, stripClaudeSpecificRefs } from './adapter-utils.js';
+
+export class CodexAdapter extends BaseAdapter {
+  get platformId() {
+    return 'codex-cli';
+  }
+
+  get platformName() {
+    return 'OpenAI Codex CLI';
+  }
+
+  get instructionFileName() {
+    return 'AGENTS.md';
+  }
+
+  get skillsDir() {
+    return '.agents/skills';
+  }
+
+  /**
+   * Convert a SKILL.md to Codex CLI format.
+   * Codex CLI natively supports SKILL.md with YAML frontmatter.
+   * The format is a passthrough with platform-specific reference updates.
+   */
+  convertSkill(skill) {
+    const frontmatter = buildFrontmatter({
+      name: skill.name,
+      description: cleanDescription(skill.description),
+    });
+
+    const body = stripClaudeSpecificRefs(skill.content, {
+      skillsPath: '.agents/skills/',
+      platformName: 'AI Agent',
+      instructionFile: 'AGENTS.md',
+    });
+
+    return {
+      path: path.join(this.skillsDir, skill.dirName, 'SKILL.md'),
+      content: `${frontmatter}\n${body}`,
+    };
+  }
+
+  /**
+   * Convert an agent definition to a section in AGENTS.md.
+   * Codex CLI consolidates agent instructions into a single AGENTS.md file.
+   * Returns a content block to be concatenated into the final AGENTS.md.
+   */
+  convertAgent(agent) {
+    const content = stripAgentTeamsRefs(agent.content, { envLabel: '(platform agent configuration)' });
+    return {
+      path: `_agents_section_${agent.name}`,
+      content: `\n## Agent: ${agent.role || agent.name}\n\n${content}\n`,
+    };
+  }
+
+  /**
+   * Convert a command to a SKILL.md-based workflow.
+   * Codex CLI does not have slash commands, so commands become skill workflows.
+   */
+  convertCommand(command) {
+    const frontmatter = buildFrontmatter({
+      name: `cmd-${command.name}`,
+      description: `Workflow for /${command.name} command`,
+    });
+
+    return {
+      path: path.join(this.skillsDir, `cmd-${command.name}`, 'SKILL.md'),
+      content: `${frontmatter}\n${command.content}`,
+    };
+  }
+
+  /**
+   * Generate agents/openai.yaml metadata from artibot.config.json.
+   */
+  generateManifest() {
+    const yaml = [
+      '# Artibot - AI Agent Teams Orchestration for Codex CLI',
+      `# Auto-generated from artibot.config.json v${this.config.version ?? '1.1.0'}`,
+      '',
+      'name: artibot',
+      `version: "${this.config.version ?? '1.1.0'}"`,
+      'description: "AI Agent Teams Orchestration Plugin"',
+      '',
+      'skills:',
+      `  directory: "${this.skillsDir}"`,
+      '  format: "SKILL.md"',
+      '',
+      'agents:',
+    ];
+
+    const agents = this.config.agents?.taskBased ?? {};
+    for (const [task, agentName] of Object.entries(agents)) {
+      yaml.push(`  - name: "${agentName}"`);
+      yaml.push(`    task: "${task}"`);
+    }
+
+    return {
+      path: 'agents/openai.yaml',
+      content: yaml.join('\n') + '\n',
+    };
+  }
+
+  /**
+   * Generate the consolidated AGENTS.md from all agent sections.
+   * @param {Array<{ path: string, content: string }>} agentSections
+   * @returns {{ path: string, content: string }}
+   */
+  generateAgentsMd(agentSections) {
+    const header = [
+      '# Artibot Agent Instructions',
+      '',
+      '> Auto-generated from Artibot agent definitions.',
+      `> Version: ${this.config.version ?? '1.1.0'}`,
+      '',
+      '---',
+      '',
+    ].join('\n');
+
+    const body = agentSections
+      .filter((s) => s.path.startsWith('_agents_section_'))
+      .map((s) => s.content)
+      .join('\n---\n');
+
+    return {
+      path: 'AGENTS.md',
+      content: header + body,
+    };
+  }
+}

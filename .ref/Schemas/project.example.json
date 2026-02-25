@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "id": "proj_demo_001",
+    "name": "Demo Office",
+    "schemaVersion": "0.2.0",
+    "createdAt": 0,
+    "updatedAt": 0
+  },
+  "theme": {
+    "name": "Minimal Office",
+    "palette": {
+      "bg": "#0f172a",
+      "panel": "#111827",
+      "text": "#e5e7eb",
+      "accent": "#22c55e"
+    },
+    "ui": {
+      "fontFamily": "system-ui",
+      "radius": 12
+    }
+  },
+  "world": {
+    "width": 40,
+    "height": 25,
+    "tileSize": 32,
+    "layers": {
+      "floor": [],
+      "wall": [],
+      "collision": [],
+      "objects": [],
+      "spawn": [
+        {
+          "x": 5,
+          "y": 5
+        },
+        {
+          "x": 6,
+          "y": 5
+        }
+      ]
+    }
+  },
+  "agents": [
+    {
+      "id": "agent_01",
+      "name": "Agent-01",
+      "role": "PM",
+      "sprite": {
+        "idleKey": "doggo_idle",
+        "walkKey": "doggo_walk",
+        "frameSize": 256
+      },
+      "home": {
+        "x": 10,
+        "y": 10
+      },
+      "pos": {
+        "x": 5,
+        "y": 5
+      },
+      "state": "IDLE"
+    }
+  ],
+  "recipes": [
+    {
+      "id": "recipe_node_ver",
+      "name": "Node Version",
+      "description": "node -v 를 실행합니다(데모).",
+      "command": "node",
+      "args": [
+        "-v"
+      ],
+      "cwd": "",
+      "env": {},
+      "parserRules": {
+        "keywordToState": {
+          "think": "THINKING",
+          "plan": "THINKING",
+          "run": "RUNNING",
+          "exec": "RUNNING",
+          "build": "RUNNING",
+          "test": "RUNNING"
+        }
+      }
+    }
+  ]
+}

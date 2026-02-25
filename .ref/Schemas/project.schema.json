@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CLI Town Project",
+  "type": "object",
+  "required": [
+    "meta",
+    "theme",
+    "world",
+    "agents",
+    "recipes"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "schemaVersion"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "theme": {
+      "type": "object",
+      "required": [
+        "name",
+        "palette"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "palette": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "world": {
+      "type": "object",
+      "required": [
+        "width",
+        "height",
+        "tileSize",
+        "layers"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "tileSize": {
+          "type": "integer",
+          "enum": [
+            16,
+            24,
+            32,
+            48,
+            64
+          ]
+        },
+        "layers": {
+          "type": "object",
+          "required": [
+            "floor",
+            "wall",
+            "collision",
+            "objects",
+            "spawn"
+          ],
+          "properties": {
+            "floor": {
+              "type": "array"
+            },
+            "wall": {
+              "type": "array"
+            },
+            "collision": {
+              "type": "array"
+            },
+            "objects": {
+              "type": "array"
+            },
+            "spawn": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "properties": {
+                  "x": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "sprite",
+          "pos",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "sprite": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "home": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "pos": {
+            "type": "object",
+            "required": [
+              "x",
+              "y"
+            ],
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            }
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "command",
+          "args",
+          "parserRules"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "parserRules": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

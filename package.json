@@ -1,0 +1,15 @@
+{
+  "name": "dogba",
+  "version": "1.0.0",
+  "description": "DogBa AI Platform",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:desktop": "pnpm --filter @dogba/desktop dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm --filter @dogba/desktop exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

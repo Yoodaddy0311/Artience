@@ -1,0 +1,177 @@
+{
+  "summary": {
+    "rooms": 4,
+    "collisionTiles": 156,
+    "spawnPoints": 25,
+    "agents": 25,
+    "recipes": 3,
+    "theme": "모던 오피스",
+    "generatedAt": "2026-02-24T15:40:55.221872"
+  },
+  "prompt": "모던한 IT 스타트업 오피스를 만들어줘. 개발팀 12명, 디자인팀 8명, 기획팀 5명으로 구성해줘.",
+  "scope": "recipes",
+  "theme": {
+    "palette": {
+      "primary": "#FFD100",
+      "secondary": "#9DE5DC",
+      "accent": "#E8DAFF",
+      "background": "#FFF8E7",
+      "surface": "#FFFFFF",
+      "text": "#18181B"
+    },
+    "font": {
+      "heading": "Pretendard",
+      "body": "Pretendard"
+    },
+    "buttonStyle": "neo-brutal"
+  },
+  "agents": [
+    {
+      "id": "a01",
+      "name": "Agent_1",
+      "role": "General"
+    },
+    {
+      "id": "a02",
+      "name": "Agent_2",
+      "role": "General"
+    },
+    {
+      "id": "a03",
+      "name": "Agent_3",
+      "role": "General"
+    },
+    {
+      "id": "a04",
+      "name": "Agent_4",
+      "role": "General"
+    },
+    {
+      "id": "a05",
+      "name": "Agent_5",
+      "role": "General"
+    },
+    {
+      "id": "a06",
+      "name": "Agent_6",
+      "role": "General"
+    },
+    {
+      "id": "a07",
+      "name": "Agent_7",
+      "role": "General"
+    },
+    {
+      "id": "a08",
+      "name": "Agent_8",
+      "role": "General"
+    },
+    {
+      "id": "a09",
+      "name": "Agent_9",
+      "role": "General"
+    },
+    {
+      "id": "a10",
+      "name": "Agent_10",
+      "role": "General"
+    },
+    {
+      "id": "a11",
+      "name": "Agent_11",
+      "role": "General"
+    },
+    {
+      "id": "a12",
+      "name": "Agent_12",
+      "role": "General"
+    },
+    {
+      "id": "a13",
+      "name": "Agent_13",
+      "role": "General"
+    },
+    {
+      "id": "a14",
+      "name": "Agent_14",
+      "role": "General"
+    },
+    {
+      "id": "a15",
+      "name": "Agent_15",
+      "role": "General"
+    },
+    {
+      "id": "a16",
+      "name": "Agent_16",
+      "role": "General"
+    },
+    {
+      "id": "a17",
+      "name": "Agent_17",
+      "role": "General"
+    },
+    {
+      "id": "a18",
+      "name": "Agent_18",
+      "role": "General"
+    },
+    {
+      "id": "a19",
+      "name": "Agent_19",
+      "role": "General"
+    },
+    {
+      "id": "a20",
+      "name": "Agent_20",
+      "role": "General"
+    },
+    {
+      "id": "a21",
+      "name": "Agent_21",
+      "role": "General"
+    },
+    {
+      "id": "a22",
+      "name": "Agent_22",
+      "role": "General"
+    },
+    {
+      "id": "a23",
+      "name": "Agent_23",
+      "role": "General"
+    },
+    {
+      "id": "a24",
+      "name": "Agent_24",
+      "role": "General"
+    },
+    {
+      "id": "a25",
+      "name": "Agent_25",
+      "role": "General"
+    }
+  ],
+  "recipes": [
+    {
+      "id": "r01",
+      "name": "시스템 정보",
+      "command": "node",
+      "args": [
+        "-v"
+      ]
+    },
+    {
+      "id": "r02",
+      "name": "파일 목록",
+      "command": "dir",
+      "args": []
+    },
+    {
+      "id": "r03",
+      "name": "현재 경로",
+      "command": "cd",
+      "args": []
+    }
+  ]
+}

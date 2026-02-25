@@ -1,0 +1,5 @@
+Jobs/CLI 실행을 안정화해라.
+- main process spawn 래퍼: Windows/macOS 호환(shell 옵션, 인코딩)
+- Stop 시 프로세스 트리 종료(가능하면)
+- 로그는 jobId 기준 저장(메모리 + 파일)
+- 로그 키워드로 에이전트 상태 전환
