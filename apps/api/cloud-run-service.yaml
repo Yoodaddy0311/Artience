@@ -39,7 +39,7 @@ spec:
             - name: GUNICORN_WORKERS
               value: "2"
             - name: ALLOWED_ORIGINS
-              value: https://artitown.app,https://www.artitown.app
+              value: https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

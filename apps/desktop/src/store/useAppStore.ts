@@ -35,7 +35,7 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    apiUrl: 'http://localhost:8000',
+    apiUrl: import.meta.env.VITE_API_URL || 'http://localhost:8000',
     language: 'ko',
     autoSaveInterval: 30,
     notificationsEnabled: true,

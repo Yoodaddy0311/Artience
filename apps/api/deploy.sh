@@ -47,7 +47,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --max-instances=10 \
     --concurrency=80 \
     --timeout=120 \
-    --set-env-vars="GCP_PROJECT=${PROJECT_ID},GCS_BUCKET=artitown-assets" \
+    --set-env-vars="^:^GCP_PROJECT=${PROJECT_ID}:GCS_BUCKET=artitown-assets:ALLOWED_ORIGINS=https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com" \
     --set-secrets="DOKBA_API_KEY=dokba-api-key:latest,GOOGLE_API_KEY=google-api-key:latest,DATABASE_URL=database-url:latest" \
     --add-cloudsql-instances="${PROJECT_ID}:${REGION}:artitown-db"
 

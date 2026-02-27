@@ -102,7 +102,10 @@ app.add_exception_handler(Exception, generic_error_handler)
 
 # ── Middleware stack (order matters: last added = first executed) ──
 # 1. CORS (outermost — runs first on every request)
-_allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+_allowed_origins_raw = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com,http://localhost:5173",
+)
 _cors_origins = ["*"] if _allowed_origins_raw == "*" else [o.strip() for o in _allowed_origins_raw.split(",")]
 app.add_middleware(
     CORSMiddleware,
