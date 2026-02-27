@@ -3,7 +3,7 @@ import { FolderOpen, Image, FileText, RefreshCw } from 'lucide-react';
 import { useAppStore, type ProjectAsset } from '../../store/useAppStore';
 
 export const AssetsPanel: React.FC = () => {
-    const { assets, setAssets } = useAppStore();
+    const { assets, setAssets, appSettings } = useAppStore();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -11,7 +11,7 @@ export const AssetsPanel: React.FC = () => {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('http://localhost:8000/api/studio/assets');
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/assets`);
             const data = await res.json();
             if (data.assets && Array.isArray(data.assets)) {
                 const mapped: ProjectAsset[] = data.assets.map((url: string, idx: number) => ({

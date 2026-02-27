@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { ProjectData } from '../types/project';
+import { DEFAULT_PROJECT } from '../types/project';
 
 // ── AI Builder Messages ──
 
@@ -41,6 +43,13 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 // ── Gamification ──
 
+export interface JobProficiency {
+    jobId: string;
+    level: number;
+    xp: number;
+    grade: string;
+}
+
 export interface GamificationState {
     level: number;
     levelTitle: string;
@@ -51,6 +60,8 @@ export interface GamificationState {
     diamonds: number;
     conversations: number;
     responseRate: number;
+    jobProficiencies: JobProficiency[];
+    lastLevelUp: number | null;
 }
 
 const DEFAULT_GAMIFICATION: GamificationState = {
@@ -63,6 +74,8 @@ const DEFAULT_GAMIFICATION: GamificationState = {
     diamonds: 0,
     conversations: 0,
     responseRate: 0,
+    jobProficiencies: [],
+    lastLevelUp: null,
 };
 
 // ── Assets ──
@@ -131,11 +144,20 @@ interface AppState {
     setAssets: (assets: ProjectAsset[]) => void;
     addAsset: (asset: ProjectAsset) => void;
     removeAsset: (id: string) => void;
+
+    // Project Config (S-6: Studio ↔ Run real-time sync)
+    projectConfig: ProjectData;
+    projectLoading: boolean;
+    projectError: string | null;
+    loadProject: () => Promise<void>;
+    saveProject: () => Promise<void>;
+    updateProjectConfig: (patch: Partial<ProjectData>) => void;
+    resetProjectConfig: () => void;
 }
 
 export const useAppStore = create<AppState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             // ── Agent Highlight ──
             highlightedAgentId: null,
             setHighlightedAgentId: (id) => set({ highlightedAgentId: id }),
@@ -212,6 +234,59 @@ export const useAppStore = create<AppState>()(
                 set((state) => ({
                     assets: state.assets.filter((a) => a.id !== id),
                 })),
+
+            // ── Project Config ──
+            projectConfig: { ...DEFAULT_PROJECT },
+            projectLoading: false,
+            projectError: null,
+
+            loadProject: async () => {
+                set({ projectLoading: true, projectError: null });
+                try {
+                    const { apiUrl } = get().appSettings;
+                    const res = await fetch(`${apiUrl}/api/studio/project`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const json = await res.json();
+                    if (json.project) {
+                        set({ projectConfig: json.project, projectLoading: false });
+                    } else {
+                        set({ projectConfig: { ...DEFAULT_PROJECT }, projectLoading: false });
+                    }
+                } catch (err) {
+                    set({
+                        projectLoading: false,
+                        projectError: err instanceof Error ? err.message : 'Failed to load project',
+                    });
+                }
+            },
+
+            saveProject: async () => {
+                set({ projectLoading: true, projectError: null });
+                try {
+                    const { apiUrl } = get().appSettings;
+                    const config = get().projectConfig;
+                    const res = await fetch(`${apiUrl}/api/studio/project`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(config),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    set({ projectLoading: false });
+                } catch (err) {
+                    set({
+                        projectLoading: false,
+                        projectError: err instanceof Error ? err.message : 'Failed to save project',
+                    });
+                }
+            },
+
+            updateProjectConfig: (patch) =>
+                set((state) => ({
+                    projectConfig: { ...state.projectConfig, ...patch },
+                })),
+
+            resetProjectConfig: () =>
+                set({ projectConfig: { ...DEFAULT_PROJECT }, projectError: null }),
         }),
         {
             name: 'dogba-app-store',
@@ -219,6 +294,7 @@ export const useAppStore = create<AppState>()(
                 aiBuilderMessages: state.aiBuilderMessages,
                 appSettings: state.appSettings,
                 gamification: state.gamification,
+                projectConfig: state.projectConfig,
             }),
         },
     ),

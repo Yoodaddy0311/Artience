@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Home, Blocks, MapPin, Users, ClipboardList, Palette, Clock, RefreshCw, MailOpen } from 'lucide-react';
+import { Home, Blocks, MapPin, Users, ClipboardList, Palette, Clock, RefreshCw, MailOpen, Plus, Minus, PenLine } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
 
 // ── Types ──
 
@@ -114,12 +115,142 @@ const DiffRow: React.FC<{ item: DiffItem }> = ({ item }) => {
     );
 };
 
+// ── JSON Diff types & component ──
+
+interface JsonDiffChange {
+    path: string;
+    type: 'added' | 'removed' | 'modified';
+    oldValue?: string;
+    newValue?: string;
+}
+
+const CHANGE_STYLES: Record<JsonDiffChange['type'], { bg: string; text: string; icon: React.ReactNode; label: string }> = {
+    added: { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: <Plus className="w-3 h-3" strokeWidth={3} />, label: '추가' },
+    removed: { bg: 'bg-red-50', text: 'text-red-700', icon: <Minus className="w-3 h-3" strokeWidth={3} />, label: '삭제' },
+    modified: { bg: 'bg-amber-50', text: 'text-amber-700', icon: <PenLine className="w-3 h-3" strokeWidth={2.5} />, label: '수정' },
+};
+
+const JsonDiffRow: React.FC<{ change: JsonDiffChange }> = ({ change }) => {
+    const style = CHANGE_STYLES[change.type];
+    return (
+        <div className={`flex items-start gap-2 p-2 rounded-lg border-2 border-black ${style.bg} shadow-[1px_1px_0_0_#000]`}>
+            <span className={`flex-shrink-0 mt-0.5 ${style.text}`}>{style.icon}</span>
+            <div className="flex-1 min-w-0">
+                <span className="text-[10px] font-mono font-bold text-black break-all">{change.path}</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                    {change.type === 'removed' && change.oldValue !== undefined && (
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 bg-red-100 text-red-600 rounded border border-red-300 break-all">
+                            {change.oldValue}
+                        </span>
+                    )}
+                    {change.type === 'added' && change.newValue !== undefined && (
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded border border-emerald-300 break-all">
+                            {change.newValue}
+                        </span>
+                    )}
+                    {change.type === 'modified' && (
+                        <>
+                            {change.oldValue !== undefined && (
+                                <span className="text-[9px] font-mono px-1.5 py-0.5 bg-red-100 text-red-600 rounded border border-red-300 line-through break-all">
+                                    {change.oldValue}
+                                </span>
+                            )}
+                            <span className="text-[9px] font-black text-black self-center">&rarr;</span>
+                            {change.newValue !== undefined && (
+                                <span className="text-[9px] font-mono px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded border border-emerald-300 break-all">
+                                    {change.newValue}
+                                </span>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border border-black ${style.bg} ${style.text} flex-shrink-0`}>
+                {style.label}
+            </span>
+        </div>
+    );
+};
+
+const JsonDiffSection: React.FC<{ oldId: string; newId: string; apiUrl: string }> = ({ oldId, newId, apiUrl }) => {
+    const [changes, setChanges] = useState<JsonDiffChange[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [filterType, setFilterType] = useState<'all' | 'added' | 'removed' | 'modified'>('all');
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchDiff = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await fetch(`${apiUrl}/api/studio/history/${oldId}/diff/${newId}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (!cancelled) setChanges(data.changes || []);
+            } catch {
+                if (!cancelled) setError('JSON diff를 불러올 수 없습니다.');
+            }
+            if (!cancelled) setLoading(false);
+        };
+        fetchDiff();
+        return () => { cancelled = true; };
+    }, [oldId, newId, apiUrl]);
+
+    const filtered = filterType === 'all' ? changes : changes.filter(c => c.type === filterType);
+    const addedCount = changes.filter(c => c.type === 'added').length;
+    const removedCount = changes.filter(c => c.type === 'removed').length;
+    const modifiedCount = changes.filter(c => c.type === 'modified').length;
+
+    if (loading) {
+        return <div className="text-center py-4 text-gray-400 text-xs font-bold animate-pulse">JSON diff 로딩 중...</div>;
+    }
+    if (error) {
+        return <div className="text-center py-4 text-red-400 text-xs font-bold">{error}</div>;
+    }
+    if (changes.length === 0) {
+        return <div className="text-center py-4 text-gray-400 text-xs font-bold">JSON 내용이 동일합니다.</div>;
+    }
+
+    return (
+        <div className="space-y-2">
+            {/* Filter bar */}
+            <div className="flex gap-1.5 flex-wrap">
+                {([
+                    ['all', `전체 (${changes.length})`],
+                    ['added', `추가 (${addedCount})`],
+                    ['removed', `삭제 (${removedCount})`],
+                    ['modified', `수정 (${modifiedCount})`],
+                ] as [typeof filterType, string][]).map(([key, label]) => (
+                    <button
+                        key={key}
+                        onClick={() => setFilterType(key)}
+                        className={`text-[9px] font-black px-2 py-1 rounded border-2 border-black transition-all shadow-[1px_1px_0_0_#000] ${
+                            filterType === key ? 'bg-[#C4B5FD] text-black' : 'bg-white text-gray-500 hover:bg-gray-50'
+                        }`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {/* Change list */}
+            {filtered.map((change, idx) => (
+                <JsonDiffRow key={idx} change={change} />
+            ))}
+        </div>
+    );
+};
+
+
 const DiffPanel: React.FC<{
     olderSnap: Snapshot;
     newerSnap: Snapshot;
     onClose: () => void;
     formatDate: (iso: string) => string;
 }> = ({ olderSnap, newerSnap, onClose, formatDate }) => {
+    const { appSettings } = useAppStore();
+    const [activeTab, setActiveTab] = useState<'summary' | 'json'>('summary');
+
     const diffItems = useMemo(() => {
         if (!olderSnap.summary || !newerSnap.summary) return [];
         return computeDiff(olderSnap.summary, newerSnap.summary);
@@ -158,36 +289,66 @@ const DiffPanel: React.FC<{
                 </div>
             </div>
 
-            {/* Diff Summary Bar */}
-            <div className="p-2 border-b-2 border-black bg-white flex items-center justify-center gap-3 text-[10px] font-black">
-                <span className="text-black">{changedCount}개 변경</span>
-                {increaseCount > 0 && (
-                    <span className="text-emerald-600 px-1.5 py-0.5 bg-emerald-50 border border-emerald-300 rounded">
-                        +{increaseCount} 증가
-                    </span>
-                )}
-                {decreaseCount > 0 && (
-                    <span className="text-red-600 px-1.5 py-0.5 bg-red-50 border border-red-300 rounded">
-                        -{decreaseCount} 감소
-                    </span>
-                )}
-                {changedCount === 0 && (
-                    <span className="text-gray-400">변경사항 없음</span>
-                )}
+            {/* Tab toggle: Summary vs JSON Diff */}
+            <div className="flex border-b-2 border-black bg-white">
+                <button
+                    onClick={() => setActiveTab('summary')}
+                    className={`flex-1 py-2 text-[10px] font-black transition-all ${
+                        activeTab === 'summary' ? 'bg-[#E8DAFF] text-black' : 'text-gray-400 hover:bg-gray-50'
+                    }`}
+                >
+                    요약 비교
+                </button>
+                <button
+                    onClick={() => setActiveTab('json')}
+                    className={`flex-1 py-2 text-[10px] font-black transition-all border-l-2 border-black ${
+                        activeTab === 'json' ? 'bg-[#E8DAFF] text-black' : 'text-gray-400 hover:bg-gray-50'
+                    }`}
+                >
+                    JSON Diff
+                </button>
             </div>
 
-            {/* Diff Items */}
+            {/* Diff Summary Bar (summary tab only) */}
+            {activeTab === 'summary' && (
+                <div className="p-2 border-b-2 border-black bg-white flex items-center justify-center gap-3 text-[10px] font-black">
+                    <span className="text-black">{changedCount}개 변경</span>
+                    {increaseCount > 0 && (
+                        <span className="text-emerald-600 px-1.5 py-0.5 bg-emerald-50 border border-emerald-300 rounded">
+                            +{increaseCount} 증가
+                        </span>
+                    )}
+                    {decreaseCount > 0 && (
+                        <span className="text-red-600 px-1.5 py-0.5 bg-red-50 border border-red-300 rounded">
+                            -{decreaseCount} 감소
+                        </span>
+                    )}
+                    {changedCount === 0 && (
+                        <span className="text-gray-400">변경사항 없음</span>
+                    )}
+                </div>
+            )}
+
+            {/* Tab content */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {!hasSummaries ? (
-                    <div className="text-center py-8 text-gray-400">
-                        <div className="text-2xl mb-2">--</div>
-                        <p className="font-bold text-xs">요약 데이터가 없는 스냅샷입니다</p>
-                        <p className="text-[10px] mt-1">비교하려면 두 스냅샷 모두 요약 정보가 필요합니다</p>
-                    </div>
+                {activeTab === 'summary' ? (
+                    !hasSummaries ? (
+                        <div className="text-center py-8 text-gray-400">
+                            <div className="text-2xl mb-2">--</div>
+                            <p className="font-bold text-xs">요약 데이터가 없는 스냅샷입니다</p>
+                            <p className="text-[10px] mt-1">비교하려면 두 스냅샷 모두 요약 정보가 필요합니다</p>
+                        </div>
+                    ) : (
+                        diffItems.map((item, idx) => (
+                            <DiffRow key={idx} item={item} />
+                        ))
+                    )
                 ) : (
-                    diffItems.map((item, idx) => (
-                        <DiffRow key={idx} item={item} />
-                    ))
+                    <JsonDiffSection
+                        oldId={olderSnap.id}
+                        newId={newerSnap.id}
+                        apiUrl={appSettings.apiUrl}
+                    />
                 )}
             </div>
         </div>
@@ -197,6 +358,7 @@ const DiffPanel: React.FC<{
 // ── Main Component ──
 
 export const VersionHistory: React.FC = () => {
+    const { appSettings } = useAppStore();
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState('');
@@ -211,7 +373,7 @@ export const VersionHistory: React.FC = () => {
     const fetchHistory = async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:8000/api/studio/history');
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/history`);
             const data = await res.json();
             if (data.snapshots) setSnapshots(data.snapshots);
         } catch {
@@ -223,7 +385,7 @@ export const VersionHistory: React.FC = () => {
     const rollback = async (id: string) => {
         setMessage('');
         try {
-            const res = await fetch(`http://localhost:8000/api/studio/history/${id}/rollback`, { method: 'POST' });
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/history/${id}/rollback`, { method: 'POST' });
             const data = await res.json();
             setMessage(data.message || '롤백 완료');
             await fetchHistory();

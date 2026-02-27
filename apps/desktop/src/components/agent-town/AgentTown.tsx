@@ -10,6 +10,7 @@ import {
     getRandomWalkableNear,
 } from '../../systems/grid-world';
 import { DEFAULT_AGENTS } from '../../types/platform';
+import { useAppStore } from '../../store/useAppStore';
 
 // Isometric coordinate system
 import {
@@ -47,6 +48,18 @@ import {
     STAGGER_DELAY_MS,
 } from './agent-runtime';
 
+// Multiuser character system
+import {
+    createUserCharacter,
+    tickUserCharacter,
+    updateUserStatus,
+    updateUserProgress,
+    removeUserCharacter,
+    type RoomMember,
+    type UserCharacterRuntime,
+    type UserStatus,
+} from './UserCharacter';
+
 // ── Isometric agent speed: pixels per frame ──
 const AGENT_SPEED_PX = AGENT_SPEED_TILES_PER_SEC * 1.0;
 
@@ -74,6 +87,7 @@ export const AgentTown: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<PIXI.Application | null>(null);
     const [renderError, setRenderError] = useState<string | null>(null);
+    const appSettings = useAppStore((s) => s.appSettings);
 
     useEffect(() => {
         let isMounted = true;
@@ -214,6 +228,14 @@ export const AgentTown: React.FC = () => {
                     visual.container.cursor = 'pointer';
                     visual.container.hitArea = new PIXI.Rectangle(-30, -80, 60, 100);
 
+                    // Click handler: toggle inspector card via store
+                    visual.container.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
+                        e.stopPropagation();
+                        const store = useAppStore.getState();
+                        const currentId = store.highlightedAgentId;
+                        store.setHighlightedAgentId(currentId === profile.id ? null : profile.id);
+                    });
+
                     worldContainer.addChild(visual.container);
 
                     const agent: IsoAgent = {
@@ -267,6 +289,54 @@ export const AgentTown: React.FC = () => {
                         pickIsoWanderDest(agent);
                     }, i * STAGGER_DELAY_MS);
                 }
+
+                // ══════════════════════════════════════════════════════
+                // ── MULTIUSER: User character management ──
+                // ══════════════════════════════════════════════════════
+
+                const userCharacters: UserCharacterRuntime[] = [];
+                const userCharMap = new Map<string, UserCharacterRuntime>();
+
+                /** Add or update a user character from room member data */
+                const syncUserCharacter = (member: RoomMember) => {
+                    if (!member.is_online) {
+                        // Remove offline user
+                        const existing = userCharMap.get(member.id);
+                        if (existing) {
+                            removeUserCharacter(existing, worldContainer);
+                            userCharMap.delete(member.id);
+                            const idx = userCharacters.indexOf(existing);
+                            if (idx >= 0) userCharacters.splice(idx, 1);
+                        }
+                        return;
+                    }
+
+                    const existing = userCharMap.get(member.id);
+                    if (existing) {
+                        // Update existing user
+                        updateUserStatus(existing, member.status, member.current_task);
+                        if (member.task_progress !== undefined) {
+                            updateUserProgress(existing, member.task_progress);
+                        }
+                    } else {
+                        // Create new user character
+                        const userChar = createUserCharacter(otterTextures, member, gridWorld);
+
+                        // Click handler for user inspection
+                        userChar.visual.container.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
+                            e.stopPropagation();
+                            // User characters use a prefixed ID to distinguish from AI agents
+                            const store = useAppStore.getState();
+                            const currentId = store.highlightedAgentId;
+                            const userId = `user:${member.id}`;
+                            store.setHighlightedAgentId(currentId === userId ? null : userId);
+                        });
+
+                        worldContainer.addChild(userChar.visual.container);
+                        userCharacters.push(userChar);
+                        userCharMap.set(member.id, userChar);
+                    }
+                };
 
                 // ══════════════════════════════════════════════════════
                 // ── ZOOM (mouse wheel) ──
@@ -391,7 +461,8 @@ export const AgentTown: React.FC = () => {
                 let reconnectDelay = 1000;
 
                 const connectWs = () => {
-                    const ws = new WebSocket('ws://localhost:8000/ws/town');
+                    const wsUrl = appSettings.apiUrl.replace(/^http/, 'ws');
+                    const ws = new WebSocket(`${wsUrl}/ws/town`);
                     wsRef = ws;
 
                     ws.onopen = () => {
@@ -472,6 +543,54 @@ export const AgentTown: React.FC = () => {
                                             }
                                         }
                                     }
+                                }
+                            }
+
+                            // ── Multiuser: Room member events ──
+
+                            if (data.type === 'ROOM_MEMBERS_SYNC') {
+                                // Full sync of all room members
+                                const members = data.members as RoomMember[];
+                                if (Array.isArray(members)) {
+                                    for (const member of members) {
+                                        syncUserCharacter(member);
+                                    }
+                                }
+                            }
+
+                            if (data.type === 'ROOM_MEMBER_JOIN') {
+                                const member = data.member as RoomMember;
+                                if (member) {
+                                    syncUserCharacter(member);
+                                }
+                            }
+
+                            if (data.type === 'ROOM_MEMBER_LEAVE') {
+                                const memberId = data.memberId as string;
+                                const existing = userCharMap.get(memberId);
+                                if (existing) {
+                                    removeUserCharacter(existing, worldContainer);
+                                    userCharMap.delete(memberId);
+                                    const idx = userCharacters.indexOf(existing);
+                                    if (idx >= 0) userCharacters.splice(idx, 1);
+                                }
+                            }
+
+                            if (data.type === 'ROOM_MEMBER_STATUS') {
+                                const memberId = data.memberId as string;
+                                const status = data.status as UserStatus;
+                                const existing = userCharMap.get(memberId);
+                                if (existing) {
+                                    updateUserStatus(existing, status, data.currentTask as string | undefined);
+                                }
+                            }
+
+                            if (data.type === 'ROOM_TASK_PROGRESS') {
+                                const memberId = data.memberId as string;
+                                const progress = data.progress as number;
+                                const existing = userCharMap.get(memberId);
+                                if (existing) {
+                                    updateUserProgress(existing, progress);
                                 }
                             }
                         } catch (_e) {
@@ -604,9 +723,17 @@ export const AgentTown: React.FC = () => {
                         tickOtterAnimation(agent.visual, now, isMoving);
                     }
 
+                    // ── Tick user characters ──
+                    for (const userChar of userCharacters) {
+                        tickUserCharacter(userChar, otterTextures, gridWorld, now);
+                    }
+
                     // ── Depth sort: re-order children by iso depth (row+col) ──
                     for (const agent of isoAgents) {
                         agent.visual.container.zIndex = 100 + agent.gridX + agent.gridY;
+                    }
+                    for (const userChar of userCharacters) {
+                        userChar.visual.container.zIndex = 100 + userChar.gridX + userChar.gridY;
                     }
                     worldContainer.sortChildren();
                 }); // close ticker.add

@@ -22,6 +22,7 @@ class Job(Base):
     logs = Column(Text, default="[]")  # JSON array of log entries
     error = Column(Text, nullable=True)
     exit_code = Column(Integer, nullable=True)
+    artifacts = Column(Text, default="[]")  # JSON array of artifact dicts
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

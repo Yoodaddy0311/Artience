@@ -50,7 +50,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dogba/desktop test
-    continue-on-error: true  # Tests are being built up
 
   backend-test:
     runs-on: ubuntu-latest

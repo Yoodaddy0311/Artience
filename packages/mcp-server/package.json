@@ -1,0 +1,29 @@
+{
+  "name": "@dokba/mcp-server",
+  "version": "0.1.0",
+  "description": "Dokba MCP Server - Artifarm Town integration for Claude Code",
+  "type": "module",
+  "bin": {
+    "dokba-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

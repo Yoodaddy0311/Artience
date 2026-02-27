@@ -153,7 +153,8 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         let reconnectTimer: ReturnType<typeof setTimeout>;
 
         const connectWs = () => {
-            const ws = new WebSocket('ws://localhost:8000/ws/town');
+            const wsUrl = appSettings.apiUrl.replace(/^http/, 'ws');
+            const ws = new WebSocket(`${wsUrl}/ws/town`);
             wsRef.current = ws;
 
             ws.onopen = () => { reconnectDelay = 1000; };
@@ -199,7 +200,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             clearTimeout(reconnectTimer);
             wsRef.current?.close();
         };
-    }, []);
+    }, [appSettings.apiUrl]);
 
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -217,13 +218,13 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         }
         const agent = idle[Math.floor(Math.random() * idle.length)] || agents[0];
         try {
-            await fetch(`http://localhost:8000/api/jobs/run?recipe_id=${recipeId}&agent_id=${agent.id}`, { method: 'POST' });
+            await fetch(`${appSettings.apiUrl}/api/jobs/run?recipe_id=${recipeId}&agent_id=${agent.id}`, { method: 'POST' });
         } catch (e) { if (import.meta.env.DEV) console.error(e); }
     };
 
     const stopJob = async (jobId: string) => {
         try {
-            await fetch('http://localhost:8000/api/jobs/stop', {
+            await fetch(`${appSettings.apiUrl}/api/jobs/stop`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId }),
@@ -506,24 +507,23 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             <h3 className="text-xs font-black text-black uppercase">산출물 (Artifacts)</h3>
                             <button
                                 onClick={() => {
-                                    // TODO: Run-specific artifacts endpoint 분리 필요 (/api/jobs/artifacts)
-                                    fetch('http://localhost:8000/api/studio/assets')
+                                    fetch(`${appSettings.apiUrl}/api/jobs/artifacts`)
                                         .then(r => r.json())
                                         .then(data => {
-                                            if (data.assets) {
-                                                interface AssetResponse {
-                                                    filename?: string;
+                                            if (data.artifacts) {
+                                                interface ArtifactResponse {
                                                     name?: string;
                                                     path?: string;
-                                                    url?: string;
                                                     type?: string;
                                                     jobId?: string;
+                                                    recipeName?: string;
+                                                    size?: number;
                                                     ts?: number;
                                                 }
-                                                setArtifacts((data.assets as AssetResponse[]).map((a) => ({
-                                                    name: a.filename || a.name || '',
-                                                    path: a.path || a.url || '',
-                                                    type: a.type || 'file',
+                                                setArtifacts((data.artifacts as ArtifactResponse[]).map((a) => ({
+                                                    name: a.name || '',
+                                                    path: a.path || '',
+                                                    type: a.type || 'other',
                                                     jobId: a.jobId || '-',
                                                     ts: a.ts || Date.now() / 1000,
                                                 })));
@@ -573,7 +573,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                             <span className="text-xs text-gray-400 truncate block">{art.path}</span>
                                                         </div>
                                                         <button
-                                                            onClick={() => downloadFile(`http://localhost:8000${art.path}`, art.name)}
+                                                            onClick={() => downloadFile(`${appSettings.apiUrl}${art.path}`, art.name)}
                                                             className="text-xs font-black px-2 py-1 rounded-md border-2 border-black bg-[#9DE5DC] shadow-[1px_1px_0_0_#000] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
                                                         >
                                                             다운로드

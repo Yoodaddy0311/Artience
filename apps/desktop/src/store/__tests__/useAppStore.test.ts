@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '../useAppStore';
 import type { AiBuilderMessage, ProjectAsset } from '../useAppStore';
+import { DEFAULT_PROJECT } from '../../types/project';
+import type { ProjectData } from '../../types/project';
 
 /**
  * Reset the Zustand store to its initial state before each test.
@@ -12,11 +14,14 @@ function resetStore() {
     getState().resetRunSettings();
     getState().resetGamification();
     getState().clearAiBuilderMessages();
+    getState().resetProjectConfig();
     // Manually clear non-resettable slices
     useAppStore.setState({
         toasts: [],
         assets: [],
         highlightedAgentId: null,
+        projectLoading: false,
+        projectError: null,
     });
 }
 
@@ -315,6 +320,205 @@ describe('useAppStore', () => {
 
             const { assets } = useAppStore.getState();
             expect(assets).toEqual([]);
+        });
+    });
+
+    // ── Project Config ──
+
+    describe('projectConfig / updateProjectConfig / resetProjectConfig', () => {
+        it('should have DEFAULT_PROJECT as initial projectConfig', () => {
+            const { projectConfig } = useAppStore.getState();
+            expect(projectConfig.version).toBe('1.0.0');
+            expect(projectConfig.meta.id).toBe('default-project');
+            expect(projectConfig.meta.name).toBe('기본 오피스');
+            expect(projectConfig.agents).toEqual([]);
+            expect(projectConfig.recipes).toEqual([]);
+        });
+
+        it('should default projectLoading to false', () => {
+            expect(useAppStore.getState().projectLoading).toBe(false);
+        });
+
+        it('should default projectError to null', () => {
+            expect(useAppStore.getState().projectError).toBeNull();
+        });
+
+        it('should partially update project config with updateProjectConfig', () => {
+            useAppStore.getState().updateProjectConfig({
+                version: '2.0.0',
+            });
+
+            const { projectConfig } = useAppStore.getState();
+            expect(projectConfig.version).toBe('2.0.0');
+            // Other fields should remain unchanged
+            expect(projectConfig.meta.id).toBe('default-project');
+        });
+
+        it('should update nested meta via spread', () => {
+            const { projectConfig } = useAppStore.getState();
+            useAppStore.getState().updateProjectConfig({
+                meta: { ...projectConfig.meta, name: 'My Custom Office' },
+            });
+
+            const updated = useAppStore.getState().projectConfig;
+            expect(updated.meta.name).toBe('My Custom Office');
+            expect(updated.meta.id).toBe('default-project');
+        });
+
+        it('should update agents array', () => {
+            const newAgents = [
+                {
+                    id: 'a01',
+                    name: 'Sera',
+                    role: 'Developer',
+                    personality: 'Diligent',
+                    sprite: '/sprites/sera.png',
+                    skills: ['typescript', 'react'],
+                },
+            ];
+            useAppStore.getState().updateProjectConfig({ agents: newAgents });
+
+            const { projectConfig } = useAppStore.getState();
+            expect(projectConfig.agents).toHaveLength(1);
+            expect(projectConfig.agents[0].name).toBe('Sera');
+        });
+
+        it('should reset project config to defaults', () => {
+            useAppStore.getState().updateProjectConfig({ version: '3.0.0' });
+            useAppStore.getState().resetProjectConfig();
+
+            const { projectConfig } = useAppStore.getState();
+            expect(projectConfig.version).toBe('1.0.0');
+            expect(projectConfig.meta.id).toBe('default-project');
+        });
+
+        it('should clear projectError on reset', () => {
+            useAppStore.setState({ projectError: 'some error' });
+            useAppStore.getState().resetProjectConfig();
+
+            expect(useAppStore.getState().projectError).toBeNull();
+        });
+    });
+
+    describe('loadProject', () => {
+        it('should set projectLoading=true during fetch and false after success', async () => {
+            const mockProject: Partial<ProjectData> = {
+                ...DEFAULT_PROJECT,
+                version: '2.0.0',
+                meta: { ...DEFAULT_PROJECT.meta, name: 'Loaded Project' },
+            };
+
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ project: mockProject }),
+            });
+
+            const promise = useAppStore.getState().loadProject();
+            // projectLoading should be true immediately
+            expect(useAppStore.getState().projectLoading).toBe(true);
+
+            await promise;
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectConfig.meta.name).toBe('Loaded Project');
+            expect(useAppStore.getState().projectError).toBeNull();
+        });
+
+        it('should fallback to DEFAULT_PROJECT when server returns null project', async () => {
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ project: null, message: 'No project.json found.' }),
+            });
+
+            await useAppStore.getState().loadProject();
+
+            expect(useAppStore.getState().projectConfig.meta.id).toBe('default-project');
+            expect(useAppStore.getState().projectLoading).toBe(false);
+        });
+
+        it('should set projectError on fetch failure', async () => {
+            global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+
+            await useAppStore.getState().loadProject();
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectError).toBe('Network error');
+        });
+
+        it('should set projectError on non-ok HTTP response', async () => {
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+            });
+
+            await useAppStore.getState().loadProject();
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectError).toBe('HTTP 500');
+        });
+
+        it('should use apiUrl from appSettings', async () => {
+            useAppStore.getState().updateAppSettings({ apiUrl: 'https://custom-api.example.com' });
+
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ project: DEFAULT_PROJECT }),
+            });
+
+            await useAppStore.getState().loadProject();
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'https://custom-api.example.com/api/studio/project',
+            );
+        });
+    });
+
+    describe('saveProject', () => {
+        it('should PUT current projectConfig to the API', async () => {
+            useAppStore.getState().updateProjectConfig({ version: '5.0.0' });
+
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ status: 'ok' }),
+            });
+
+            await useAppStore.getState().saveProject();
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'http://localhost:8000/api/studio/project',
+                expect.objectContaining({
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+            );
+
+            // Verify the body contains the updated version
+            const callArgs = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+            const body = JSON.parse(callArgs[1].body);
+            expect(body.version).toBe('5.0.0');
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectError).toBeNull();
+        });
+
+        it('should set projectError on save failure', async () => {
+            global.fetch = vi.fn().mockRejectedValueOnce(new Error('Save failed'));
+
+            await useAppStore.getState().saveProject();
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectError).toBe('Save failed');
+        });
+
+        it('should set projectError on non-ok HTTP response', async () => {
+            global.fetch = vi.fn().mockResolvedValueOnce({
+                ok: false,
+                status: 422,
+            });
+
+            await useAppStore.getState().saveProject();
+
+            expect(useAppStore.getState().projectError).toBe('HTTP 422');
         });
     });
 });

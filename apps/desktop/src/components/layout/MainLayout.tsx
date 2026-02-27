@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useRef } from 'react';
-import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem } from 'lucide-react';
+import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem, Users } from 'lucide-react';
 const AgentTown = React.lazy(() =>
     import('../agent-town/AgentTown').then(m => ({ default: m.AgentTown }))
 );
@@ -18,7 +18,16 @@ import { DEFAULT_AGENTS } from '../../types/platform';
 import { LevelProgress } from '../gamification/LevelProgress';
 import { SettingsModal } from './SettingsModal';
 import { ToastContainer } from '../ui/Toast';
+import { InspectorCard } from '../agent-town/InspectorCard';
 import { useAppStore } from '../../store/useAppStore';
+import { RoomLobby } from '../room/RoomLobby';
+import { TaskInputPanel } from '../room/TaskInputPanel';
+import { MemberList } from '../room/MemberList';
+import { RoomCode } from '../room/RoomCode';
+import { useRoomStore } from '../../store/useRoomStore';
+const SocialView = React.lazy(() =>
+    import('../social/SocialView').then(m => ({ default: m.SocialView }))
+);
 
 // ── Feature Flags ──
 
@@ -70,6 +79,7 @@ const STUDIO_TABS: { key: StudioTab; icon: React.ReactNode; label: string }[] = 
 // ── Studio Action Buttons (P2-3) ──
 
 const StudioActions: React.FC = () => {
+    const { appSettings } = useAppStore();
     const [generating, setGenerating] = useState(false);
     const [applying, setApplying] = useState(false);
     const [rollingBack, setRollingBack] = useState(false);
@@ -77,7 +87,7 @@ const StudioActions: React.FC = () => {
     const handleGenerate = async () => {
         setGenerating(true);
         try {
-            await fetch('http://localhost:8000/api/studio/generate', {
+            await fetch(`${appSettings.apiUrl}/api/studio/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: '', scope: 'all' }),
@@ -91,7 +101,7 @@ const StudioActions: React.FC = () => {
     const handleApply = async () => {
         setApplying(true);
         try {
-            await fetch('http://localhost:8000/api/studio/draft/apply', {
+            await fetch(`${appSettings.apiUrl}/api/studio/draft/apply`, {
                 method: 'POST',
             });
         } catch {
@@ -103,11 +113,11 @@ const StudioActions: React.FC = () => {
     const handleRollback = async () => {
         setRollingBack(true);
         try {
-            const res = await fetch('http://localhost:8000/api/studio/history');
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/history`);
             const data = await res.json();
             if (data.snapshots && data.snapshots.length > 0) {
                 const latest = data.snapshots[0];
-                await fetch(`http://localhost:8000/api/studio/history/${latest.id}/rollback`, {
+                await fetch(`${appSettings.apiUrl}/api/studio/history/${latest.id}/rollback`, {
                     method: 'POST',
                 });
             }
@@ -153,6 +163,11 @@ export const MainLayout: React.FC = () => {
     const gamification = useAppStore((s) => s.gamification);
     const addToast = useAppStore((s) => s.addToast);
     const appSettings = useAppStore((s) => s.appSettings);
+    const highlightedAgentId = useAppStore((s) => s.highlightedAgentId);
+    const setHighlightedAgentId = useAppStore((s) => s.setHighlightedAgentId);
+    const inspectedAgent = highlightedAgentId
+        ? DEFAULT_AGENTS.find((a) => a.id === highlightedAgentId) ?? null
+        : null;
 
     // BottomDock team state (reactive, enables re-render on status changes)
     const [teamForDock] = useState<Teammate[]>(() =>
@@ -166,8 +181,10 @@ export const MainLayout: React.FC = () => {
     );
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
-    // P2-8: Both views rendered simultaneously, toggled via CSS display
-    const [activeView, setActiveView] = useState<'town' | 'studio'>('town');
+    // P2-8: Views toggled via CSS display. Room view added for Dokba Town multiplayer. Social view for ranking/achievements.
+    const [activeView, setActiveView] = useState<'town' | 'studio' | 'room' | 'social'>('town');
+    const currentRoom = useRoomStore((s) => s.currentRoom);
+    const roomMembers = useRoomStore((s) => s.members);
 
     const [showRunPanel, setShowRunPanel] = useState(false);
     const [studioTab, setStudioTab] = useState<StudioTab>('inbox');
@@ -233,6 +250,12 @@ export const MainLayout: React.FC = () => {
                             <AgentTown />
                         </Suspense>
                     </AgentTownBoundary>
+                    {inspectedAgent && (
+                        <InspectorCard
+                            agent={inspectedAgent}
+                            onClose={() => setHighlightedAgentId(null)}
+                        />
+                    )}
                 </div>
 
                 {/* P2-8: Studio view - always mounted, hidden via CSS when town active */}
@@ -278,6 +301,40 @@ export const MainLayout: React.FC = () => {
                     <div className="flex-1 ml-4 bg-white rounded-3xl shadow-xl border-4 border-cream-200 overflow-hidden">
                         <StudioDecorator />
                     </div>
+                </div>
+
+                {/* Room view — Lobby or In-Room with side panels */}
+                <div
+                    className="absolute inset-0 z-20 overflow-hidden"
+                    style={{ display: activeView === 'room' ? 'flex' : 'none' }}
+                >
+                    {/* Main: Lobby or Town (when in room) */}
+                    <div className="flex-1 overflow-hidden">
+                        {currentRoom ? (
+                            <div className="flex h-full">
+                                {/* Left: Room Lobby (in-room view with code + members) */}
+                                <div className="w-80 flex-shrink-0 border-r-4 border-black overflow-y-auto">
+                                    <RoomLobby />
+                                </div>
+                                {/* Right: Task Panel */}
+                                <div className="flex-1 bg-white overflow-hidden">
+                                    <TaskInputPanel />
+                                </div>
+                            </div>
+                        ) : (
+                            <RoomLobby />
+                        )}
+                    </div>
+                </div>
+
+                {/* Social view — Leaderboard, Achievements, Profile */}
+                <div
+                    className="absolute inset-0 z-20 overflow-hidden"
+                    style={{ display: activeView === 'social' ? 'block' : 'none' }}
+                >
+                    <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-cream-50">Loading Social...</div>}>
+                        <SocialView />
+                    </Suspense>
                 </div>
 
                 {/* Game HUD Overlay (v4 Brutalism + Artience Guide) */}
@@ -373,6 +430,18 @@ export const MainLayout: React.FC = () => {
                                     className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-black text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'town' ? 'bg-[#FF9F1C]' : 'bg-white'}`}
                                 >
                                     {activeView === 'town' ? <><Sparkles className="w-4 h-4" /> Studio</> : <><Home className="w-4 h-4" /> Town</>}
+                                </button>
+                                <button
+                                    onClick={() => setActiveView(activeView === 'room' ? 'town' : 'room')}
+                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'room' ? 'bg-[#A78BFA] text-white' : 'bg-white text-black'}`}
+                                >
+                                    <Users className="w-4 h-4" /> Room
+                                </button>
+                                <button
+                                    onClick={() => setActiveView(activeView === 'social' ? 'town' : 'social')}
+                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-black text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'social' ? 'bg-[#E8DAFF]' : 'bg-white'}`}
+                                >
+                                    <Users className="w-4 h-4" /> Social
                                 </button>
                             </div>
                         </div>

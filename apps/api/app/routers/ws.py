@@ -9,8 +9,12 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.middleware.sanitize import sanitize_html
+from app.services.llm_service import LLMService
 
 _logger = logging.getLogger(__name__)
+
+# ── Singleton LLM service for agent chat ─────────────
+_llm_service = LLMService()
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -61,6 +65,41 @@ _chat_stats: Dict[str, int] = {
 def get_chat_stats() -> Dict[str, int]:
     """Return current chat statistics."""
     return {**_chat_stats}
+
+
+# ── Agent name → agentId mapping ─────────────────────
+_AGENT_ID_MAP: Dict[str, str] = {
+    "sera": "a01",
+    "luna": "a02",
+    "rio": "a03",
+    "ara": "a04",
+    "max": "a05",
+    "ivy": "a06",
+    "kai": "a07",
+    "nova": "a08",
+    "zoe": "a09",
+    "leo": "a10",
+    "mia": "a11",
+    "jin": "a12",
+    "sol": "a13",
+    "dan": "a14",
+    "yuri": "a15",
+    "hana": "a16",
+    "teo": "a17",
+    "lia": "a18",
+    "ryu": "a19",
+    "sora": "a20",
+    "nico": "a21",
+    "ella": "a22",
+    "finn": "a23",
+    "cleo": "a24",
+    "ash": "a25",
+}
+
+
+def _get_agent_id(agent_name: str) -> str:
+    """Resolve an agent name to its unique agentId."""
+    return _AGENT_ID_MAP.get(agent_name.lower(), "a01")
 
 
 # ── Role-based response templates ──────────────────────
@@ -138,6 +177,8 @@ def _generate_response(agent_role: str, user_message: str) -> str:
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        # Room-scoped connections: room_id -> list of (user_id, websocket)
+        self._room_connections: Dict[str, List[tuple]] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -160,6 +201,52 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(message))
         except Exception:
             pass
+
+    # ── Room-scoped WebSocket management ──────────────
+
+    def join_room(self, room_id: str, user_id: str, websocket: WebSocket):
+        """Register a WebSocket connection to a room."""
+        if room_id not in self._room_connections:
+            self._room_connections[room_id] = []
+        # Avoid duplicate entries for same user
+        self._room_connections[room_id] = [
+            (uid, ws) for uid, ws in self._room_connections[room_id] if uid != user_id
+        ]
+        self._room_connections[room_id].append((user_id, websocket))
+        _logger.info("WS room join: user=%s room=%s", user_id, room_id)
+
+    def leave_room(self, room_id: str, user_id: str):
+        """Remove a user's WebSocket from a room."""
+        if room_id in self._room_connections:
+            self._room_connections[room_id] = [
+                (uid, ws) for uid, ws in self._room_connections[room_id] if uid != user_id
+            ]
+            if not self._room_connections[room_id]:
+                del self._room_connections[room_id]
+        _logger.info("WS room leave: user=%s room=%s", user_id, room_id)
+
+    def disconnect_from_all_rooms(self, websocket: WebSocket):
+        """Remove a websocket from all rooms (on disconnect)."""
+        for room_id in list(self._room_connections.keys()):
+            self._room_connections[room_id] = [
+                (uid, ws) for uid, ws in self._room_connections[room_id] if ws is not websocket
+            ]
+            if not self._room_connections[room_id]:
+                del self._room_connections[room_id]
+
+    async def broadcast_to_room(self, room_id: str, message: dict):
+        """Broadcast a message to all connections in a specific room."""
+        connections = self._room_connections.get(room_id, [])
+        data = json.dumps(message)
+        for _uid, ws in connections:
+            try:
+                await ws.send_text(data)
+            except Exception:
+                continue
+
+    def get_room_user_ids(self, room_id: str) -> List[str]:
+        """Return list of user_ids currently connected to a room."""
+        return [uid for uid, _ws in self._room_connections.get(room_id, [])]
 
 
 manager = ConnectionManager()
@@ -200,11 +287,22 @@ async def websocket_town_endpoint(
 
                     _chat_stats["total_messages_sent"] += 1
 
-                    # Simulate agent "thinking" with a short delay (0.8-2s)
-                    delay = random.uniform(0.8, 2.0)
-                    await asyncio.sleep(delay)
+                    # Try LLM first; fall back to rule-based response
+                    agent_name = payload.get("agentName", agent_id)
+                    llm_response = await _llm_service.chat(
+                        agent_name=agent_name,
+                        agent_role=agent_role,
+                        user_message=content,
+                    )
 
-                    response_text = _generate_response(agent_role, content)
+                    if llm_response:
+                        response_text = llm_response
+                    else:
+                        # Fallback: simulate "thinking" + rule-based response
+                        delay = random.uniform(0.8, 2.0)
+                        await asyncio.sleep(delay)
+                        response_text = _generate_response(agent_role, content)
+
                     _chat_stats["total_responses"] += 1
 
                     # Send response back to the sender only
@@ -214,6 +312,33 @@ async def websocket_town_endpoint(
                         "content": response_text,
                     })
 
+                # ── Room join/leave via WebSocket ──
+                elif msg_type == "WS_ROOM_JOIN":
+                    room_id = payload.get("roomId", "")
+                    user_id = payload.get("userId", "")
+                    character_name = payload.get("characterName", "")
+                    if room_id and user_id:
+                        manager.join_room(room_id, user_id, websocket)
+                        await manager.broadcast_to_room(room_id, {
+                            "type": "ROOM_MEMBER_JOINED",
+                            "roomId": room_id,
+                            "userId": user_id,
+                            "characterName": character_name,
+                            "onlineUsers": manager.get_room_user_ids(room_id),
+                        })
+
+                elif msg_type == "WS_ROOM_LEAVE":
+                    room_id = payload.get("roomId", "")
+                    user_id = payload.get("userId", "")
+                    if room_id and user_id:
+                        manager.leave_room(room_id, user_id)
+                        await manager.broadcast_to_room(room_id, {
+                            "type": "ROOM_MEMBER_LEFT",
+                            "roomId": room_id,
+                            "userId": user_id,
+                            "onlineUsers": manager.get_room_user_ids(room_id),
+                        })
+
                 # ── Existing: Handle CHAT_COMMAND for claude CLI ──
                 elif msg_type == "CHAT_COMMAND":
                     agent = payload.get("target_agent", "Sera")
@@ -222,17 +347,16 @@ async def websocket_town_endpoint(
                     _chat_stats["total_messages_sent"] += 1
 
                     # 1. Send initial THINKING state
+                    agent_id_resolved = _get_agent_id(agent)
                     await manager.broadcast({
                         "type": "AGENT_STATE_CHANGE",
-                        "agentId": "a01" if agent.lower() == "sera" else "a01",  # TODO: map by name
+                        "agentId": agent_id_resolved,
                         "state": "THINKING"
                     })
 
                     # 2. Spawn actual claude CLI process
-                    import os
-
                     full_cmd = f'npx @anthropic-ai/claude-code -p "{prompt}" --print'
-                    print(f"Executing: {full_cmd}")
+                    _logger.info("Executing: %s", full_cmd)
 
                     env = os.environ.copy()
                     env["FORCE_COLOR"] = "1"
@@ -250,7 +374,7 @@ async def websocket_town_endpoint(
 
                             if stdout:
                                 text = stdout.decode('utf-8', errors='replace').strip()
-                                print(f"Claude OUT: {text}")
+                                _logger.debug("Claude OUT: %s", text)
 
                                 # Send the full output as a single chunk
                                 await manager.broadcast({
@@ -265,21 +389,24 @@ async def websocket_town_endpoint(
                             state = "SUCCESS" if proc.returncode == 0 else "ERROR"
                             await manager.broadcast({
                                 "type": "AGENT_STATE_CHANGE",
-                                "agentId": "a01" if agent.lower() == "sera" else "a01",
+                                "agentId": agent_id_resolved,
                                 "state": state
                             })
                             await asyncio.sleep(2)
                             await manager.broadcast({
                                 "type": "AGENT_STATE_CHANGE",
-                                "agentId": "a01" if agent.lower() == "sera" else "a01",
+                                "agentId": agent_id_resolved,
                                 "state": "IDLE"
                             })
-                            print(f"Finished run_claude. Exit code: {proc.returncode}")
+                            _logger.info(
+                                "Finished run_claude. Exit code: %d",
+                                proc.returncode,
+                            )
                         except Exception as e:
-                            print(f"Error executing claude: {e}")
+                            _logger.error("Error executing claude: %s", e)
                             await manager.broadcast({
                                 "type": "AGENT_STATE_CHANGE",
-                                "agentId": "a01" if agent.lower() == "sera" else "a01",
+                                "agentId": agent_id_resolved,
                                 "state": "ERROR"
                             })
 
@@ -289,4 +416,5 @@ async def websocket_town_endpoint(
                 pass
 
     except WebSocketDisconnect:
+        manager.disconnect_from_all_rooms(websocket)
         manager.disconnect(websocket)

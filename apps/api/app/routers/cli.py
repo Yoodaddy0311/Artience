@@ -1,10 +1,15 @@
+import asyncio
+import logging
+import os
+import platform
+import subprocess
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+
 from app.services.cli_integration import CliIntegrationService
-import os
-import asyncio
-import subprocess
-import platform
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cli", tags=["CLI Integration"])
 
@@ -52,7 +57,7 @@ async def websocket_cli_endpoint(websocket: WebSocket, provider: str = "claude")
             user_input = await websocket.receive_text()
             await cli_service.send_command(user_input)
     except WebSocketDisconnect:
-        print("Frontend CLI Terminal disconnected")
+        _logger.info("Frontend CLI Terminal disconnected")
     finally:
         reader_task.cancel()
         await cli_service.terminate()

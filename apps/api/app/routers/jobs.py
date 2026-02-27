@@ -1,17 +1,25 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from datetime import datetime, timezone
-from typing import Optional
 import asyncio
 import json
+import logging
 import time
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
 from app.exceptions import NotFoundError, ValidationError
 from app.models.job import Job
+from app.models.recipe import Recipe
 from app.schemas.job import JobResponse, JobListResponse
+from app.schemas.recipe import RecipeCreate, RecipeUpdate
 from app.routers.settings import get_run_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -19,13 +27,9 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 MAX_LOGS_PER_JOB = 500
 LOG_FLUSH_INTERVAL = 2.0  # seconds between DB log flushes
 
-DEMO_RECIPES = [
-    {"id": "r01", "name": "Node \ubc84\uc804 \ud655\uc778", "description": "node -v (\ub370\ubaa8)", "command": "node", "args": ["-v"], "cwd": ""},
-    {"id": "r02", "name": "\ub514\ub809\ud1a0\ub9ac \ubaa9\ub85d", "description": "dir \uc2e4\ud589", "command": "cmd", "args": ["/c", "dir"], "cwd": ""},
-    {"id": "r03", "name": "Git \uc0c1\ud0dc", "description": "git status", "command": "git", "args": ["status"], "cwd": ""},
-    {"id": "r04", "name": "Python \ubc84\uc804", "description": "python --version", "command": "python", "args": ["--version"], "cwd": ""},
-    {"id": "r05", "name": "NPM \uc758\uc874\uc131 \ud655\uc778", "description": "npm ls --depth=0", "command": "npm", "args": ["ls", "--depth=0"], "cwd": ""},
-]
+# ── Artifacts storage ─────────────────────────────────
+ARTIFACTS_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "artifacts"
+ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── In-memory runtime state (not persisted) ───────────
 # Tracks running processes and pending log buffers for active jobs only.
@@ -48,6 +52,7 @@ def _job_to_dict(job: Job) -> dict:
         "logs": json.loads(job.logs) if job.logs else [],
         "error": job.error,
         "exit_code": job.exit_code,
+        "artifacts": json.loads(job.artifacts) if job.artifacts else [],
         "started_at": job.started_at.timestamp() if job.started_at else None,
         "completed_at": job.completed_at.timestamp() if job.completed_at else None,
         "ended_at": job.completed_at.timestamp() if job.completed_at else None,  # backward compat
@@ -102,10 +107,165 @@ def _count_running_jobs() -> int:
     )
 
 
-# ── Endpoints ──────────────────────────────────────────
+# ── Helpers — Recipe serialization ─────────────────────
+def _recipe_to_dict(recipe: Recipe) -> dict:
+    """Convert a Recipe ORM instance to the dict format the frontend expects."""
+    return {
+        "id": recipe.id,
+        "name": recipe.name,
+        "description": recipe.description or "",
+        "command": recipe.command,
+        "args": json.loads(recipe.args) if recipe.args else [],
+        "cwd": recipe.cwd or "",
+    }
+
+
+# ── Recipe CRUD Endpoints ─────────────────────────────
 @router.get("/recipes")
-def list_recipes():
-    return {"recipes": DEMO_RECIPES}
+def list_recipes(db: Session = Depends(get_db)):
+    recipes = db.query(Recipe).order_by(Recipe.created_at).all()
+    return {"recipes": [_recipe_to_dict(r) for r in recipes]}
+
+
+@router.post("/recipes")
+def create_recipe(body: RecipeCreate, db: Session = Depends(get_db)):
+    recipe_id = body.id or f"r{uuid.uuid4().hex[:6]}"
+    if db.query(Recipe).filter(Recipe.id == recipe_id).first():
+        raise ValidationError(
+            message=f"Recipe '{recipe_id}' already exists",
+            error_code="recipe_duplicate",
+            details={"recipe_id": recipe_id},
+        )
+    recipe = Recipe(
+        id=recipe_id,
+        name=body.name,
+        description=body.description,
+        command=body.command,
+        args=json.dumps(body.args),
+        cwd=body.cwd,
+    )
+    db.add(recipe)
+    db.commit()
+    db.refresh(recipe)
+    logger.info("Created recipe %s (%s)", recipe.id, recipe.name)
+    return {"recipe": _recipe_to_dict(recipe)}
+
+
+@router.put("/recipes/{recipe_id}")
+def update_recipe(recipe_id: str, body: RecipeUpdate, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise NotFoundError(
+            message=f"Recipe '{recipe_id}' not found",
+            error_code="recipe_not_found",
+            details={"recipe_id": recipe_id},
+        )
+    if body.name is not None:
+        recipe.name = body.name
+    if body.description is not None:
+        recipe.description = body.description
+    if body.command is not None:
+        recipe.command = body.command
+    if body.args is not None:
+        recipe.args = json.dumps(body.args)
+    if body.cwd is not None:
+        recipe.cwd = body.cwd
+    db.commit()
+    db.refresh(recipe)
+    logger.info("Updated recipe %s", recipe.id)
+    return {"recipe": _recipe_to_dict(recipe)}
+
+
+@router.delete("/recipes/{recipe_id}")
+def delete_recipe(recipe_id: str, db: Session = Depends(get_db)):
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise NotFoundError(
+            message=f"Recipe '{recipe_id}' not found",
+            error_code="recipe_not_found",
+            details={"recipe_id": recipe_id},
+        )
+    db.delete(recipe)
+    db.commit()
+    logger.info("Deleted recipe %s", recipe_id)
+    return {"deleted": True, "recipe_id": recipe_id}
+
+
+# ── Artifacts Endpoints ────────────────────────────────
+def _classify_artifact_type(filename: str) -> str:
+    """Classify a file into an artifact type based on extension."""
+    ext = Path(filename).suffix.lower()
+    if ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".bmp"):
+        return "image"
+    elif ext in (".pdf", ".txt", ".md", ".json", ".csv", ".docx", ".xlsx", ".log"):
+        return "document"
+    elif ext in (".zip", ".tar", ".gz", ".7z", ".rar"):
+        return "archive"
+    return "other"
+
+
+@router.get("/artifacts")
+def list_all_artifacts(
+    limit: int = Query(default=100, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """List artifacts across all completed jobs."""
+    completed_statuses = ("SUCCESS", "ERROR", "STOPPED", "CANCELED")
+    jobs = (
+        db.query(Job)
+        .filter(Job.status.in_(completed_statuses))
+        .order_by(Job.completed_at.desc())
+        .all()
+    )
+
+    all_artifacts = []
+    for job in jobs:
+        artifacts = json.loads(job.artifacts) if job.artifacts else []
+        for art in artifacts:
+            art["jobId"] = job.id
+            art["recipeName"] = job.recipe_name
+            all_artifacts.append(art)
+
+    total = len(all_artifacts)
+    paged = all_artifacts[skip : skip + limit]
+    return {"artifacts": paged, "total": total, "skip": skip, "limit": limit}
+
+
+@router.get("/artifacts/{job_id}/{filename:path}")
+def download_artifact(job_id: str, filename: str):
+    """Download a specific artifact file."""
+    # Prevent path traversal
+    safe_name = Path(filename).name
+    file_path = ARTIFACTS_DIR / job_id / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise NotFoundError(
+            message=f"Artifact '{filename}' not found for job '{job_id}'",
+            error_code="artifact_not_found",
+            details={"job_id": job_id, "filename": filename},
+        )
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.get("/{job_id}/artifacts")
+def get_job_artifacts(job_id: str, db: Session = Depends(get_db)):
+    """List artifacts for a specific job."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise NotFoundError(
+            message=f"Job '{job_id}' not found",
+            error_code="job_not_found",
+            details={"job_id": job_id},
+        )
+    artifacts = json.loads(job.artifacts) if job.artifacts else []
+    for art in artifacts:
+        art["jobId"] = job.id
+        art["recipeName"] = job.recipe_name
+    return {"artifacts": artifacts, "jobId": job_id}
 
 
 @router.get("/history")
@@ -167,13 +327,15 @@ async def run_job(
     agent_id: str = "a01",
     db: Session = Depends(get_db),
 ):
-    recipe = next((r for r in DEMO_RECIPES if r["id"] == recipe_id), None)
-    if not recipe:
+    db_recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not db_recipe:
         raise NotFoundError(
             message=f"Recipe '{recipe_id}' not found",
             error_code="recipe_not_found",
             details={"recipe_id": recipe_id},
         )
+
+    recipe = _recipe_to_dict(db_recipe)
 
     # Read current run settings for concurrency limit
     settings = get_run_settings()
@@ -500,7 +662,7 @@ async def _execute_job(job_id: str, recipe: dict):
         except Exception as e:
             import traceback
             trace = traceback.format_exc()
-            print(f"Exception starting process: {trace}")
+            logger.error("Exception starting process: %s", trace)
             log_entry = {
                 "ts": time.time(),
                 "stream": "stderr",
@@ -516,6 +678,32 @@ async def _execute_job(job_id: str, recipe: dict):
         # Final log flush -- write everything remaining to DB
         await _flush_logs(job_id)
 
+        # Collect artifacts: save stdout as a log artifact
+        collected_artifacts = []
+        try:
+            job_artifacts_dir = ARTIFACTS_DIR / job_id
+            job_artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save full stdout log as an artifact
+            runtime_state = _active_jobs.get(job_id)
+            db.refresh(job)
+            all_logs = json.loads(job.logs) if job.logs else []
+            if all_logs:
+                log_file = job_artifacts_dir / "output.log"
+                log_content = "\n".join(
+                    entry.get("text", "") for entry in all_logs
+                )
+                log_file.write_text(log_content, encoding="utf-8")
+                collected_artifacts.append({
+                    "name": "output.log",
+                    "path": f"/api/jobs/artifacts/{job_id}/output.log",
+                    "type": "document",
+                    "size": log_file.stat().st_size,
+                    "ts": time.time(),
+                })
+        except Exception as exc:
+            logger.warning("Artifact collection failed for job %s: %s", job_id, exc)
+
         # Update job final state in DB
         db.refresh(job)
         is_success = (exit_code == 0) and (job.status != "CANCELED") and not timed_out
@@ -528,6 +716,7 @@ async def _execute_job(job_id: str, recipe: dict):
                 job.status = "SUCCESS" if is_success else "ERROR"
 
         job.exit_code = exit_code
+        job.artifacts = json.dumps(collected_artifacts)
         job.completed_at = _now_utc()
         db.commit()
         db.refresh(job)

@@ -1,4 +1,4 @@
-"""LLM Service - Wraps the Anthropic Python SDK for draft generation.
+"""LLM Service - Wraps the Anthropic Python SDK for draft generation and chat.
 
 Falls back to rule-based generation when ANTHROPIC_API_KEY is not configured.
 """
@@ -212,3 +212,56 @@ class LLMService:
         except Exception as exc:
             _logger.exception("Claude API call failed")
             return {"status": "error", "message": f"LLM generation failed: {exc}"}
+
+    async def chat(
+        self,
+        agent_name: str,
+        agent_role: str,
+        user_message: str,
+    ) -> Optional[str]:
+        """Generate a chat response for an agent using the Claude API.
+
+        Returns the response text on success, or ``None`` if the LLM is
+        unavailable or an error occurs (caller should fall back to the
+        rule-based response).
+        """
+        if not self.is_available:
+            return None
+
+        try:
+            client = self._get_client()
+
+            system = (
+                f"You are {agent_name}, a virtual team member with the role of "
+                f"{agent_role}. Respond helpfully and in character. "
+                "Keep responses concise (2-4 sentences). "
+                "If the user writes in Korean, respond in Korean. "
+                "If the user writes in English, respond in English."
+            )
+
+            import asyncio
+
+            response = await asyncio.to_thread(
+                client.messages.create,
+                model=self.model,
+                max_tokens=512,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+            )
+
+            raw_text = ""
+            for block in response.content:
+                if hasattr(block, "text"):
+                    raw_text += block.text
+
+            if raw_text.strip():
+                _logger.debug(
+                    "LLM chat response generated for agent=%s", agent_name
+                )
+                return raw_text.strip()
+
+            return None
+
+        except Exception as exc:
+            _logger.warning("LLM chat failed for agent=%s: %s", agent_name, exc)
+            return None

@@ -1,6 +1,16 @@
 {
-    "name": "@dogba/shared-types",
-    "version": "1.0.0",
-    "main": "src/index.ts",
-    "dependencies": {}
+  "name": "@dokba/shared-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for Dokba/Artifarm — Room, Task, Job, Rankings, WS Events",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT"
 }

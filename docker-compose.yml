@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: dokba-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - api-data:/app/data
+      - ./apps/desktop/public/assets:/desktop/public/assets
+      - ./apps/desktop/public/generated:/desktop/public/generated
+      - ./apps/desktop/public/history:/desktop/public/history
+      - ./apps/desktop/public/project.json:/desktop/public/project.json
+    environment:
+      - DOGBA_DB_PATH=/app/data/dogba.db
+      - DOKBA_ENV=production
+      # Uncomment and set these as needed:
+      # - DOKBA_API_KEY=your-api-key
+      # - DOKBA_WS_TOKEN=your-ws-token
+      # - ANTHROPIC_API_KEY=your-anthropic-key
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start-period: 10s
+      retries: 3
+
+volumes:
+  api-data:

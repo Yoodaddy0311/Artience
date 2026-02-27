@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Palette } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
 
 export const StudioDecorator: React.FC = () => {
+    const { appSettings } = useAppStore();
     const [assets, setAssets] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAsset, setSelectedAsset] = useState<number | null>(null);
 
     useEffect(() => {
         // Fetch from our shiny new local Python backend
-        fetch('http://localhost:8000/api/studio/assets')
+        fetch(`${appSettings.apiUrl}/api/studio/assets`)
             .then(res => res.json())
             .then(data => {
                 if (data.assets) setAssets(data.assets);

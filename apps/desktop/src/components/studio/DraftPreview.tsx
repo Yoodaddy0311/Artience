@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import type { DraftSummary, DraftFile, DraftData, FetchState } from './draft-types';
-import { extractThemeColors, getRoomColor, CANVAS_WIDTH, CANVAS_HEIGHT, renderWorldPreview } from './draft-canvas';
+import {
+    extractThemeColors,
+    getRoomColor,
+    CANVAS_WIDTH,
+    CANVAS_HEIGHT,
+    renderWorldPreview,
+    hitTestAgent,
+    type AgentHitArea,
+} from './draft-canvas';
 import { DraftSkeleton, RefineModal, ColorSwatch, MethodBadge, StatCard } from './DraftSkeleton';
+
+type ViewMode = 'map' | 'agents';
 
 // ── Main Component ──
 
@@ -17,6 +27,10 @@ export const DraftPreview: React.FC = () => {
     const [refineOpen, setRefineOpen] = useState(false);
     const [message, setMessage] = useState('');
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [zoom, setZoom] = useState(1);
+    const [viewMode, setViewMode] = useState<ViewMode>('map');
+    const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+    const agentPositionsRef = useRef<AgentHitArea[]>([]);
 
     const loading = fetchState === 'loading';
 
@@ -76,8 +90,35 @@ export const DraftPreview: React.FC = () => {
         canvas.height = CANVAS_HEIGHT * dpr;
         ctx.scale(dpr, dpr);
 
-        renderWorldPreview(ctx, draft, draftData);
-    }, [draft, draftData]);
+        const positions = renderWorldPreview(ctx, draft, draftData, hoveredAgentId);
+        agentPositionsRef.current = positions;
+    }, [draft, draftData, hoveredAgentId]);
+
+    // Canvas mouse interaction for agent hover
+    const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = CANVAS_WIDTH / rect.width;
+        const scaleY = CANVAS_HEIGHT / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        const hit = hitTestAgent(x, y, agentPositionsRef.current);
+        const newId = hit?.agent.id ?? null;
+        if (newId !== hoveredAgentId) {
+            setHoveredAgentId(newId);
+        }
+    }, [hoveredAgentId]);
+
+    const handleCanvasMouseLeave = useCallback(() => {
+        if (hoveredAgentId) setHoveredAgentId(null);
+    }, [hoveredAgentId]);
+
+    // Zoom controls
+    const zoomIn = () => setZoom(z => Math.min(z + 0.25, 2.5));
+    const zoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
+    const zoomReset = () => setZoom(1);
 
     const applyDraft = async () => {
         setApplying(true);
@@ -258,16 +299,144 @@ export const DraftPreview: React.FC = () => {
 
                     {/* Canvas World Preview */}
                     <div className="px-4 mb-3">
-                        <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">
-                            World Preview
-                        </h3>
-                        <div className="border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] overflow-hidden bg-gray-50">
-                            <canvas
-                                ref={canvasRef}
-                                style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
-                                className="w-full"
-                            />
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">
+                                World Preview
+                            </h3>
+                            <div className="flex items-center gap-1">
+                                {/* View mode toggle */}
+                                <div className="flex border-2 border-black rounded-md overflow-hidden shadow-[1px_1px_0_0_#000]">
+                                    <button
+                                        onClick={() => setViewMode('map')}
+                                        className={`px-2 py-0.5 text-[10px] font-black transition-colors ${
+                                            viewMode === 'map'
+                                                ? 'bg-black text-white'
+                                                : 'bg-white text-black hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        Map
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('agents')}
+                                        className={`px-2 py-0.5 text-[10px] font-black border-l-2 border-black transition-colors ${
+                                            viewMode === 'agents'
+                                                ? 'bg-black text-white'
+                                                : 'bg-white text-black hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        Agents
+                                    </button>
+                                </div>
+                                {/* Zoom controls */}
+                                <div className="flex items-center border-2 border-black rounded-md overflow-hidden shadow-[1px_1px_0_0_#000] ml-1">
+                                    <button
+                                        onClick={zoomOut}
+                                        disabled={zoom <= 0.5}
+                                        className="px-1.5 py-0.5 text-[10px] font-black bg-white hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                                    >
+                                        -
+                                    </button>
+                                    <button
+                                        onClick={zoomReset}
+                                        className="px-1.5 py-0.5 text-[10px] font-bold bg-white hover:bg-gray-100 border-x-2 border-black transition-colors min-w-[36px]"
+                                    >
+                                        {Math.round(zoom * 100)}%
+                                    </button>
+                                    <button
+                                        onClick={zoomIn}
+                                        disabled={zoom >= 2.5}
+                                        className="px-1.5 py-0.5 text-[10px] font-black bg-white hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+
+                        {viewMode === 'map' ? (
+                            <div
+                                className="border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] overflow-auto bg-gray-50"
+                                style={{ maxHeight: 360 }}
+                            >
+                                <canvas
+                                    ref={canvasRef}
+                                    onMouseMove={handleCanvasMouseMove}
+                                    onMouseLeave={handleCanvasMouseLeave}
+                                    style={{
+                                        width: CANVAS_WIDTH * zoom,
+                                        height: CANVAS_HEIGHT * zoom,
+                                        cursor: hoveredAgentId ? 'pointer' : 'default',
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            /* Agent placement grid view (DOM-based) */
+                            <div className="border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] bg-white p-3 max-h-[360px] overflow-y-auto">
+                                {rooms.length === 0 ? (
+                                    <p className="text-xs font-bold text-gray-400 text-center py-6">
+                                        No room data available
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {rooms.map((room, rIdx) => {
+                                            const roomAgents = agents.filter(
+                                                (_, aIdx) => aIdx % rooms.length === rIdx,
+                                            );
+                                            const roomColor = getRoomColor(rIdx, themeColors);
+                                            return (
+                                                <div
+                                                    key={room.id}
+                                                    className="rounded-lg border-2 border-black overflow-hidden"
+                                                >
+                                                    <div
+                                                        className="px-3 py-1.5 flex items-center gap-2 border-b-2 border-black"
+                                                        style={{ backgroundColor: roomColor + '25' }}
+                                                    >
+                                                        <span
+                                                            className="w-3 h-3 rounded-sm border-2 border-black shrink-0"
+                                                            style={{ backgroundColor: roomColor }}
+                                                        />
+                                                        <span className="text-xs font-black flex-1">
+                                                            {room.name || room.id}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-gray-400">
+                                                            {room.width}x{room.height} | {roomAgents.length} agent{roomAgents.length !== 1 ? 's' : ''}
+                                                        </span>
+                                                    </div>
+                                                    {roomAgents.length > 0 ? (
+                                                        <div className="p-2 flex flex-wrap gap-1.5">
+                                                            {roomAgents.map(agent => (
+                                                                <div
+                                                                    key={agent.id}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 rounded border-2 border-black bg-white shadow-[1px_1px_0_0_#000] text-[10px]"
+                                                                >
+                                                                    <span
+                                                                        className="w-5 h-5 rounded-full border-2 border-black flex items-center justify-center text-white text-[8px] font-black shrink-0"
+                                                                        style={{ backgroundColor: roomColor }}
+                                                                    >
+                                                                        {agent.name.charAt(0).toUpperCase()}
+                                                                    </span>
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-black truncate">{agent.name}</div>
+                                                                        {agent.role && agent.role !== 'General' && (
+                                                                            <div className="text-[9px] text-gray-400 truncate">{agent.role}</div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-2 text-[10px] text-gray-300 text-center font-bold">
+                                                            No agents assigned
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Room List (compact) */}

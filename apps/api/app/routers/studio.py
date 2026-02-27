@@ -1,11 +1,14 @@
+import io
+import json
+import logging
+import mimetypes
+import os
+import re
+import uuid
+from pathlib import Path
+
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
-import logging
-import os
-import json
-import uuid
-import re
-from pathlib import Path
 
 from app.exceptions import NotFoundError, ValidationError, ServiceError
 
@@ -15,6 +18,75 @@ router = APIRouter(prefix="/api/studio", tags=["studio"])
 
 UPLOAD_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "assets" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+THUMBNAIL_DIR = UPLOAD_DIR / "thumbnails"
+THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+
+_THUMBNAIL_SIZE = (128, 128)
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}
+_TEXT_EXTENSIONS = {".txt", ".md", ".json", ".csv", ".py", ".js", ".ts", ".html", ".css", ".yaml", ".yml"}
+
+
+def _generate_thumbnail(content: bytes, filename: str) -> dict | None:
+    """Generate a 128x128 thumbnail for an image file.
+
+    Returns a dict with thumbnail metadata on success, or None if
+    thumbnail generation is not applicable or fails.
+    """
+    ext = Path(filename).suffix.lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        return None
+
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(content))
+        original_width, original_height = img.size
+        original_format = img.format or ext.lstrip(".")
+
+        # Convert to RGB if needed (e.g., RGBA PNGs, palette images)
+        if img.mode in ("RGBA", "P"):
+            thumb = img.copy()
+        else:
+            thumb = img.convert("RGB")
+
+        thumb.thumbnail(_THUMBNAIL_SIZE, Image.LANCZOS)
+
+        thumb_filename = f"thumb_{Path(filename).stem}.png"
+        thumb_path = THUMBNAIL_DIR / thumb_filename
+        thumb.save(str(thumb_path), "PNG")
+
+        return {
+            "thumbnailPath": f"/assets/uploads/thumbnails/{thumb_filename}",
+            "thumbnailSize": thumb_path.stat().st_size,
+            "originalWidth": original_width,
+            "originalHeight": original_height,
+            "originalFormat": original_format,
+            "colorMode": img.mode,
+        }
+    except Exception as exc:
+        _logger.warning("Thumbnail generation failed for %s: %s", filename, exc)
+        return None
+
+
+def _extract_metadata(content: bytes, filename: str, extracted_type: str) -> dict:
+    """Extract file metadata based on type."""
+    meta: dict = {
+        "size": len(content),
+        "mimeType": mimetypes.guess_type(filename)[0] or "application/octet-stream",
+    }
+
+    if extracted_type == "document":
+        ext = Path(filename).suffix.lower()
+        if ext in _TEXT_EXTENSIONS:
+            try:
+                text = content.decode("utf-8", errors="replace")
+                meta["lineCount"] = text.count("\n") + 1
+                meta["encoding"] = "utf-8"
+            except Exception:
+                pass
+
+    return meta
 
 @router.get("/assets")
 def get_local_assets():
@@ -31,12 +103,19 @@ def get_local_assets():
     if UPLOAD_DIR.exists():
         for item in UPLOAD_DIR.iterdir():
             if item.is_file():
-                assets.append({
+                ext = item.suffix.lower()
+                asset_type = "image" if ext in _IMAGE_EXTENSIONS else "document"
+                asset_entry: dict = {
                     "filename": item.name,
                     "path": f"/assets/uploads/{item.name}",
-                    "type": "image" if item.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp", ".gif"] else "document",
+                    "type": asset_type,
                     "size": item.stat().st_size,
-                })
+                }
+                # Include thumbnail path if one exists
+                thumb_path = THUMBNAIL_DIR / f"thumb_{item.stem}.png"
+                if thumb_path.exists():
+                    asset_entry["thumbnail"] = f"/assets/uploads/thumbnails/thumb_{item.stem}.png"
+                assets.append(asset_entry)
                 
     return {"assets": assets, "status": "synced"}
 
@@ -48,38 +127,61 @@ async def upload_asset(file: UploadFile = File(...), tags: str = Form("")):
         content = await file.read()
         dest = UPLOAD_DIR / file.filename
         dest.write_bytes(content)
-        
+
         parsed_tags = json.loads(tags) if tags else []
         file_ext = Path(file.filename).suffix.lower()
 
         # Automatic Classification & Tag scanning
         extracted_type = "unknown"
-        if file_ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
+        if file_ext in _IMAGE_EXTENSIONS | {".svg"}:
             extracted_type = "image"
-        elif file_ext in [".pdf", ".txt", ".md", ".json", ".csv", ".docx"]:
+        elif file_ext in {".pdf", ".txt", ".md", ".json", ".csv", ".docx"}:
             extracted_type = "document"
             # simple text extraction logic for tags
-            if file_ext in [".txt", ".md", ".json"]:
+            if file_ext in {".txt", ".md", ".json"}:
                 sample_text = content[:1024].decode('utf-8', errors='ignore').lower()
                 if "recipe" in sample_text or "command" in sample_text:
                     parsed_tags.append("Recipes")
                 if "style" in sample_text or "color" in sample_text or "font" in sample_text:
                     parsed_tags.append("Theme")
-        elif file_ext in [".zip", ".tar", ".gz"]:
+        elif file_ext in {".zip", ".tar", ".gz"}:
             extracted_type = "archive"
 
         # Unique tag filtering
         parsed_tags = list(set(parsed_tags))
 
-        return JSONResponse({
+        # Post-processing: thumbnail generation + metadata extraction
+        thumbnail_info = _generate_thumbnail(content, file.filename)
+        metadata = _extract_metadata(content, file.filename, extracted_type)
+
+        response: dict = {
             "status": "ok",
             "filename": file.filename,
             "path": f"/assets/uploads/{file.filename}",
             "size": len(content),
             "type": extracted_type,
             "tags": parsed_tags,
-        })
+            "metadata": metadata,
+        }
+
+        if thumbnail_info:
+            response["thumbnail"] = thumbnail_info["thumbnailPath"]
+            response["metadata"].update({
+                "width": thumbnail_info["originalWidth"],
+                "height": thumbnail_info["originalHeight"],
+                "format": thumbnail_info["originalFormat"],
+                "colorMode": thumbnail_info["colorMode"],
+            })
+
+        _logger.info(
+            "Uploaded asset: %s (type=%s, size=%d)",
+            file.filename, extracted_type, len(content),
+        )
+        return JSONResponse(response)
+    except ServiceError:
+        raise
     except Exception as e:
+        _logger.error("Upload failed for %s: %s", file.filename, e)
         raise ServiceError(
             message="Failed to upload asset",
             error_code="asset_upload_failed",
@@ -331,6 +433,105 @@ async def get_history():
     return {"snapshots": snapshots, "count": len(snapshots)}
 
 
+@router.get("/history/{id1}/diff/{id2}")
+async def diff_snapshots(id1: str, id2: str):
+    """Compare two version snapshots and return a structured JSON diff."""
+    path1 = HISTORY_DIR / f"{id1}.json"
+    path2 = HISTORY_DIR / f"{id2}.json"
+
+    if not path1.exists():
+        raise NotFoundError(
+            message=f"Snapshot '{id1}' not found",
+            error_code="snapshot_not_found",
+            details={"snapshot_id": id1},
+        )
+    if not path2.exists():
+        raise NotFoundError(
+            message=f"Snapshot '{id2}' not found",
+            error_code="snapshot_not_found",
+            details={"snapshot_id": id2},
+        )
+
+    data1 = json.loads(path1.read_text(encoding="utf-8")).get("data", {})
+    data2 = json.loads(path2.read_text(encoding="utf-8")).get("data", {})
+
+    changes = _compute_json_diff(data1, data2)
+
+    return {
+        "oldId": id1,
+        "newId": id2,
+        "changes": changes,
+        "totalChanges": len(changes),
+    }
+
+
+def _compute_json_diff(old: dict, new: dict, prefix: str = "") -> list[dict]:
+    """Recursively compare two dicts and return a flat list of changes.
+
+    Each change is: {path, type: "added"|"removed"|"modified", oldValue?, newValue?}
+    For lists, compares by index (not deep element matching).
+    """
+    changes: list[dict] = []
+    all_keys = set(list(old.keys()) + list(new.keys()))
+
+    for key in sorted(all_keys):
+        path = f"{prefix}.{key}" if prefix else key
+        in_old = key in old
+        in_new = key in new
+
+        if in_old and not in_new:
+            changes.append({"path": path, "type": "removed", "oldValue": _summarize(old[key])})
+        elif not in_old and in_new:
+            changes.append({"path": path, "type": "added", "newValue": _summarize(new[key])})
+        else:
+            old_val = old[key]
+            new_val = new[key]
+
+            if type(old_val) != type(new_val):
+                changes.append({
+                    "path": path, "type": "modified",
+                    "oldValue": _summarize(old_val), "newValue": _summarize(new_val),
+                })
+            elif isinstance(old_val, dict) and isinstance(new_val, dict):
+                changes.extend(_compute_json_diff(old_val, new_val, prefix=path))
+            elif isinstance(old_val, list) and isinstance(new_val, list):
+                if len(old_val) != len(new_val):
+                    changes.append({
+                        "path": path, "type": "modified",
+                        "oldValue": f"[{len(old_val)} items]",
+                        "newValue": f"[{len(new_val)} items]",
+                    })
+                else:
+                    for i in range(len(old_val)):
+                        item_path = f"{path}[{i}]"
+                        if isinstance(old_val[i], dict) and isinstance(new_val[i], dict):
+                            changes.extend(_compute_json_diff(old_val[i], new_val[i], prefix=item_path))
+                        elif old_val[i] != new_val[i]:
+                            changes.append({
+                                "path": item_path, "type": "modified",
+                                "oldValue": _summarize(old_val[i]),
+                                "newValue": _summarize(new_val[i]),
+                            })
+            elif old_val != new_val:
+                changes.append({
+                    "path": path, "type": "modified",
+                    "oldValue": _summarize(old_val), "newValue": _summarize(new_val),
+                })
+
+    return changes
+
+
+def _summarize(val: object) -> str:
+    """Return a short string representation for display in the diff."""
+    if isinstance(val, dict):
+        return f"{{{len(val)} keys}}"
+    if isinstance(val, list):
+        return f"[{len(val)} items]"
+    if isinstance(val, str) and len(val) > 80:
+        return val[:77] + "..."
+    return str(val)
+
+
 @router.post("/history/{snapshot_id}/rollback")
 async def rollback_to_snapshot(snapshot_id: str):
     """S-4: Rollback to a specific snapshot."""
@@ -355,6 +556,35 @@ from fastapi.responses import StreamingResponse
 from app.services.export_service import ExportService, ImportService
 
 PUBLIC_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public"
+PROJECT_JSON_PATH = PUBLIC_DIR / "project.json"
+
+
+@router.get("/project")
+async def get_project_config():
+    """Read the current project.json configuration."""
+    if not PROJECT_JSON_PATH.exists():
+        return {"project": None, "message": "No project.json found."}
+    try:
+        data = json.loads(PROJECT_JSON_PATH.read_text(encoding="utf-8"))
+        return {"project": data}
+    except (json.JSONDecodeError, OSError) as exc:
+        _logger.warning("Failed to read project.json: %s", exc)
+        return {"project": None, "message": "Failed to parse project.json."}
+
+
+@router.put("/project")
+async def save_project_config(body: dict = {}):
+    """Write updated project configuration to project.json."""
+    if not body:
+        raise ValidationError(
+            message="Empty project data",
+            error_code="empty_project",
+        )
+    PROJECT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROJECT_JSON_PATH.write_text(
+        json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {"status": "ok", "message": "project.json saved."}
 
 
 @router.get("/export/project")
