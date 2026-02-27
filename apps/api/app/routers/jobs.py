@@ -18,6 +18,7 @@ from app.models.recipe import Recipe
 from app.schemas.job import JobResponse, JobListResponse
 from app.schemas.recipe import RecipeCreate, RecipeUpdate
 from app.routers.settings import get_run_settings
+from app.services.gcs_service import get_gcs_service
 
 logger = logging.getLogger(__name__)
 
@@ -694,11 +695,23 @@ async def _execute_job(job_id: str, recipe: dict):
                     entry.get("text", "") for entry in all_logs
                 )
                 log_file.write_text(log_content, encoding="utf-8")
+
+                # Upload artifact to GCS when available
+                gcs = get_gcs_service()
+                gcs_url = None
+                if gcs.is_available:
+                    gcs_url = gcs.upload_bytes(
+                        log_content.encode("utf-8"),
+                        f"artifacts/{job_id}/output.log",
+                        content_type="text/plain",
+                    )
+
                 collected_artifacts.append({
                     "name": "output.log",
-                    "path": f"/api/jobs/artifacts/{job_id}/output.log",
+                    "path": gcs_url or f"/api/jobs/artifacts/{job_id}/output.log",
                     "type": "document",
                     "size": log_file.stat().st_size,
+                    "storage": "gcs" if gcs_url else "local",
                     "ts": time.time(),
                 })
         except Exception as exc:

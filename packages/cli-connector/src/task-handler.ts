@@ -1,9 +1,27 @@
 /**
  * Task handler: receives tasks from server, runs Claude, sends results back.
+ *
+ * Protocol: All WS messages use @dokba/shared-types TownWsMessage types.
+ * Both CHAT_COMMAND (legacy) and TASK_ASSIGN (new) are supported.
+ *
+ * Migration note (CLI→MCP):
+ *   - CLI mode: This handler runs Claude as a subprocess via claude-runner.ts
+ *   - MCP mode: Claude handles tasks natively — the MCP server uses
+ *     receive-task + submit-result tools instead of this handler.
+ *   - Both modes send the same WS message types to the server.
  */
 
-import { type Connector, type ServerMessage } from "./connector.js";
+import { type Connector } from "./connector.js";
 import { runClaude, type ClaudeRunnerOptions } from "./claude-runner.js";
+import type {
+  TownWsMessage,
+  ChatCommand,
+  TaskAssign,
+  AgentStateChange,
+  TaskResult,
+  TaskAssigned,
+  TaskProgress,
+} from "@dokba/shared-types";
 
 export interface TaskHandlerOptions {
   claudeOptions?: ClaudeRunnerOptions;
@@ -11,13 +29,14 @@ export interface TaskHandlerOptions {
 
 /**
  * Register task handling on a connector.
- * Listens for CHAT_COMMAND messages and executes Claude.
+ * Listens for CHAT_COMMAND and TASK_ASSIGN messages, executes Claude,
+ * and sends results back using the unified protocol.
  */
 export function registerTaskHandler(
   connector: Connector,
   options: TaskHandlerOptions = {},
 ): void {
-  connector.onMessage(async (msg: ServerMessage) => {
+  connector.onMessage(async (msg: TownWsMessage) => {
     if (msg.type === "CHAT_COMMAND") {
       await handleChatCommand(connector, msg, options);
     }
@@ -30,12 +49,12 @@ export function registerTaskHandler(
 
 async function handleChatCommand(
   connector: Connector,
-  msg: ServerMessage,
+  msg: ChatCommand,
   options: TaskHandlerOptions,
 ): Promise<void> {
-  const agent = (msg.target_agent as string) ?? "unknown";
-  const prompt = (msg.text as string) ?? "";
-  const taskId = msg.taskId as string | undefined;
+  const agent = msg.target_agent ?? "unknown";
+  const prompt = msg.text ?? "";
+  const taskId = msg.taskId;
 
   if (!prompt) {
     console.warn("[dokba] Received empty CHAT_COMMAND, ignoring");
@@ -49,45 +68,45 @@ async function handleChatCommand(
     type: "AGENT_STATE_CHANGE",
     agentId: agent,
     state: "THINKING",
-  });
+  } satisfies AgentStateChange);
 
   const result = await runClaude(prompt, options.claudeOptions, (progress) => {
     connector.send({
       type: "AGENT_STATE_CHANGE",
       agentId: agent,
       state: progress.state,
-    });
+    } satisfies AgentStateChange);
   });
 
-  // Send result back
+  // Send typed result
   connector.send({
     type: "TASK_RESULT",
     agent,
     taskId,
     success: result.success,
     output: result.output,
-  });
+  } satisfies TaskResult);
 
-  // Also send as TASK_ASSIGNED for backward compatibility with existing frontend
+  // Also send TASK_ASSIGNED for backward compatibility with existing frontend
   connector.send({
     type: "TASK_ASSIGNED",
     agent,
     taskContent: result.output,
-  });
+  } satisfies TaskAssigned);
 
-  // Return to IDLE
+  // Transition: SUCCESS/ERROR → IDLE
   connector.send({
     type: "AGENT_STATE_CHANGE",
     agentId: agent,
     state: result.success ? "SUCCESS" : "ERROR",
-  });
+  } satisfies AgentStateChange);
 
   setTimeout(() => {
     connector.send({
       type: "AGENT_STATE_CHANGE",
       agentId: agent,
       state: "IDLE",
-    });
+    } satisfies AgentStateChange);
   }, 2000);
 
   console.log(
@@ -97,12 +116,10 @@ async function handleChatCommand(
 
 async function handleTaskAssign(
   connector: Connector,
-  msg: ServerMessage,
+  msg: TaskAssign,
   options: TaskHandlerOptions,
 ): Promise<void> {
-  const taskId = msg.taskId as string;
-  const prompt = (msg.prompt as string) ?? "";
-  const agentId = (msg.agentId as string) ?? "unknown";
+  const { taskId, prompt, agentId } = msg;
 
   if (!prompt) {
     console.warn("[dokba] Received empty TASK_ASSIGN, ignoring");
@@ -115,7 +132,7 @@ async function handleTaskAssign(
     type: "AGENT_STATE_CHANGE",
     agentId,
     state: "THINKING",
-  });
+  } satisfies AgentStateChange);
 
   const result = await runClaude(prompt, options.claudeOptions, (progress) => {
     connector.send({
@@ -124,7 +141,7 @@ async function handleTaskAssign(
       agentId,
       state: progress.state,
       partial: progress.partial,
-    });
+    } satisfies TaskProgress);
   });
 
   connector.send({
@@ -133,11 +150,11 @@ async function handleTaskAssign(
     agentId,
     success: result.success,
     output: result.output,
-  });
+  } satisfies TaskResult);
 
   connector.send({
     type: "AGENT_STATE_CHANGE",
     agentId,
     state: "IDLE",
-  });
+  } satisfies AgentStateChange);
 }

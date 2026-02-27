@@ -100,6 +100,23 @@ export interface TaskProgress {
   partial?: string;
 }
 
+// ── Client Identity (CLI/MCP handshake) ──
+
+/**
+ * Sent by CLI/MCP clients on connect to identify themselves.
+ * The server can use this to route messages appropriately.
+ * Both CLI and MCP clients use the same WS protocol — this message
+ * lets the server know the client type for logging/routing purposes.
+ */
+export type ClientType = "cli" | "mcp" | "browser";
+
+export interface ClientIdentify {
+  type: "CLIENT_IDENTIFY";
+  clientType: ClientType;
+  version: string;
+  room: string;
+}
+
 /** Union of all Town WebSocket messages. */
 export type TownWsMessage =
   | ChatMessage
@@ -109,7 +126,8 @@ export type TownWsMessage =
   | TaskAssigned
   | TaskAssign
   | TaskResult
-  | TaskProgress;
+  | TaskProgress
+  | ClientIdentify;
 
 /** Union of all WebSocket messages (both Room and Town). */
 export type WsMessage = RoomWsMessage | TownWsMessage;

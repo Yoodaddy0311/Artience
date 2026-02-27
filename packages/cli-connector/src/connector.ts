@@ -1,9 +1,17 @@
 /**
  * WebSocket connection manager with auto-reconnect.
+ *
+ * Protocol: Uses @dokba/shared-types TownWsMessage for all messages.
+ * Both CLI and MCP clients share the same WS protocol — the server
+ * handles them identically. See packages/shared-types/src/ws-events.ts.
  */
 
 import WebSocket from "ws";
 import { buildWsUrl } from "./auth.js";
+import type {
+  TownWsMessage,
+  ClientIdentify,
+} from "@dokba/shared-types";
 
 export interface ConnectorOptions {
   serverUrl: string;
@@ -12,13 +20,11 @@ export interface ConnectorOptions {
   maxReconnectAttempts?: number;
 }
 
-export type MessageHandler = (message: ServerMessage) => void;
-
-/** Messages the server can send to us. */
-export interface ServerMessage {
-  type: string;
-  [key: string]: unknown;
-}
+/**
+ * Message handler receives typed TownWsMessage from the server.
+ * The union type is defined in @dokba/shared-types/ws-events.
+ */
+export type MessageHandler = (message: TownWsMessage) => void;
 
 export class Connector {
   private ws: WebSocket | null = null;
@@ -52,12 +58,21 @@ export class Connector {
       this.ws.on("open", () => {
         console.log("[dokba] Connected to Artifarm server");
         this.reconnectAttempts = 0;
+
+        // Identify as CLI client so server can route appropriately
+        this.sendRaw({
+          type: "CLIENT_IDENTIFY",
+          clientType: "cli",
+          version: "0.1.0",
+          room: this.room,
+        } satisfies ClientIdentify);
+
         resolve();
       });
 
       this.ws.on("message", (data: WebSocket.Data) => {
         try {
-          const msg = JSON.parse(data.toString()) as ServerMessage;
+          const msg = JSON.parse(data.toString()) as TownWsMessage;
           for (const handler of this.handlers) {
             handler(msg);
           }
@@ -93,7 +108,18 @@ export class Connector {
     });
   }
 
-  send(message: Record<string, unknown>): void {
+  /**
+   * Send a typed TownWsMessage to the server.
+   * All messages conform to the shared protocol in @dokba/shared-types.
+   */
+  send(message: TownWsMessage): void {
+    this.sendRaw(message);
+  }
+
+  /**
+   * Send a raw message object (for protocol extensions or backward compat).
+   */
+  sendRaw(message: Record<string, unknown>): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {

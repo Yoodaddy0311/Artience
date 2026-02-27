@@ -77,6 +77,8 @@ export type {
   TaskAssign,
   TaskResult,
   TaskProgress,
+  ClientType,
+  ClientIdentify,
   TownWsMessage,
   WsMessage,
 } from "./ws-events.js";

@@ -175,8 +175,20 @@ def _generate_response(agent_role: str, user_message: str) -> str:
 
 
 class ConnectionManager:
+    """Unified WebSocket connection manager.
+
+    Tracks all connected clients (browser, CLI, MCP) with the same message
+    protocol.  Client type is identified via the CLIENT_IDENTIFY handshake
+    message and stored per-connection for logging/routing.
+    """
+
+    # Valid client_type values — matches shared-types ClientType
+    _VALID_CLIENT_TYPES = {"cli", "mcp", "browser"}
+
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        # Per-connection metadata: ws -> {client_type, version, room}
+        self._client_meta: Dict[int, Dict[str, str]] = {}
         # Room-scoped connections: room_id -> list of (user_id, websocket)
         self._room_connections: Dict[str, List[tuple]] = {}
 
@@ -184,11 +196,30 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.append(websocket)
 
+    def identify_client(
+        self, websocket: WebSocket, client_type: str, version: str, room: str
+    ):
+        """Store client identity after CLIENT_IDENTIFY handshake."""
+        if client_type not in self._VALID_CLIENT_TYPES:
+            client_type = "browser"
+        self._client_meta[id(websocket)] = {
+            "client_type": client_type,
+            "version": version,
+            "room": room,
+        }
+
+    def get_client_type(self, websocket: WebSocket) -> str:
+        """Return the client_type for a connection (default 'browser')."""
+        meta = self._client_meta.get(id(websocket))
+        return meta["client_type"] if meta else "browser"
+
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        self._client_meta.pop(id(websocket), None)
 
     async def broadcast(self, message: dict):
+        """Broadcast to ALL connected clients (browser, CLI, MCP alike)."""
         for connection in self.active_connections:
             try:
                 await connection.send_text(json.dumps(message))
@@ -268,6 +299,25 @@ async def websocket_town_endpoint(
             try:
                 payload = json.loads(data)
                 msg_type = payload.get("type")
+
+                # ── CLIENT_IDENTIFY: CLI/MCP/browser handshake ──
+                # All client types send this on connect. The server
+                # stores the client_type for logging/routing and
+                # auto-joins the specified room if provided.
+                if msg_type == "CLIENT_IDENTIFY":
+                    client_type = payload.get("clientType", "browser")
+                    version = payload.get("version", "?")
+                    room = payload.get("room", "")
+                    manager.identify_client(websocket, client_type, version, room)
+                    # Auto-join the room so CLI/MCP clients receive
+                    # room-scoped broadcasts without a separate WS_ROOM_JOIN.
+                    if room:
+                        manager.join_room(room, f"{client_type}:{id(websocket)}", websocket)
+                    _logger.info(
+                        "Client identified: type=%s version=%s room=%s",
+                        client_type, version, room,
+                    )
+                    continue
 
                 # ── FE-5: Handle CHAT_MESSAGE for agent chat ──
                 if msg_type == "CHAT_MESSAGE":

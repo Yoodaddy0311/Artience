@@ -1,11 +1,15 @@
 /**
  * MCP Tool: chat-agent
  * Sends a chat message to an agent in the Artifarm Town.
+ *
+ * Protocol: Uses @dokba/shared-types ChatMessage/ChatResponse types.
+ * Same message format as CLI connector — server handles both identically.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { WsBridge } from "../transport/ws-bridge.js";
+import type { ChatMessage, ChatResponse } from "@dokba/shared-types";
 
 export function registerChatAgent(
   server: McpServer,
@@ -40,28 +44,29 @@ export function registerChatAgent(
         };
       }
 
-      // Send CHAT_MESSAGE (compatible with ws.py protocol)
+      // Send typed CHAT_MESSAGE
       bridge.send({
         type: "CHAT_MESSAGE",
         agentId,
         agentName: agentName ?? agentId,
         agentRole: agentRole ?? "",
         content,
-      });
+      } satisfies ChatMessage);
 
-      // Wait for CHAT_RESPONSE
+      // Wait for typed CHAT_RESPONSE
       try {
         const response = await bridge.waitForMessage(
           (msg) =>
-            msg.type === "CHAT_RESPONSE" && msg.agentId === agentId,
+            msg.type === "CHAT_RESPONSE" && (msg as ChatResponse).agentId === agentId,
           15000,
         );
 
+        const chatResp = response as ChatResponse;
         return {
           content: [
             {
               type: "text" as const,
-              text: `[${agentName ?? agentId}]: ${response.content as string}`,
+              text: `[${agentName ?? agentId}]: ${chatResp.content}`,
             },
           ],
         };

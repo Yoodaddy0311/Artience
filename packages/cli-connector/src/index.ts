@@ -17,6 +17,7 @@ import { registerTaskHandler } from "./task-handler.js";
 import { validateToken, validateRoom } from "./auth.js";
 import { loadConfig, saveConfig, getConfigPath } from "./config.js";
 import { startDaemon, stopDaemon, getDaemonStatus } from "./daemon.js";
+import { migrateToMcp } from "./migrate.js";
 
 const program = new Command();
 
@@ -177,6 +178,22 @@ program
       `  Auto-accept: ${config.autoAcceptTasks ? "Yes" : "No"}`,
     );
     console.log(`  Config:   ${getConfigPath()}`);
+  });
+
+// ── migrate (CLI → MCP) ─────────────────────────────
+program
+  .command("migrate")
+  .description("Generate .mcp.json from CLI config (CLI → MCP migration)")
+  .option("-o, --output <dir>", "Output directory for .mcp.json")
+  .option("-f, --force", "Overwrite existing .mcp.json dokba entry")
+  .action((opts) => {
+    const result = migrateToMcp(opts.output, opts.force ?? false);
+    if (result.success) {
+      console.log(`[dokba] ${result.message}`);
+    } else {
+      console.error(`[dokba] ${result.message}`);
+      process.exit(1);
+    }
   });
 
 program.parse();

@@ -1,11 +1,19 @@
 /**
  * MCP Tool: submit-result
  * Submits a task result back to the Artifarm server.
+ *
+ * Protocol: Uses @dokba/shared-types message types.
+ * Sends TASK_RESULT + TASK_ASSIGNED (compat) + AGENT_STATE_CHANGE.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { WsBridge } from "../transport/ws-bridge.js";
+import type {
+  TaskResult,
+  TaskAssigned,
+  AgentStateChange,
+} from "@dokba/shared-types";
 
 export function registerSubmitResult(
   server: McpServer,
@@ -37,36 +45,36 @@ export function registerSubmitResult(
         };
       }
 
-      // Send task result
+      // Send typed task result
       const sent = bridge.send({
         type: "TASK_RESULT",
         taskId,
         agentId,
         success,
         output: content,
-      });
+      } satisfies TaskResult);
 
-      // Also send TASK_ASSIGNED for frontend compatibility
+      // TASK_ASSIGNED for frontend backward compatibility
       bridge.send({
         type: "TASK_ASSIGNED",
         agent: agentId,
         taskContent: content,
-      });
+      } satisfies TaskAssigned);
 
       // Update agent state
       bridge.send({
         type: "AGENT_STATE_CHANGE",
         agentId,
         state: success ? "SUCCESS" : "ERROR",
-      });
+      } satisfies AgentStateChange);
 
-      // Return to idle after a delay
+      // Return to idle after delay
       setTimeout(() => {
         bridge.send({
           type: "AGENT_STATE_CHANGE",
           agentId,
           state: "IDLE",
-        });
+        } satisfies AgentStateChange);
       }, 2000);
 
       if (sent) {

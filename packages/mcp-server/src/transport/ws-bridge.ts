@@ -2,9 +2,29 @@
  * WebSocket <-> MCP bridge.
  * Manages the WebSocket connection to the Artifarm server and translates
  * between WS messages and MCP tool/resource state.
+ *
+ * Protocol: Uses @dokba/shared-types TownWsMessage for all messages.
+ * The server treats CLI and MCP clients identically — both connect to
+ * /ws/town and exchange the same message types. The CLIENT_IDENTIFY
+ * message on connect lets the server distinguish client types for
+ * logging/routing purposes.
+ *
+ * Migration path (CLI → MCP):
+ *   1. User runs `dokba login` to cache token (shared ~/.dokba/config.json)
+ *   2. User switches from CLI daemon (`dokba start`) to MCP server config
+ *   3. MCP server reads same config, connects with same protocol
+ *   4. No server-side changes needed — same WS endpoint, same messages
  */
 
 import WebSocket from "ws";
+import type {
+  TownWsMessage,
+  AgentStateChange,
+  ChatCommand,
+  TaskAssign,
+  ClientIdentify,
+  AgentState,
+} from "@dokba/shared-types";
 
 export interface WsBridgeOptions {
   serverUrl: string;
@@ -12,7 +32,7 @@ export interface WsBridgeOptions {
   token: string;
 }
 
-export type WsMessageHandler = (msg: Record<string, unknown>) => void;
+export type WsMessageHandler = (msg: TownWsMessage) => void;
 
 export class WsBridge {
   private ws: WebSocket | null = null;
@@ -24,7 +44,7 @@ export class WsBridge {
   /** Latest known room state, updated by incoming messages. */
   public roomState: Record<string, unknown> = {};
   /** Pending tasks received from server. */
-  public taskQueue: Array<Record<string, unknown>> = [];
+  public taskQueue: TownWsMessage[] = [];
 
   private readonly wsUrl: string;
 
@@ -50,12 +70,21 @@ export class WsBridge {
         console.error("[dokba-mcp] WebSocket connected");
         this.connected = true;
         this.reconnectAttempts = 0;
+
+        // Identify as MCP client
+        this.sendRaw({
+          type: "CLIENT_IDENTIFY",
+          clientType: "mcp",
+          version: "0.1.0",
+          room: this.options.room,
+        } satisfies ClientIdentify);
+
         resolve();
       });
 
       this.ws.on("message", (data: WebSocket.Data) => {
         try {
-          const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+          const msg = JSON.parse(data.toString()) as TownWsMessage;
           this.processIncoming(msg);
           for (const handler of this.handlers) {
             handler(msg);
@@ -86,7 +115,17 @@ export class WsBridge {
     });
   }
 
-  send(message: Record<string, unknown>): boolean {
+  /**
+   * Send a typed TownWsMessage to the server.
+   */
+  send(message: TownWsMessage): boolean {
+    return this.sendRaw(message);
+  }
+
+  /**
+   * Send a raw message (for backward compat or extensions).
+   */
+  sendRaw(message: Record<string, unknown>): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
       return true;
@@ -108,16 +147,16 @@ export class WsBridge {
    * Wait for a message matching a predicate, with timeout.
    */
   waitForMessage(
-    predicate: (msg: Record<string, unknown>) => boolean,
+    predicate: (msg: TownWsMessage) => boolean,
     timeoutMs = 30000,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TownWsMessage> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         cleanup();
         reject(new Error("Timeout waiting for message"));
       }, timeoutMs);
 
-      const handler = (msg: Record<string, unknown>) => {
+      const handler = (msg: TownWsMessage) => {
         if (predicate(msg)) {
           cleanup();
           resolve(msg);
@@ -134,27 +173,19 @@ export class WsBridge {
     });
   }
 
-  private processIncoming(msg: Record<string, unknown>): void {
-    const type = msg.type as string;
-
-    // Update room state from state-related messages
-    if (type === "AGENT_STATE_CHANGE") {
-      const agentId = msg.agentId as string;
-      const state = msg.state as string;
+  private processIncoming(msg: TownWsMessage): void {
+    // Update room state from agent state changes
+    if (msg.type === "AGENT_STATE_CHANGE") {
+      const { agentId, state } = msg as AgentStateChange;
       if (!this.roomState.agents) {
         this.roomState.agents = {};
       }
-      (this.roomState.agents as Record<string, unknown>)[agentId] = { state };
+      (this.roomState.agents as Record<string, { state: AgentState }>)[agentId] = { state };
     }
 
-    // Queue incoming tasks
-    if (type === "TASK_ASSIGN" || type === "CHAT_COMMAND") {
+    // Queue incoming tasks (both legacy CHAT_COMMAND and new TASK_ASSIGN)
+    if (msg.type === "TASK_ASSIGN" || msg.type === "CHAT_COMMAND") {
       this.taskQueue.push(msg);
-    }
-
-    // Update general room state
-    if (type === "ROOM_STATE") {
-      this.roomState = { ...this.roomState, ...msg };
     }
   }
 

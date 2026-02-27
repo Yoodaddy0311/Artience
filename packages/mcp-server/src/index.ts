@@ -25,10 +25,16 @@ import { registerReceiveTask } from "./tools/receive-task.js";
 import { registerSubmitResult } from "./tools/submit-result.js";
 import { registerGetStatus } from "./tools/get-status.js";
 import { registerChatAgent } from "./tools/chat-agent.js";
+import { registerSyncPlugin } from "./tools/sync-plugin.js";
 
 // Resources
 import { registerRoomState } from "./resources/room-state.js";
 import { registerTaskQueue } from "./resources/task-queue.js";
+import { registerPluginCapabilities } from "./resources/plugin-capabilities.js";
+
+// Plugin integration
+import { AgentRegistry } from "./agent-registry.js";
+import { syncPlugin } from "./plugin-sync.js";
 
 // Parse CLI args for auto-connect
 function parseArgs(): { room?: string; token?: string; server?: string } {
@@ -60,6 +66,10 @@ async function main() {
     return new WsBridge({ serverUrl, room, token });
   };
 
+  // Agent registry for artibot plugin integration
+  const agentRegistry = new AgentRegistry();
+  const getRegistry = () => agentRegistry;
+
   // Create MCP server
   const server = new McpServer(
     {
@@ -73,16 +83,18 @@ async function main() {
     },
   );
 
-  // Register 5 tools
+  // Register 6 tools
   registerConnectRoom(server, getBridge, setBridge, createBridge);
-  registerReceiveTask(server, getBridge);
+  registerReceiveTask(server, getBridge, getRegistry);
   registerSubmitResult(server, getBridge);
   registerGetStatus(server, getBridge);
   registerChatAgent(server, getBridge);
+  registerSyncPlugin(server, getRegistry);
 
-  // Register 2 resources
+  // Register 3 resources
   registerRoomState(server, getBridge);
   registerTaskQueue(server, getBridge);
+  registerPluginCapabilities(server, getRegistry);
 
   // Auto-connect: CLI args > ~/.dokba/config.json > skip
   const cliArgs = parseArgs();
@@ -109,6 +121,18 @@ async function main() {
   } else {
     console.error(
       '[dokba-mcp] No connection config found. Use connect-room tool or run "dokba login" first.',
+    );
+  }
+
+  // Auto-sync artibot plugin (if available)
+  const pluginResult = syncPlugin(agentRegistry);
+  if (pluginResult.loaded) {
+    console.error(
+      `[dokba-mcp] Artibot plugin synced: v${pluginResult.version}, ${pluginResult.agentCount} agents (from ${pluginResult.configPath})`,
+    );
+  } else {
+    console.error(
+      "[dokba-mcp] Artibot plugin not found — sync-plugin tool available for manual sync",
     );
   }
 

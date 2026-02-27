@@ -11,6 +11,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from app.exceptions import NotFoundError, ValidationError, ServiceError
+from app.services.gcs_service import get_gcs_service
 
 _logger = logging.getLogger(__name__)
 
@@ -56,8 +57,19 @@ def _generate_thumbnail(content: bytes, filename: str) -> dict | None:
         thumb_path = THUMBNAIL_DIR / thumb_filename
         thumb.save(str(thumb_path), "PNG")
 
+        # Upload thumbnail to GCS
+        gcs = get_gcs_service()
+        gcs_thumb_url = None
+        if gcs.is_available:
+            thumb_bytes = thumb_path.read_bytes()
+            gcs_thumb_url = gcs.upload_bytes(
+                thumb_bytes,
+                f"uploads/thumbnails/{thumb_filename}",
+                content_type="image/png",
+            )
+
         return {
-            "thumbnailPath": f"/assets/uploads/thumbnails/{thumb_filename}",
+            "thumbnailPath": gcs_thumb_url or f"/assets/uploads/thumbnails/{thumb_filename}",
             "thumbnailSize": thumb_path.stat().st_size,
             "originalWidth": original_width,
             "originalHeight": original_height,
@@ -117,6 +129,25 @@ def get_local_assets():
                     asset_entry["thumbnail"] = f"/assets/uploads/thumbnails/thumb_{item.stem}.png"
                 assets.append(asset_entry)
                 
+    # Include GCS-hosted assets when available
+    gcs = get_gcs_service()
+    if gcs.is_available:
+        gcs_objects = gcs.list_objects(prefix="uploads/", max_results=200)
+        for obj in gcs_objects:
+            # Skip thumbnails (listed separately)
+            if "/thumbnails/" in obj["name"]:
+                continue
+            name = obj["name"].split("/")[-1]
+            ext = Path(name).suffix.lower()
+            asset_type = "image" if ext in _IMAGE_EXTENSIONS else "document"
+            assets.append({
+                "filename": name,
+                "path": obj["url"],
+                "type": asset_type,
+                "size": obj["size"] or 0,
+                "storage": "gcs",
+            })
+
     return {"assets": assets, "status": "synced"}
 
 
@@ -127,6 +158,17 @@ async def upload_asset(file: UploadFile = File(...), tags: str = Form("")):
         content = await file.read()
         dest = UPLOAD_DIR / file.filename
         dest.write_bytes(content)
+
+        # Upload to GCS (async-safe: GCS SDK uses HTTP internally)
+        gcs = get_gcs_service()
+        gcs_url = None
+        if gcs.is_available:
+            mime_type = mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+            gcs_url = gcs.upload_bytes(
+                content,
+                f"uploads/{file.filename}",
+                content_type=mime_type,
+            )
 
         parsed_tags = json.loads(tags) if tags else []
         file_ext = Path(file.filename).suffix.lower()
@@ -154,14 +196,16 @@ async def upload_asset(file: UploadFile = File(...), tags: str = Form("")):
         thumbnail_info = _generate_thumbnail(content, file.filename)
         metadata = _extract_metadata(content, file.filename, extracted_type)
 
+        asset_path = gcs_url or f"/assets/uploads/{file.filename}"
         response: dict = {
             "status": "ok",
             "filename": file.filename,
-            "path": f"/assets/uploads/{file.filename}",
+            "path": asset_path,
             "size": len(content),
             "type": extracted_type,
             "tags": parsed_tags,
             "metadata": metadata,
+            "storage": "gcs" if gcs_url else "local",
         }
 
         if thumbnail_info:
