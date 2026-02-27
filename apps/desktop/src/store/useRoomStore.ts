@@ -181,11 +181,11 @@ export const useRoomStore = create<RoomState>()(
             fetchMyRooms: async () => {
                 try {
                     const res = await fetch(`${getApiUrl()}/api/rooms`);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    if (!res.ok) return;
                     const rooms = (await res.json()) as Room[];
                     set({ myRooms: rooms });
                 } catch {
-                    set({ error: 'Failed to load room list' });
+                    // Silently ignore — rooms endpoint may not be available
                 }
             },
 

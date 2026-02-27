@@ -184,7 +184,9 @@ export const RightSidebar: React.FC<{ agent: Teammate; onClose: () => void }> = 
         };
 
         return () => {
-            ws.close();
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                ws.close();
+            }
             if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
                 timeoutRef.current = null;
@@ -203,13 +205,11 @@ export const RightSidebar: React.FC<{ agent: Teammate; onClose: () => void }> = 
         setIsTyping(true);
 
         if (socketRef.current?.readyState === WebSocket.OPEN) {
-            // FE-5: Send CHAT_MESSAGE with agentId and agentRole
             socketRef.current.send(
                 JSON.stringify({
-                    type: 'CHAT_MESSAGE',
-                    agentId: agent.id,
-                    agentRole: agent.role,
-                    content: msg,
+                    type: 'CHAT_COMMAND',
+                    text: msg,
+                    target_agent: agent.name,
                 })
             );
 

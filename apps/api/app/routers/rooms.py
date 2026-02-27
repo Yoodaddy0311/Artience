@@ -3,6 +3,8 @@
 import json
 import logging
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -126,21 +128,25 @@ def create_room(payload: RoomCreate, db: Session = Depends(get_db)):
 
 @router.get("/")
 def list_rooms(
-    user_id: str = Query(..., description="Filter rooms the user belongs to"),
+    user_id: Optional[str] = Query(None, description="Filter rooms the user belongs to"),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """List rooms the user is a member of."""
-    member_room_ids = (
-        db.query(Member.room_id)
-        .filter(Member.user_id == user_id)
-        .scalar_subquery()
-    )
-    total = db.query(Room).filter(Room.id.in_(member_room_ids)).count()
+    """List rooms. If user_id is provided, only rooms the user belongs to."""
+    base_query = db.query(Room).filter(Room.status == "active")
+
+    if user_id:
+        member_room_ids = (
+            db.query(Member.room_id)
+            .filter(Member.user_id == user_id)
+            .scalar_subquery()
+        )
+        base_query = base_query.filter(Room.id.in_(member_room_ids))
+
+    total = base_query.count()
     rooms = (
-        db.query(Room)
-        .filter(Room.id.in_(member_room_ids), Room.status == "active")
+        base_query
         .order_by(Room.created_at.desc())
         .offset(skip)
         .limit(limit)
