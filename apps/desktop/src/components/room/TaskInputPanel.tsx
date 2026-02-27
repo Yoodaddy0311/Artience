@@ -53,9 +53,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ open, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
+            <div role="dialog" aria-modal="true" aria-labelledby="create-task-title" className="w-full max-w-md bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-black text-base text-black">New Task</h3>
+                    <h3 id="create-task-title" className="font-black text-base text-black">New Task</h3>
                     <button
                         onClick={onClose}
                         className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-black bg-white hover:bg-gray-100 active:translate-y-0.5 transition-all"

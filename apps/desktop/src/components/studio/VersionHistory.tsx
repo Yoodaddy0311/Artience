@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Home, Blocks, MapPin, Users, ClipboardList, Palette, Clock, RefreshCw, MailOpen, Plus, Minus, PenLine } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 // ── Types ──
 
@@ -368,6 +369,9 @@ export const VersionHistory: React.FC = () => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showDiff, setShowDiff] = useState(false);
 
+    // Rollback confirm state
+    const [rollbackTarget, setRollbackTarget] = useState<Snapshot | null>(null);
+
     useEffect(() => { fetchHistory(); }, []);
 
     const fetchHistory = async () => {
@@ -610,7 +614,7 @@ export const VersionHistory: React.FC = () => {
                                                 </div>
                                                 {!compareMode && (
                                                     <button
-                                                        onClick={() => rollback(snap.id)}
+                                                        onClick={() => setRollbackTarget(snap)}
                                                         className="text-[10px] font-black px-2 py-1 bg-[#60A5FA] text-white border-2 border-black rounded shadow-[1px_1px_0_0_#000] hover:shadow-[2px_2px_0_0_#000] flex-shrink-0 transition-all"
                                                     >
                                                         롤백
@@ -633,6 +637,23 @@ export const VersionHistory: React.FC = () => {
                     <span className="ml-2 text-[#8B5CF6]">({selectedIds.size}/2 선택됨)</span>
                 )}
             </div>
+
+            {/* Rollback Confirm Dialog */}
+            <ConfirmDialog
+                open={!!rollbackTarget}
+                title="롤백 확인"
+                message={rollbackTarget ? `"${rollbackTarget.label}" 버전으로 롤백하시겠습니까? 현재 상태는 새 스냅샷으로 자동 저장됩니다.` : ''}
+                confirmLabel="롤백"
+                cancelLabel="취소"
+                variant="warning"
+                onConfirm={() => {
+                    if (rollbackTarget) {
+                        rollback(rollbackTarget.id);
+                    }
+                    setRollbackTarget(null);
+                }}
+                onCancel={() => setRollbackTarget(null)}
+            />
         </div>
     );
 };

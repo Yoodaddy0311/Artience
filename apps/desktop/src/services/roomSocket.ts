@@ -1,5 +1,17 @@
 import { useAppStore } from '../store/useAppStore';
 
+// Lazy import to avoid circular dependency at module parse time
+function syncConnected(connected: boolean): void {
+    // Dynamic import of useRoomStore to update isConnected
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { useRoomStore } = require('../store/useRoomStore');
+        useRoomStore.getState().setConnected(connected);
+    } catch {
+        // Store not yet initialized — skip
+    }
+}
+
 // ── Room WebSocket Event Types ──
 
 export type RoomEventType =
@@ -81,6 +93,7 @@ export class RoomSocketManager {
 
         ws.onopen = () => {
             this.reconnectDelay = 1000;
+            syncConnected(true);
         };
 
         ws.onmessage = (event) => {
@@ -96,6 +109,7 @@ export class RoomSocketManager {
 
         ws.onclose = () => {
             this.ws = null;
+            syncConnected(false);
             if (!this.intentionalClose && this.roomId) {
                 this.scheduleReconnect();
             }

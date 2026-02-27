@@ -54,7 +54,7 @@ _logger = logging.getLogger(__name__)
 
 _GENERAL_LIMIT: int = int(os.environ.get("DOKBA_RATE_LIMIT_GENERAL", "60"))
 _GENERATE_LIMIT: int = int(os.environ.get("DOKBA_RATE_LIMIT_GENERATE", "10"))
-_WS_LIMIT: int = 5
+_WS_LIMIT: int = int(os.environ.get("DOKBA_RATE_LIMIT_WS", "5"))
 
 # All windows are 60-second intervals.
 _WINDOW_SIZE: float = 60.0

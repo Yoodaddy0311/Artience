@@ -19,6 +19,31 @@ export interface RoomWsMessage {
   timestamp: string;
 }
 
+/** Payload for ROOM_MEMBER_JOIN / ROOM_MEMBER_LEAVE events. */
+export interface RoomMemberPayload {
+  userId: string;
+  characterName: string;
+  characterRole?: string;
+  onlineUsers: string[];
+}
+
+/** Payload for ROOM_STATUS_UPDATE (includes chat messages). */
+export interface RoomStatusPayload {
+  userId: string;
+  characterName?: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+/** Payload for ROOM_TASK_CREATED / ROOM_TASK_ASSIGNED / ROOM_TASK_COMPLETED. */
+export interface RoomTaskPayload {
+  userId: string;
+  taskId?: string;
+  taskTitle?: string;
+  assigneeId?: string;
+  [key: string]: unknown;
+}
+
 // ── Town Events (ws.py /ws/town) ──
 
 export type TownEventType =

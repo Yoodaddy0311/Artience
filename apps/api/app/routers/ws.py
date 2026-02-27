@@ -4,11 +4,18 @@ import logging
 import os
 import random
 import re
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from app.database import SessionLocal
 from app.middleware.sanitize import sanitize_html
+from app.models.room import Member
+
+# Testable session factory for the room WS endpoint.
+# Tests can patch ``_get_session_factory`` to return a test SessionLocal.
+_session_factory = SessionLocal
 from app.services.llm_service import LLMService
 
 _logger = logging.getLogger(__name__)
@@ -468,3 +475,150 @@ async def websocket_town_endpoint(
     except WebSocketDisconnect:
         manager.disconnect_from_all_rooms(websocket)
         manager.disconnect(websocket)
+
+
+# ── Room-dedicated WebSocket endpoint (/ws/room/{room_id}) ──
+
+
+def _utc_iso() -> str:
+    """Return current UTC timestamp in ISO 8601 format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _room_msg(event_type: str, payload: dict) -> dict:
+    """Build a RoomWsMessage matching the shared-types RoomWsMessage interface."""
+    return {
+        "type": event_type,
+        "payload": payload,
+        "timestamp": _utc_iso(),
+    }
+
+
+@router.websocket("/room/{room_id}")
+async def websocket_room_endpoint(
+    websocket: WebSocket,
+    room_id: str,
+    user_id: str = Query(default=""),
+    token: Optional[str] = Query(default=None),
+):
+    """Room-dedicated WebSocket endpoint.
+
+    Frontend ``roomSocket.ts`` connects to ``/ws/room/{room_id}``.
+    The server verifies room membership, then relays ``RoomWsMessage``
+    events to all members in that room.
+    """
+    # ── Auth ──
+    if not await _authenticate_ws(websocket, token):
+        return
+
+    # ── Validate user_id ──
+    if not user_id:
+        await websocket.close(code=4002, reason="user_id query parameter required")
+        return
+
+    # ── Verify room membership via DB ──
+    db = _session_factory()
+    try:
+        member = (
+            db.query(Member)
+            .filter(Member.room_id == room_id, Member.user_id == user_id)
+            .first()
+        )
+        if member is None:
+            await websocket.close(code=4003, reason="Not a member of this room")
+            return
+
+        # Mark member online
+        member.is_online = True
+        db.commit()
+        member_name = member.character_name
+        member_role = member.character_role or ""
+    finally:
+        db.close()
+
+    # ── Accept connection and register in room ──
+    await manager.connect(websocket)
+    manager.join_room(room_id, user_id, websocket)
+
+    _logger.info("Room WS connected: user=%s room=%s", user_id, room_id)
+
+    # Notify room members of new join
+    online_users = manager.get_room_user_ids(room_id)
+    await manager.broadcast_to_room(room_id, _room_msg(
+        "ROOM_MEMBER_JOIN",
+        {
+            "userId": user_id,
+            "characterName": member_name,
+            "characterRole": member_role,
+            "onlineUsers": online_users,
+        },
+    ))
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                msg_type = payload.get("type", "")
+
+                # Re-broadcast room events to all members
+                if msg_type in (
+                    "ROOM_TASK_CREATED",
+                    "ROOM_TASK_ASSIGNED",
+                    "ROOM_TASK_COMPLETED",
+                    "ROOM_STATUS_UPDATE",
+                ):
+                    await manager.broadcast_to_room(
+                        room_id,
+                        _room_msg(msg_type, {
+                            **payload.get("payload", {}),
+                            "userId": user_id,
+                        }),
+                    )
+                elif msg_type == "ROOM_CHAT":
+                    content = sanitize_html(
+                        str(payload.get("content", ""))
+                    )[:_MAX_CHAT_MESSAGE_LENGTH]
+                    if content:
+                        await manager.broadcast_to_room(
+                            room_id,
+                            _room_msg("ROOM_STATUS_UPDATE", {
+                                "userId": user_id,
+                                "characterName": member_name,
+                                "content": content,
+                            }),
+                        )
+            except json.JSONDecodeError:
+                pass
+
+    except WebSocketDisconnect:
+        # ── Cleanup on disconnect ──
+        manager.leave_room(room_id, user_id)
+        manager.disconnect(websocket)
+
+        # Mark member offline in DB
+        db = _session_factory()
+        try:
+            member = (
+                db.query(Member)
+                .filter(Member.room_id == room_id, Member.user_id == user_id)
+                .first()
+            )
+            if member:
+                member.is_online = False
+                db.commit()
+        finally:
+            db.close()
+
+        # Notify remaining members
+        online_users = manager.get_room_user_ids(room_id)
+        await manager.broadcast_to_room(room_id, _room_msg(
+            "ROOM_MEMBER_LEAVE",
+            {
+                "userId": user_id,
+                "characterName": member_name,
+                "onlineUsers": online_users,
+            },
+        ))
+
+        _logger.info("Room WS disconnected: user=%s room=%s", user_id, room_id)

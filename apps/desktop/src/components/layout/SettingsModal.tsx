@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings, Bot, Wrench, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useAppStore, type AppLanguage } from '../../store/useAppStore';
 
@@ -16,9 +16,42 @@ const LANGUAGE_OPTIONS: { value: AppLanguage; label: string }[] = [
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const appSettings = useAppStore((s) => s.appSettings);
     const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+    const dialogRef = useRef<HTMLDivElement>(null);
 
     const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
     const [isPolling, setIsPolling] = useState(false);
+
+    // ESC to close + focus trap
+    const handleKeyDown = useCallback(
+        (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+                return;
+            }
+            if (e.key === 'Tab' && dialogRef.current) {
+                const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+                );
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        },
+        [onClose],
+    );
+
+    useEffect(() => {
+        if (!isOpen) return;
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, handleKeyDown]);
 
     const checkAuthStatus = async () => {
         try {
@@ -71,11 +104,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white border-4 border-black shadow-[8px_8px_0_0_#000] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+            <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-modal-title"
+                className="bg-white border-4 border-black shadow-[8px_8px_0_0_#000] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+            >
 
                 {/* Header */}
                 <div className="bg-[#FFD100] border-b-4 border-black p-4 flex justify-between items-center">
-                    <h2 className="text-2xl font-black text-black tracking-tight flex items-center gap-2"><Settings className="w-6 h-6" strokeWidth={3} /> 환경 설정</h2>
+                    <h2 id="settings-modal-title" className="text-2xl font-black text-black tracking-tight flex items-center gap-2"><Settings className="w-6 h-6" strokeWidth={3} /> 환경 설정</h2>
                     <button
                         onClick={onClose}
                         className="w-10 h-10 bg-white border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg flex items-center justify-center text-xl font-black hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all"

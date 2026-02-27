@@ -80,6 +80,7 @@ const STUDIO_TABS: { key: StudioTab; icon: React.ReactNode; label: string }[] = 
 
 const StudioActions: React.FC = () => {
     const { appSettings } = useAppStore();
+    const addToast = useAppStore((s) => s.addToast);
     const [generating, setGenerating] = useState(false);
     const [applying, setApplying] = useState(false);
     const [rollingBack, setRollingBack] = useState(false);
@@ -87,13 +88,14 @@ const StudioActions: React.FC = () => {
     const handleGenerate = async () => {
         setGenerating(true);
         try {
-            await fetch(`${appSettings.apiUrl}/api/studio/generate`, {
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: '', scope: 'all' }),
             });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         } catch {
-            // silently handle
+            addToast({ type: 'error', message: 'Draft generation failed. Check server connection.' });
         }
         setGenerating(false);
     };
@@ -101,11 +103,12 @@ const StudioActions: React.FC = () => {
     const handleApply = async () => {
         setApplying(true);
         try {
-            await fetch(`${appSettings.apiUrl}/api/studio/draft/apply`, {
+            const res = await fetch(`${appSettings.apiUrl}/api/studio/draft/apply`, {
                 method: 'POST',
             });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         } catch {
-            // silently handle
+            addToast({ type: 'error', message: 'Failed to apply draft. Check server connection.' });
         }
         setApplying(false);
     };
@@ -114,15 +117,17 @@ const StudioActions: React.FC = () => {
         setRollingBack(true);
         try {
             const res = await fetch(`${appSettings.apiUrl}/api/studio/history`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (data.snapshots && data.snapshots.length > 0) {
                 const latest = data.snapshots[0];
-                await fetch(`${appSettings.apiUrl}/api/studio/history/${latest.id}/rollback`, {
+                const rollbackRes = await fetch(`${appSettings.apiUrl}/api/studio/history/${latest.id}/rollback`, {
                     method: 'POST',
                 });
+                if (!rollbackRes.ok) throw new Error(`HTTP ${rollbackRes.status}`);
             }
         } catch {
-            // silently handle
+            addToast({ type: 'error', message: 'Rollback failed. Check server connection.' });
         }
         setRollingBack(false);
     };
@@ -426,10 +431,10 @@ export const MainLayout: React.FC = () => {
                                     <Download className="w-4 h-4" /> Export
                                 </button>
                                 <button
-                                    onClick={() => setActiveView(activeView === 'town' ? 'studio' : 'town')}
-                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-black text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'town' ? 'bg-[#FF9F1C]' : 'bg-white'}`}
+                                    onClick={() => setActiveView(activeView === 'town' ? 'studio' : activeView === 'studio' ? 'town' : 'studio')}
+                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-black text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'studio' ? 'bg-[#FF9F1C]' : 'bg-white'}`}
                                 >
-                                    {activeView === 'town' ? <><Sparkles className="w-4 h-4" /> Studio</> : <><Home className="w-4 h-4" /> Town</>}
+                                    {activeView === 'studio' ? <><Home className="w-4 h-4" /> Town</> : <><Sparkles className="w-4 h-4" /> Studio</>}
                                 </button>
                                 <button
                                     onClick={() => setActiveView(activeView === 'room' ? 'town' : 'room')}
@@ -439,7 +444,7 @@ export const MainLayout: React.FC = () => {
                                 </button>
                                 <button
                                     onClick={() => setActiveView(activeView === 'social' ? 'town' : 'social')}
-                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-black text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'social' ? 'bg-[#E8DAFF]' : 'bg-white'}`}
+                                    className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${activeView === 'social' ? 'bg-[#E8DAFF] text-black' : 'bg-white text-black'}`}
                                 >
                                     <Users className="w-4 h-4" /> Social
                                 </button>

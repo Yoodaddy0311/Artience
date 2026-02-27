@@ -29,8 +29,7 @@ MAX_LOGS_PER_JOB = 500
 LOG_FLUSH_INTERVAL = 2.0  # seconds between DB log flushes
 
 # ── Artifacts storage ─────────────────────────────────
-ARTIFACTS_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "artifacts"
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+from app.config import ARTIFACTS_DIR
 
 # ── In-memory runtime state (not persisted) ───────────
 # Tracks running processes and pending log buffers for active jobs only.

@@ -14,6 +14,7 @@ from unittest.mock import patch
 # Disable rate limiting during tests by setting a very high limit
 os.environ.setdefault("DOKBA_RATE_LIMIT_GENERAL", "9999")
 os.environ.setdefault("DOKBA_RATE_LIMIT_GENERATE", "9999")
+os.environ.setdefault("DOKBA_RATE_LIMIT_WS", "9999")
 
 import pytest
 from fastapi.testclient import TestClient

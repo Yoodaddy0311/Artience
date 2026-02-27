@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -7,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import logging
 
-from app.database import Base, engine, SessionLocal
+from app.database import Base, engine, SessionLocal, is_sqlite
 from app.exceptions import DokbaError
 from app.middleware.auth import ApiKeyMiddleware
 from app.middleware.error_handler import (
@@ -78,8 +79,9 @@ def _seed_achievements():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all tables on startup
-    Base.metadata.create_all(bind=engine)
+    # Auto-create tables only in dev (SQLite). Production uses Alembic migrations.
+    if is_sqlite():
+        Base.metadata.create_all(bind=engine)
     _seed_recipes()
     _seed_job_definitions()
     _seed_achievements()
@@ -100,9 +102,11 @@ app.add_exception_handler(Exception, generic_error_handler)
 
 # ── Middleware stack (order matters: last added = first executed) ──
 # 1. CORS (outermost — runs first on every request)
+_allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+_cors_origins = ["*"] if _allowed_origins_raw == "*" else [o.strip() for o in _allowed_origins_raw.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

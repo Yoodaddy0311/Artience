@@ -185,7 +185,7 @@ export const useRoomStore = create<RoomState>()(
                     const rooms = (await res.json()) as Room[];
                     set({ myRooms: rooms });
                 } catch {
-                    // Silently fail — room list is non-critical
+                    set({ error: 'Failed to load room list' });
                 }
             },
 
@@ -198,7 +198,7 @@ export const useRoomStore = create<RoomState>()(
                     const tasks = (await res.json()) as RoomTask[];
                     set({ tasks });
                 } catch {
-                    // Silently fail
+                    set({ error: 'Failed to load tasks' });
                 }
             },
 

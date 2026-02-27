@@ -12,16 +12,11 @@ from fastapi.responses import JSONResponse
 
 from app.exceptions import NotFoundError, ValidationError, ServiceError
 from app.services.gcs_service import get_gcs_service
+from app.config import PUBLIC_DIR, UPLOAD_DIR, THUMBNAIL_DIR, GENERATED_DIR, HISTORY_DIR, PROJECT_JSON_PATH
 
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/studio", tags=["studio"])
-
-UPLOAD_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "assets" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-THUMBNAIL_DIR = UPLOAD_DIR / "thumbnails"
-THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 
 _THUMBNAIL_SIZE = (128, 128)
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}
@@ -103,7 +98,7 @@ def _extract_metadata(content: bytes, filename: str, extracted_type: str) -> dic
 @router.get("/assets")
 def get_local_assets():
     # Target the desktop public assets directory
-    public_dir = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "assets" / "characters"
+    public_dir = PUBLIC_DIR / "assets" / "characters"
     assets = []
     
     if public_dir.exists():
@@ -233,11 +228,6 @@ async def upload_asset(file: UploadFile = File(...), tags: str = Form("")):
         )
 
 # ── S-2: AI Builder Generate ──
-GENERATED_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "generated"
-GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-
-HISTORY_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "history"
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/generate")
@@ -420,7 +410,7 @@ async def apply_draft():
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
 
     # Save to project.json
-    project_path = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "project.json"
+    project_path = PROJECT_JSON_PATH
     project_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # S-4: Create history snapshot
@@ -588,7 +578,7 @@ async def rollback_to_snapshot(snapshot_id: str):
         )
 
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    project_path = Path(__file__).parent.parent.parent.parent / "desktop" / "public" / "project.json"
+    project_path = PROJECT_JSON_PATH
     project_path.write_text(json.dumps(snapshot.get("data", {}), ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {"message": f"✅ 스냅샷 {snapshot_id}로 롤백 완료!"}
@@ -598,9 +588,6 @@ async def rollback_to_snapshot(snapshot_id: str):
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 from app.services.export_service import ExportService, ImportService
-
-PUBLIC_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public"
-PROJECT_JSON_PATH = PUBLIC_DIR / "project.json"
 
 
 @router.get("/project")

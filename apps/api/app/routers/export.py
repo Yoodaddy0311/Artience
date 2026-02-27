@@ -14,7 +14,7 @@ from app.services.export_service import ExportService
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
-PUBLIC_DIR = Path(__file__).parent.parent.parent.parent / "desktop" / "public"
+from app.config import PUBLIC_DIR
 
 
 @router.get("/zip")

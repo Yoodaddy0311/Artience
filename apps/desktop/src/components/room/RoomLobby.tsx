@@ -3,6 +3,7 @@ import { Plus, LogIn, Users, Wifi, WifiOff, X, DoorOpen } from 'lucide-react';
 import { useRoomStore, type Room } from '../../store/useRoomStore';
 import { RoomCode } from './RoomCode';
 import { MemberList } from './MemberList';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 // ── Create Room Modal ──
 
@@ -37,9 +38,9 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-sm bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
+            <div role="dialog" aria-modal="true" aria-labelledby="create-room-title" className="w-full max-w-sm bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-black text-base text-black">Create Room</h3>
+                    <h3 id="create-room-title" className="font-black text-base text-black">Create Room</h3>
                     <button
                         onClick={onClose}
                         className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-black bg-white hover:bg-gray-100 active:translate-y-0.5 transition-all"
@@ -136,9 +137,9 @@ const JoinRoomModal: React.FC<JoinRoomModalProps> = ({ open, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-sm bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
+            <div role="dialog" aria-modal="true" aria-labelledby="join-room-title" className="w-full max-w-sm bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] p-5">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-black text-base text-black">Join Room</h3>
+                    <h3 id="join-room-title" className="font-black text-base text-black">Join Room</h3>
                     <button
                         onClick={onClose}
                         className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-black bg-white hover:bg-gray-100 active:translate-y-0.5 transition-all"
@@ -220,6 +221,7 @@ const RoomCard: React.FC<{ room: Room; onJoin: (code: string) => void }> = ({ ro
 export const RoomLobby: React.FC = () => {
     const [createOpen, setCreateOpen] = useState(false);
     const [joinOpen, setJoinOpen] = useState(false);
+    const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
     const currentRoom = useRoomStore((s) => s.currentRoom);
     const members = useRoomStore((s) => s.members);
@@ -254,7 +256,7 @@ export const RoomLobby: React.FC = () => {
                             </div>
                         </div>
                         <button
-                            onClick={leaveRoom}
+                            onClick={() => setLeaveConfirmOpen(true)}
                             className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-black bg-white text-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
                         >
                             <DoorOpen size={12} />
@@ -276,6 +278,21 @@ export const RoomLobby: React.FC = () => {
                         <MemberList members={members} />
                     </div>
                 </div>
+
+                {/* Leave Confirm Dialog */}
+                <ConfirmDialog
+                    open={leaveConfirmOpen}
+                    title="Leave Room"
+                    message={`"${currentRoom.name}" 방에서 나가시겠습니까? 진행 중인 작업이 있으면 다른 멤버에게 재할당됩니다.`}
+                    confirmLabel="Leave"
+                    cancelLabel="Cancel"
+                    variant="danger"
+                    onConfirm={() => {
+                        setLeaveConfirmOpen(false);
+                        leaveRoom();
+                    }}
+                    onCancel={() => setLeaveConfirmOpen(false)}
+                />
             </div>
         );
     }
