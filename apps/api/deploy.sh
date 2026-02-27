@@ -17,6 +17,8 @@ REPO_NAME="artitown-repo"
 IMAGE_TAG="latest"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${SERVICE_NAME}:${IMAGE_TAG}"
 
+ALLOWED_ORIGINS="https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com"
+
 echo "=== Dokba API Deploy ==="
 echo "  Project:  ${PROJECT_ID}"
 echo "  Region:   ${REGION}"
@@ -34,6 +36,15 @@ docker push "${IMAGE_URI}"
 
 # Step 3: Deploy to Cloud Run
 echo "[3/3] Deploying to Cloud Run..."
+
+# Write env vars to temp YAML file (avoids comma escaping issues with --set-env-vars)
+ENV_FILE=$(mktemp)
+cat > "${ENV_FILE}" <<EOF
+GCP_PROJECT: "${PROJECT_ID}"
+GCS_BUCKET: "artitown-assets"
+ALLOWED_ORIGINS: "${ALLOWED_ORIGINS}"
+EOF
+
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
@@ -47,9 +58,11 @@ gcloud run deploy "${SERVICE_NAME}" \
     --max-instances=10 \
     --concurrency=80 \
     --timeout=120 \
-    --set-env-vars="^:^GCP_PROJECT=${PROJECT_ID}:GCS_BUCKET=artitown-assets:ALLOWED_ORIGINS=https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com" \
+    --env-vars-file="${ENV_FILE}" \
     --set-secrets="DOKBA_API_KEY=dokba-api-key:latest,GOOGLE_API_KEY=google-api-key:latest,DATABASE_URL=database-url:latest" \
     --add-cloudsql-instances="${PROJECT_ID}:${REGION}:artitown-db"
+
+rm -f "${ENV_FILE}"
 
 echo ""
 echo "=== Deploy complete ==="
