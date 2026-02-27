@@ -17,8 +17,6 @@ REPO_NAME="artitown-repo"
 IMAGE_TAG="latest"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${SERVICE_NAME}:${IMAGE_TAG}"
 
-ALLOWED_ORIGINS="https://artitown.app,https://www.artitown.app,https://artitown.web.app,https://artitown.firebaseapp.com"
-
 echo "=== Dokba API Deploy ==="
 echo "  Project:  ${PROJECT_ID}"
 echo "  Region:   ${REGION}"
@@ -34,35 +32,19 @@ echo "[2/3] Building and pushing Docker image..."
 docker build -t "${IMAGE_URI}" .
 docker push "${IMAGE_URI}"
 
-# Step 3: Deploy to Cloud Run
+# Step 3: Deploy to Cloud Run using service YAML (avoids flag escaping issues)
 echo "[3/3] Deploying to Cloud Run..."
 
-# Write env vars to temp YAML file (avoids comma escaping issues with --set-env-vars)
-ENV_FILE=$(mktemp)
-cat > "${ENV_FILE}" <<EOF
-GCP_PROJECT: "${PROJECT_ID}"
-GCS_BUCKET: "artitown-assets"
-ALLOWED_ORIGINS: "${ALLOWED_ORIGINS}"
-EOF
+gcloud run services replace cloud-run-service.yaml \
+    --project="${PROJECT_ID}" \
+    --region="${REGION}"
 
-gcloud run deploy "${SERVICE_NAME}" \
+# Ensure public access
+gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
-    --image="${IMAGE_URI}" \
-    --platform=managed \
-    --allow-unauthenticated \
-    --port=8080 \
-    --memory=512Mi \
-    --cpu=1 \
-    --min-instances=0 \
-    --max-instances=10 \
-    --concurrency=80 \
-    --timeout=120 \
-    --env-vars-file="${ENV_FILE}" \
-    --set-secrets="DOKBA_API_KEY=dokba-api-key:latest,GOOGLE_API_KEY=google-api-key:latest,DATABASE_URL=database-url:latest" \
-    --add-cloudsql-instances="${PROJECT_ID}:${REGION}:artitown-db"
-
-rm -f "${ENV_FILE}"
+    --member="allUsers" \
+    --role="roles/run.invoker" 2>/dev/null || true
 
 echo ""
 echo "=== Deploy complete ==="
