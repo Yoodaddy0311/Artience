@@ -100,6 +100,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         }
     };
 
+    const isRemote = (() => {
+        const url = import.meta.env.VITE_API_URL;
+        if (!url) return false;
+        try {
+            const host = new URL(url).hostname;
+            return host !== 'localhost' && host !== '127.0.0.1';
+        } catch { return false; }
+    })();
+
     if (!isOpen) return null;
 
     return (
@@ -137,41 +146,49 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                         <div className="border-t-4 border-dashed border-gray-300 my-2"></div>
 
-                        <div className="flex items-center justify-between">
-                            <span className="font-bold text-lg">상태:</span>
-
-                            {authStatus === 'checking' && (
-                                <span className="px-3 py-1 bg-gray-200 border-2 border-black rounded-lg font-bold animate-pulse">확인 중...</span>
-                            )}
-                            {authStatus === 'authenticated' && (
-                                <span className="px-3 py-1 bg-[#A0E8AF] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
-                                    <CheckCircle className="w-4 h-4" strokeWidth={2.5} /> 인증 완료
-                                </span>
-                            )}
-                            {authStatus === 'unauthenticated' && !isPolling && (
-                                <span className="px-3 py-1 bg-[#FF6B6B] border-2 border-black rounded-lg font-bold text-white flex gap-2 items-center">
-                                    <XCircle className="w-4 h-4" strokeWidth={2.5} /> 미인증
-                                </span>
-                            )}
-                            {isPolling && (
-                                <span className="px-3 py-1 bg-[#FFD100] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
-                                    <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> 로그인 대기 중...
-                                </span>
-                            )}
-                        </div>
-
-                        {authStatus === 'unauthenticated' && !isPolling && (
-                            <button
-                                onClick={handleLogin}
-                                className="mt-2 w-full py-3 bg-black text-white font-bold text-lg rounded-xl border-4 border-black hover:bg-[#FFD100] hover:text-black transition-colors"
-                            >
-                                로그인 터미널 열기
-                            </button>
-                        )}
-                        {isPolling && (
-                            <p className="text-sm text-center font-bold text-gray-500 mt-2">
-                                열려있는 터미널 창에서 브라우저 인증을 완료해주세요.
+                        {isRemote ? (
+                            <p className="text-sm font-bold text-gray-500 bg-gray-200 border-2 border-black rounded-lg px-4 py-3 text-center">
+                                이 기능은 데스크탑 앱에서만 사용 가능합니다.
                             </p>
+                        ) : (
+                            <>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-bold text-lg">상태:</span>
+
+                                    {authStatus === 'checking' && (
+                                        <span className="px-3 py-1 bg-gray-200 border-2 border-black rounded-lg font-bold animate-pulse">확인 중...</span>
+                                    )}
+                                    {authStatus === 'authenticated' && (
+                                        <span className="px-3 py-1 bg-[#A0E8AF] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
+                                            <CheckCircle className="w-4 h-4" strokeWidth={2.5} /> 인증 완료
+                                        </span>
+                                    )}
+                                    {authStatus === 'unauthenticated' && !isPolling && (
+                                        <span className="px-3 py-1 bg-[#FF6B6B] border-2 border-black rounded-lg font-bold text-white flex gap-2 items-center">
+                                            <XCircle className="w-4 h-4" strokeWidth={2.5} /> 미인증
+                                        </span>
+                                    )}
+                                    {isPolling && (
+                                        <span className="px-3 py-1 bg-[#FFD100] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
+                                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> 로그인 대기 중...
+                                        </span>
+                                    )}
+                                </div>
+
+                                {authStatus === 'unauthenticated' && !isPolling && (
+                                    <button
+                                        onClick={handleLogin}
+                                        className="mt-2 w-full py-3 bg-black text-white font-bold text-lg rounded-xl border-4 border-black hover:bg-[#FFD100] hover:text-black transition-colors"
+                                    >
+                                        로그인 터미널 열기
+                                    </button>
+                                )}
+                                {isPolling && (
+                                    <p className="text-sm text-center font-bold text-gray-500 mt-2">
+                                        열려있는 터미널 창에서 브라우저 인증을 완료해주세요.
+                                    </p>
+                                )}
+                            </>
                         )}
                     </div>
 
