@@ -48,7 +48,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --concurrency=80 \
     --timeout=120 \
     --set-env-vars="GCP_PROJECT=${PROJECT_ID},GCS_BUCKET=artitown-assets" \
-    --set-secrets="DOKBA_API_KEY=dokba-api-key:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest,GOOGLE_API_KEY=google-api-key:latest,DATABASE_URL=database-url:latest" \
+    --set-secrets="DOKBA_API_KEY=dokba-api-key:latest,GOOGLE_API_KEY=google-api-key:latest,DATABASE_URL=database-url:latest" \
     --add-cloudsql-instances="${PROJECT_ID}:${REGION}:artitown-db"
 
 echo ""

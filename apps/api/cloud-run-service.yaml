@@ -50,11 +50,6 @@ spec:
                 secretKeyRef:
                   name: dokba-api-key
                   key: latest
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: anthropic-api-key
-                  key: latest
             - name: GOOGLE_API_KEY
               valueFrom:
                 secretKeyRef:
