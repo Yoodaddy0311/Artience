@@ -412,11 +412,13 @@ async def websocket_town_endpoint(
                     })
 
                     # 2. Spawn actual claude CLI process
-                    full_cmd = f'npx @anthropic-ai/claude-code -p "{prompt}" --print'
+                    safe_prompt = prompt.replace('"', '\\"')
+                    full_cmd = f'claude -p "{safe_prompt}" --print'
                     _logger.info("Executing: %s", full_cmd)
 
                     env = os.environ.copy()
-                    env["FORCE_COLOR"] = "1"
+                    env.pop("CLAUDECODE", None)  # allow nested CLI execution
+                    env["FORCE_COLOR"] = "0"
 
                     async def run_claude():
                         try:
