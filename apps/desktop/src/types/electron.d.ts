@@ -7,11 +7,16 @@ interface DogbaTerminalApi {
     onExit(callback: (id: string, exitCode: number) => void): () => void;
 }
 
+interface DogbaChatApi {
+    send(agentName: string, message: string): Promise<{ success: boolean; text: string }>;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
     };
     terminal: DogbaTerminalApi;
+    chat: DogbaChatApi;
 }
 
 declare global {

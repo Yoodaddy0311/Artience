@@ -26,4 +26,8 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             return () => ipcRenderer.removeListener('terminal:exit', listener);
         },
     },
+    chat: {
+        send: (agentName: string, message: string): Promise<{ success: boolean; text: string }> =>
+            ipcRenderer.invoke('chat:send', agentName, message),
+    },
 });

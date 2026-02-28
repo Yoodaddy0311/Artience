@@ -195,7 +195,7 @@ export const RightSidebar: React.FC<{ agent: Teammate; onClose: () => void }> = 
     }, [agent.id, agent.name, apiUrl]);
 
     // ── Send message handler ──
-    const send = (e: React.FormEvent) => {
+    const send = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!msg.trim()) return;
 
@@ -203,12 +203,43 @@ export const RightSidebar: React.FC<{ agent: Teammate; onClose: () => void }> = 
         const userMessage: ChatMessage = { sender: 'Me', text: msg, status: 'sending' };
         setChats((prev) => [...prev, userMessage]);
         setIsTyping(true);
+        const currentMsg = msg;
+        setMsg('');
 
+        // Electron 환경: 로컬 claude CLI 직접 실행
+        const chatApi = window.dogbaApi?.chat;
+        if (chatApi) {
+            setChats((prev) =>
+                prev.map((c, i) =>
+                    i === prev.length - 1 && c.status === 'sending'
+                        ? { ...c, status: 'sent' }
+                        : c
+                )
+            );
+
+            try {
+                const result = await chatApi.send(agent.name, currentMsg);
+                setIsTyping(false);
+                setChats((prev) => [
+                    ...prev,
+                    { sender: agent.name, text: result.success ? result.text : `오류: ${result.text}` },
+                ]);
+            } catch {
+                setIsTyping(false);
+                setChats((prev) => [
+                    ...prev,
+                    { sender: 'System', text: 'Claude CLI 실행에 실패했습니다.' },
+                ]);
+            }
+            return;
+        }
+
+        // 웹 환경: 기존 WebSocket 방식
         if (socketRef.current?.readyState === WebSocket.OPEN) {
             socketRef.current.send(
                 JSON.stringify({
                     type: 'CHAT_COMMAND',
-                    text: msg,
+                    text: currentMsg,
                     target_agent: agent.name,
                 })
             );
@@ -250,8 +281,6 @@ export const RightSidebar: React.FC<{ agent: Teammate; onClose: () => void }> = 
                 { sender: 'System', text: '연결이 끊어졌습니다. 페이지를 새로고침해주세요.' },
             ]);
         }
-
-        setMsg('');
     };
 
     return (

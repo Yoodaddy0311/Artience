@@ -32,9 +32,7 @@
     },
     "onlyBuiltDependencies": [
       "electron",
-      "esbuild"
-    ],
-    "ignoredBuiltDependencies": [
+      "esbuild",
       "node-pty"
     ]
   }
