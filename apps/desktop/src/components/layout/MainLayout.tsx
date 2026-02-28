@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useRef } from 'react';
-import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem, Users } from 'lucide-react';
+import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem, Users, TerminalSquare } from 'lucide-react';
 const AgentTown = React.lazy(() =>
     import('../agent-town/AgentTown').then(m => ({ default: m.AgentTown }))
 );
@@ -14,6 +14,9 @@ const DraftPreview = React.lazy(() =>
 import { VersionHistory } from '../studio/VersionHistory';
 import { AssetsPanel } from '../studio/AssetsPanel';
 import { RunPanel } from '../run/RunPanel';
+const TerminalPanel = React.lazy(() =>
+    import('../terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel }))
+);
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { LevelProgress } from '../gamification/LevelProgress';
 import { SettingsModal } from './SettingsModal';
@@ -192,6 +195,7 @@ export const MainLayout: React.FC = () => {
     const roomMembers = useRoomStore((s) => s.members);
 
     const [showRunPanel, setShowRunPanel] = useState(false);
+    const [showTerminal, setShowTerminal] = useState(false);
     const [studioTab, setStudioTab] = useState<StudioTab>('inbox');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
@@ -448,6 +452,14 @@ export const MainLayout: React.FC = () => {
                                 >
                                     <Users className="w-4 h-4" /> Social
                                 </button>
+                                {window.dogbaApi?.terminal && (
+                                    <button
+                                        onClick={() => setShowTerminal(!showTerminal)}
+                                        className={`flex items-center gap-1 min-h-[44px] px-5 font-semibold text-[15px] leading-[1.48] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all uppercase ${showTerminal ? 'bg-[#1e1e2e] text-white' : 'bg-white text-black'}`}
+                                    >
+                                        <TerminalSquare className="w-4 h-4" /> Terminal
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -513,6 +525,15 @@ export const MainLayout: React.FC = () => {
                     agent={selectedAgent}
                     onClose={() => setSelectedAgentId(null)}
                 />
+            )}
+
+            {/* Terminal Panel */}
+            {showTerminal && (
+                <div className="absolute bottom-24 left-4 right-4 h-72 z-30 rounded-xl overflow-hidden border-4 border-black shadow-[6px_6px_0_0_#000]">
+                    <Suspense fallback={<div className="w-full h-full bg-[#1e1e2e] flex items-center justify-center text-white">Loading Terminal...</div>}>
+                        <TerminalPanel />
+                    </Suspense>
+                </div>
             )}
 
             {/* Bottom Dock */}
