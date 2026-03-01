@@ -1,10 +1,13 @@
-import React, { Suspense, useState, useRef } from 'react';
-import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem, TerminalSquare } from 'lucide-react';
+import React, { Suspense, useState, useRef, useCallback, useEffect } from 'react';
+import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem } from 'lucide-react';
 const AgentTown = React.lazy(() =>
     import('../agent-town/AgentTown').then(m => ({ default: m.AgentTown }))
 );
+const TerminalPanel = React.lazy(() =>
+    import('../terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel }))
+);
 import { BottomDock } from './BottomDock';
-import { RightSidebar } from './RightSidebar';
+// import { RightSidebar } from './RightSidebar'; // Phase 2에서 재설계 예정
 import { StudioDecorator } from '../studio/StudioDecorator';
 import { AssetInbox } from '../studio/AssetInbox';
 import { AIBuilder } from '../studio/AIBuilder';
@@ -14,9 +17,6 @@ const DraftPreview = React.lazy(() =>
 import { VersionHistory } from '../studio/VersionHistory';
 import { AssetsPanel } from '../studio/AssetsPanel';
 import { RunPanel } from '../run/RunPanel';
-const TerminalPanel = React.lazy(() =>
-    import('../terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel }))
-);
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { LevelProgress } from '../gamification/LevelProgress';
 import { SettingsModal } from './SettingsModal';
@@ -24,6 +24,8 @@ import { assetPath } from '../../lib/assetPath';
 import { ToastContainer } from '../ui/Toast';
 import { InspectorCard } from '../agent-town/InspectorCard';
 import { useAppStore } from '../../store/useAppStore';
+import { useMailStore } from '../../store/useMailStore';
+import { MailInbox } from '../mail/MailInbox';
 
 // ── Feature Flags ──
 
@@ -162,25 +164,49 @@ export const MainLayout: React.FC = () => {
         ? DEFAULT_AGENTS.find((a) => a.id === highlightedAgentId) ?? null
         : null;
 
-    // BottomDock team state
-    const [teamForDock] = useState<Teammate[]>(() =>
-        DEFAULT_AGENTS.slice(0, 10).map(a => ({
-            id: a.id,
-            name: a.name,
-            role: a.role,
-            status: a.state === 'ERROR' ? 'error' : a.state === 'IDLE' ? 'resting' : 'working',
-            avatarUrl: a.sprite,
-        }))
-    );
-    const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-
     const [activeView, setActiveView] = useState<'town' | 'studio'>('town');
 
     const [showRunPanel, setShowRunPanel] = useState(false);
-    const [showTerminal, setShowTerminal] = useState(false);
     const [studioTab, setStudioTab] = useState<StudioTab>('inbox');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const isInboxOpen = useMailStore((s) => s.isInboxOpen);
+    const toggleInbox = useMailStore((s) => s.toggleInbox);
+    const mailUnreadCount = useMailStore((s) => s.unreadCount);
+    const setInboxOpen = useMailStore((s) => s.setInboxOpen);
     const importInputRef = useRef<HTMLInputElement>(null);
+
+    // Subscribe to mail:new-report IPC → feed into useMailStore
+    useEffect(() => {
+        const unsub = window.dogbaApi?.mail?.onNewReport((report) => {
+            useMailStore.getState().addMessage(report);
+        });
+        return () => { unsub?.(); };
+    }, []);
+
+    // Terminal split drag-resize
+    const [terminalHeight, setTerminalHeight] = useState(300);
+    const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+    const handleDragStart = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        dragRef.current = { startY: e.clientY, startHeight: terminalHeight };
+
+        const handleMove = (ev: MouseEvent) => {
+            if (!dragRef.current) return;
+            const diff = dragRef.current.startY - ev.clientY;
+            const newHeight = Math.max(150, Math.min(window.innerHeight * 0.6, dragRef.current.startHeight + diff));
+            setTerminalHeight(newHeight);
+        };
+
+        const handleUp = () => {
+            dragRef.current = null;
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+    }, [terminalHeight]);
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -209,76 +235,78 @@ export const MainLayout: React.FC = () => {
         }
     };
 
-    const selectedAgent = teamForDock.find(a => a.id === selectedAgentId) || null;
-
     return (
         <div className="flex w-full h-screen bg-cream-50 overflow-hidden font-sans relative text-brown-800">
 
             {/* Background/Workspace Layer */}
             <div className="flex-1 relative bg-cream-100">
-                {/* Town view */}
-                <div
-                    className="absolute inset-0"
-                    style={{ display: activeView === 'town' ? 'block' : 'none' }}
-                >
-                    <AgentTownBoundary>
-                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-amber-50">Loading Agent Town...</div>}>
-                            <AgentTown />
-                        </Suspense>
-                    </AgentTownBoundary>
-                    {inspectedAgent && (
-                        <InspectorCard
-                            agent={inspectedAgent}
-                            onClose={() => setHighlightedAgentId(null)}
-                        />
-                    )}
-                </div>
-
-                {/* Studio view */}
-                <div
-                    className="absolute inset-0 pt-4 pb-32 px-4 bg-cream-50 z-20 overflow-hidden"
-                    style={{ display: activeView === 'studio' ? 'flex' : 'none' }}
-                >
-                    {/* Left: Studio Tools Panel */}
-                    <div className="w-full max-w-sm flex-shrink-0 flex flex-col bg-white rounded-2xl shadow-xl border-4 border-black overflow-hidden">
-                        <div className="flex border-b-2 border-black bg-gray-50" role="tablist" aria-label="Studio tabs">
-                            {STUDIO_TABS.map(tab => (
-                                <button
-                                    key={tab.key}
-                                    role="tab"
-                                    aria-selected={studioTab === tab.key}
-                                    aria-controls={`studio-tabpanel-${tab.key}`}
-                                    id={`studio-tab-${tab.key}`}
-                                    onClick={() => setStudioTab(tab.key)}
-                                    className={`flex-1 py-2.5 text-xs font-black transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${studioTab === tab.key
-                                        ? 'bg-[#FFD100] text-black border-b-0'
-                                        : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    {tab.icon} {tab.label}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex-1 overflow-hidden" role="tabpanel" id={`studio-tabpanel-${studioTab}`} aria-labelledby={`studio-tab-${studioTab}`}>
-                            {studioTab === 'inbox' && <AssetInbox />}
-                            {studioTab === 'builder' && <AIBuilder onDraftGenerated={() => setStudioTab('draft')} />}
-                            {studioTab === 'draft' && (
-                                <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-cream-50">Loading Draft Preview...</div>}>
-                                    <DraftPreview />
+                {/* flex-col split: top AgentTown + bottom Terminal */}
+                <div className="flex flex-col h-full">
+                    {/* Top: AgentTown / Studio */}
+                    <div className="relative" style={{ flex: '1 1 0', minHeight: '200px' }}>
+                        {/* Town view */}
+                        <div
+                            className="absolute inset-0"
+                            style={{ display: activeView === 'town' ? 'block' : 'none' }}
+                        >
+                            <AgentTownBoundary>
+                                <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-amber-50">Loading Agent Town...</div>}>
+                                    <AgentTown />
                                 </Suspense>
+                            </AgentTownBoundary>
+                            {inspectedAgent && (
+                                <InspectorCard
+                                    agent={inspectedAgent}
+                                    onClose={() => setHighlightedAgentId(null)}
+                                />
                             )}
-                            {studioTab === 'history' && <VersionHistory />}
-                            {studioTab === 'assets' && <AssetsPanel />}
                         </div>
-                    </div>
-                    {/* Right: Asset Gallery */}
-                    <div className="flex-1 ml-4 bg-white rounded-3xl shadow-xl border-4 border-cream-200 overflow-hidden">
-                        <StudioDecorator />
-                    </div>
-                </div>
 
-                {/* Game HUD Overlay */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 flex flex-col justify-between">
+                        {/* Studio view */}
+                        <div
+                            className="absolute inset-0 pt-4 pb-32 px-4 bg-cream-50 z-20 overflow-hidden"
+                            style={{ display: activeView === 'studio' ? 'flex' : 'none' }}
+                        >
+                            {/* Left: Studio Tools Panel */}
+                            <div className="w-full max-w-sm flex-shrink-0 flex flex-col bg-white rounded-2xl shadow-xl border-4 border-black overflow-hidden">
+                                <div className="flex border-b-2 border-black bg-gray-50" role="tablist" aria-label="Studio tabs">
+                                    {STUDIO_TABS.map(tab => (
+                                        <button
+                                            key={tab.key}
+                                            role="tab"
+                                            aria-selected={studioTab === tab.key}
+                                            aria-controls={`studio-tabpanel-${tab.key}`}
+                                            id={`studio-tab-${tab.key}`}
+                                            onClick={() => setStudioTab(tab.key)}
+                                            className={`flex-1 py-2.5 text-xs font-black transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${studioTab === tab.key
+                                                ? 'bg-[#FFD100] text-black border-b-0'
+                                                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                                                }`}
+                                        >
+                                            {tab.icon} {tab.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex-1 overflow-hidden" role="tabpanel" id={`studio-tabpanel-${studioTab}`} aria-labelledby={`studio-tab-${studioTab}`}>
+                                    {studioTab === 'inbox' && <AssetInbox />}
+                                    {studioTab === 'builder' && <AIBuilder onDraftGenerated={() => setStudioTab('draft')} />}
+                                    {studioTab === 'draft' && (
+                                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-cream-50">Loading Draft Preview...</div>}>
+                                            <DraftPreview />
+                                        </Suspense>
+                                    )}
+                                    {studioTab === 'history' && <VersionHistory />}
+                                    {studioTab === 'assets' && <AssetsPanel />}
+                                </div>
+                            </div>
+                            {/* Right: Asset Gallery */}
+                            <div className="flex-1 ml-4 bg-white rounded-3xl shadow-xl border-4 border-cream-200 overflow-hidden">
+                                <StudioDecorator />
+                            </div>
+                        </div>
+
+                        {/* Game HUD Overlay */}
+                        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 flex flex-col justify-between">
 
                     {/* Top HUD Area */}
                     <div className="p-6 flex justify-between items-start w-full">
@@ -305,16 +333,16 @@ export const MainLayout: React.FC = () => {
                                 >
                                     <Settings className="w-5 h-5" />
                                 </button>
-                                {window.dogbaApi?.terminal && (
-                                    <button
-                                        onClick={() => setShowTerminal(!showTerminal)}
-                                        className={`w-[44px] h-[44px] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg flex items-center justify-center hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all ${showTerminal ? 'bg-[#1e1e2e] text-white' : 'bg-white text-black'}`}
-                                    >
-                                        <TerminalSquare className="w-5 h-5" />
-                                    </button>
-                                )}
-                                <button className="w-[44px] h-[44px] bg-white border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg flex items-center justify-center hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all">
+                                <button
+                                    onClick={() => { toggleInbox(); if (!isInboxOpen) setShowRunPanel(false); }}
+                                    className={`relative w-[44px] h-[44px] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg flex items-center justify-center hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all ${isInboxOpen ? 'bg-[#FFD100]' : 'bg-white'}`}
+                                >
                                     <Mail className="w-5 h-5" />
+                                    {mailUnreadCount > 0 && (
+                                        <span className="absolute -top-2 -right-2 min-w-[20px] h-5 bg-red-500 text-white text-[11px] font-black rounded-full flex items-center justify-center px-1 border-2 border-black">
+                                            {mailUnreadCount > 99 ? '99+' : mailUnreadCount}
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                         </div>
@@ -419,37 +447,39 @@ export const MainLayout: React.FC = () => {
                         </div>
                     )}
 
-                </div>
+                        </div>
+                    </div>{/* end Top: AgentTown / Studio */}
+
+                    {/* Drag Handle */}
+                    <div
+                        className="h-2 bg-gray-200 hover:bg-[#E8DAFF] cursor-row-resize border-y border-black flex items-center justify-center transition-colors"
+                        onMouseDown={handleDragStart}
+                    >
+                        <div className="w-12 h-1 bg-gray-400 rounded-full" />
+                    </div>
+
+                    {/* Bottom: TerminalPanel */}
+                    <div style={{ height: `${terminalHeight}px`, minHeight: '150px' }}>
+                        <Suspense fallback={<div className="w-full h-full bg-[#1e1e2e] flex items-center justify-center text-white text-sm">Loading Terminal...</div>}>
+                            <TerminalPanel />
+                        </Suspense>
+                    </div>
+                </div>{/* end flex-col split */}
             </div>
 
             {/* Run Panel (Right) */}
-            {showRunPanel && (
+            {showRunPanel && !isInboxOpen && (
                 <RunPanel onClose={() => setShowRunPanel(false)} />
             )}
 
-            {/* Agent Chat Sidebar (Right) */}
-            {!showRunPanel && selectedAgent && (
-                <RightSidebar
-                    agent={selectedAgent}
-                    onClose={() => setSelectedAgentId(null)}
-                />
+            {/* Mail Inbox (Right) */}
+            {isInboxOpen && (
+                <MailInbox onClose={() => setInboxOpen(false)} />
             )}
 
-            {/* Terminal Panel */}
-            {showTerminal && (
-                <div className="absolute bottom-24 left-4 right-4 h-72 z-30 rounded-xl overflow-hidden border-4 border-black shadow-[6px_6px_0_0_#000]">
-                    <Suspense fallback={<div className="w-full h-full bg-[#1e1e2e] flex items-center justify-center text-white">Loading Terminal...</div>}>
-                        <TerminalPanel />
-                    </Suspense>
-                </div>
-            )}
 
             {/* Bottom Dock */}
-            <BottomDock
-                team={teamForDock}
-                selectedId={selectedAgentId}
-                onSelect={setSelectedAgentId}
-            />
+            <BottomDock />
 
             {/* Application Modals */}
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />

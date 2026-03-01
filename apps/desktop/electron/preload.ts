@@ -13,14 +13,16 @@ contextBridge.exposeInMainWorld('dogbaApi', {
 
     // ── Terminal ──
     terminal: {
-        create: (cols: number, rows: number): Promise<string> =>
-            ipcRenderer.invoke('terminal:create', cols, rows),
+        create: (cols: number, rows: number, options?: { cwd?: string; autoCommand?: string; shell?: string; label?: string }): Promise<{ id: string; label: string; cwd: string }> =>
+            ipcRenderer.invoke('terminal:create', cols, rows, options),
         write: (id: string, data: string): void =>
             ipcRenderer.send('terminal:write', id, data),
         resize: (id: string, cols: number, rows: number): void =>
             ipcRenderer.send('terminal:resize', id, cols, rows),
         destroy: (id: string): void =>
             ipcRenderer.send('terminal:destroy', id),
+        list: (): Promise<{ id: string; cwd: string; label: string; pid: number }[]> =>
+            ipcRenderer.invoke('terminal:list'),
         onData: (callback: (id: string, data: string) => void) => {
             const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) =>
                 callback(id, data);
@@ -37,10 +39,12 @@ contextBridge.exposeInMainWorld('dogbaApi', {
 
     // ── Chat ──
     chat: {
-        send: (agentName: string, message: string): Promise<{ success: boolean; text: string; sessionId?: string }> =>
-            ipcRenderer.invoke('chat:send', agentName, message),
-        sendStream: (agentName: string, message: string): Promise<{ success: boolean; text: string; sessionId?: string }> =>
-            ipcRenderer.invoke('chat:send-stream', agentName, message),
+        send: (agentName: string, message: string, skillId?: string): Promise<{ success: boolean; text: string; sessionId?: string }> =>
+            ipcRenderer.invoke('chat:send', agentName, message, skillId),
+        sendStream: (agentName: string, message: string, skillId?: string): Promise<{ success: boolean; text: string; sessionId?: string }> =>
+            ipcRenderer.invoke('chat:send-stream', agentName, message, skillId),
+        getSkills: (agentName: string): Promise<{ skills: { id: string; label: string; description: string }[] }> =>
+            ipcRenderer.invoke('chat:get-skills', agentName),
         onStream: (callback: (agentName: string, chunk: string) => void) => {
             const listener = (_e: Electron.IpcRendererEvent, agentName: string, chunk: string) =>
                 callback(agentName, chunk);
@@ -59,6 +63,8 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.on('chat:tool-use', listener);
             return () => ipcRenderer.removeListener('chat:tool-use', listener);
         },
+        closeSession: (agentName: string): Promise<{ success: boolean }> =>
+            ipcRenderer.invoke('chat:close-session', agentName),
     },
 
     // ── CLI Auth ──
@@ -117,6 +123,8 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.invoke('job:stop', jobId),
         getStatus: (): Promise<{ jobs: { id: string; status: string; agent: string; progress: number }[] }> =>
             ipcRenderer.invoke('job:getStatus'),
+        getArtifacts: (): Promise<{ artifacts: { name: string; path: string; type: string; jobId: string; ts: number }[] }> =>
+            ipcRenderer.invoke('job:getArtifacts'),
         getSettings: (): Promise<{ maxConcurrentAgents: number; logVerbosity: string; runTimeoutSeconds: number }> =>
             ipcRenderer.invoke('job:getSettings'),
         saveSettings: (settings: Record<string, unknown>): Promise<{ success: boolean }> =>
@@ -126,6 +134,15 @@ contextBridge.exposeInMainWorld('dogbaApi', {
                 callback(agentName, chunk);
             ipcRenderer.on('job:progress', listener);
             return () => ipcRenderer.removeListener('job:progress', listener);
+        },
+    },
+
+    // ── Mail (reports from agents) ──
+    mail: {
+        onNewReport: (callback: (report: { fromAgentId: string; fromAgentName: string; subject: string; body: string; type: 'report' | 'error'; timestamp: number }) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, report: any) => callback(report);
+            ipcRenderer.on('mail:new-report', listener);
+            return () => ipcRenderer.removeListener('mail:new-report', listener);
         },
     },
 });

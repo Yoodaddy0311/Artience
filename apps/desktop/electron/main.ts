@@ -5,7 +5,8 @@ import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
-import { agentManager, type StreamChunk } from './agent-manager';
+import { agentManager, AGENT_PERSONAS, type StreamChunk } from './agent-manager';
+import { getSkillProfile } from './skill-map';
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +53,7 @@ const historySnapshots: HistorySnapshot[] = [];
 // ── Terminal process store (node-pty based for proper TTY support) ──────────
 
 const terminals = new Map<string, pty.IPty>();
+const terminalMeta = new Map<string, { cwd: string; label: string }>();
 let terminalIdCounter = 0;
 
 // ── Window ─────────────────────────────────────────────────────────────────
@@ -90,8 +92,8 @@ function createWindow() {
         }
     });
 
-    if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
-        mainWindow.loadURL('http://localhost:5173');
+    if (process.env.VITE_DEV_SERVER_URL) {
+        mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     } else {
         mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
     }
@@ -119,10 +121,11 @@ function createWindow() {
 
 // ── Terminal IPC handlers (node-pty for full TTY support) ───────────────────
 
-ipcMain.handle('terminal:create', (_event, cols: number, rows: number) => {
+ipcMain.handle('terminal:create', (_event, cols: number, rows: number, options?: { cwd?: string; autoCommand?: string; shell?: string; label?: string }) => {
     const id = `term-${++terminalIdCounter}`;
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
-    const cwd = process.env.HOME || process.env.USERPROFILE || '.';
+    const shell = options?.shell || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
+    const cwd = options?.cwd || process.env.HOME || process.env.USERPROFILE || '.';
+    const label = options?.label || id;
 
     const env = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
@@ -136,10 +139,13 @@ ipcMain.handle('terminal:create', (_event, cols: number, rows: number) => {
     });
 
     terminals.set(id, proc);
+    terminalMeta.set(id, { cwd, label });
 
-    setTimeout(() => {
-        proc.write('claude\r');
-    }, 500);
+    if (options?.autoCommand) {
+        setTimeout(() => {
+            proc.write(options.autoCommand + '\r');
+        }, 500);
+    }
 
     proc.onData((data: string) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -149,12 +155,13 @@ ipcMain.handle('terminal:create', (_event, cols: number, rows: number) => {
 
     proc.onExit(({ exitCode }) => {
         terminals.delete(id);
+        terminalMeta.delete(id);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('terminal:exit', id, exitCode ?? 1);
         }
     });
 
-    return id;
+    return { id, label, cwd };
 });
 
 ipcMain.on('terminal:write', (_event, id: string, data: string) => {
@@ -170,12 +177,27 @@ ipcMain.on('terminal:destroy', (_event, id: string) => {
     if (proc) {
         proc.kill();
         terminals.delete(id);
+        terminalMeta.delete(id);
     }
+});
+
+ipcMain.handle('terminal:list', () => {
+    return Array.from(terminals.entries()).map(([id, proc]) => ({
+        id,
+        cwd: terminalMeta.get(id)?.cwd || '',
+        label: terminalMeta.get(id)?.label || id,
+        pid: proc.pid,
+    }));
 });
 
 // ── Chat IPC (Agent Manager) ───────────────────────────────────────────────
 
-// Helper: drain async generator and send stream events to renderer
+// Helper: resolve agent display name from agentName key
+function resolveAgentName(agentName: string): string {
+    const persona = AGENT_PERSONAS[agentName.toLowerCase()];
+    return persona ? `${agentName} (${persona.role})` : agentName;
+}
+
 async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): Promise<{ success: boolean; text: string; sessionId?: string }> {
     let fullText = '';
     let sessionId: string | undefined;
@@ -193,30 +215,74 @@ async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): P
                 fullText = chunk.content || fullText;
             } else if (chunk.type === 'error') {
                 mainWindow?.webContents.send('chat:stream-end', agentName);
+                mainWindow?.webContents.send('mail:new-report', {
+                    fromAgentId: agentName.toLowerCase(),
+                    fromAgentName: resolveAgentName(agentName),
+                    subject: '작업 실패',
+                    body: chunk.content.slice(0, 500),
+                    type: 'error',
+                    timestamp: Date.now(),
+                });
                 return { success: false, text: chunk.content };
             }
         }
     } catch (err: any) {
         mainWindow?.webContents.send('chat:stream-end', agentName);
-        return { success: false, text: err.message || 'Chat failed' };
+        const errorMsg = err.message || 'Chat failed';
+        mainWindow?.webContents.send('mail:new-report', {
+            fromAgentId: agentName.toLowerCase(),
+            fromAgentName: resolveAgentName(agentName),
+            subject: '작업 실패',
+            body: errorMsg.slice(0, 500),
+            type: 'error',
+            timestamp: Date.now(),
+        });
+        return { success: false, text: errorMsg };
     }
 
     mainWindow?.webContents.send('chat:stream-end', agentName);
+    mainWindow?.webContents.send('mail:new-report', {
+        fromAgentId: agentName.toLowerCase(),
+        fromAgentName: resolveAgentName(agentName),
+        subject: '작업 완료 보고',
+        body: fullText.slice(0, 500),
+        type: 'report',
+        timestamp: Date.now(),
+    });
     return { success: true, text: fullText, sessionId };
 }
 
 // Legacy single-shot (kept for backward compat, now routed through Agent Manager)
-ipcMain.handle('chat:send', async (_event, agentName: string, userMessage: string) => {
+ipcMain.handle('chat:send', async (_event, agentName: string, userMessage: string, skillId?: string) => {
     const projectDir = (store.get('project') as any)?.dir || '.';
-    const gen = agentManager.chat(agentName, userMessage, projectDir);
+    const gen = agentManager.chat(agentName, userMessage, projectDir, skillId);
     return drainChat(agentName, gen);
 });
 
 // Streaming chat
-ipcMain.handle('chat:send-stream', async (_event, agentName: string, userMessage: string) => {
+ipcMain.handle('chat:send-stream', async (_event, agentName: string, userMessage: string, skillId?: string) => {
     const projectDir = (store.get('project') as any)?.dir || '.';
-    const gen = agentManager.chat(agentName, userMessage, projectDir);
+    const gen = agentManager.chat(agentName, userMessage, projectDir, skillId);
     return drainChat(agentName, gen);
+});
+
+// Get available skills for an agent
+ipcMain.handle('chat:get-skills', (_event, agentName: string) => {
+    const profile = getSkillProfile(agentName);
+    if (!profile) return { skills: [] };
+    return {
+        skills: profile.skills.map((s) => ({
+            id: s.id,
+            label: s.label,
+            description: s.description,
+        })),
+    };
+});
+
+// Close chat session
+ipcMain.handle('chat:close-session', (_e, agentName: string) => {
+    agentManager.closeSession(agentName);
+    return { success: true };
 });
 
 // ── CLI Auth IPC ───────────────────────────────────────────────────────────
@@ -440,16 +506,41 @@ ipcMain.handle('job:run', async (_e, agentNameOrRecipeId: string, taskOrAgentId:
                 fullText = chunk.content || fullText;
             } else if (chunk.type === 'error') {
                 record.status = 'failed';
+                mainWindow?.webContents.send('mail:new-report', {
+                    fromAgentId: agentNameOrRecipeId.toLowerCase(),
+                    fromAgentName: resolveAgentName(agentNameOrRecipeId),
+                    subject: `작업 실패 (${jobId})`,
+                    body: chunk.content.slice(0, 500),
+                    type: 'error',
+                    timestamp: Date.now(),
+                });
                 return { success: false, jobId, error: chunk.content };
             }
         }
     } catch (err: any) {
         record.status = 'failed';
+        const errorMsg = err.message || 'Job failed';
+        mainWindow?.webContents.send('mail:new-report', {
+            fromAgentId: agentNameOrRecipeId.toLowerCase(),
+            fromAgentName: resolveAgentName(agentNameOrRecipeId),
+            subject: `작업 실패 (${jobId})`,
+            body: errorMsg.slice(0, 500),
+            type: 'error',
+            timestamp: Date.now(),
+        });
         return { success: false, jobId, error: err.message };
     }
 
     record.status = 'completed';
     record.progress = 100;
+    mainWindow?.webContents.send('mail:new-report', {
+        fromAgentId: agentNameOrRecipeId.toLowerCase(),
+        fromAgentName: resolveAgentName(agentNameOrRecipeId),
+        subject: `작업 완료 보고 (${jobId})`,
+        body: fullText.slice(0, 500),
+        type: 'report',
+        timestamp: Date.now(),
+    });
     return { success: true, jobId, text: fullText, sessionId };
 });
 
@@ -508,4 +599,5 @@ app.on('before-quit', () => {
         try { proc.kill(); } catch (_) { /* ignore */ }
         terminals.delete(id);
     }
+    terminalMeta.clear();
 });

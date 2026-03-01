@@ -1,106 +1,76 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Teammate } from './MainLayout';
-import { assetPath } from '../../lib/assetPath';
+import React from 'react';
+import { useTerminalStore } from '../../store/useTerminalStore';
 
-export const BottomDock: React.FC<{ team: Teammate[], selectedId: string | null, onSelect: (id: string | null) => void }> = ({ team, selectedId, onSelect }) => {
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [canScrollLeft, setCanScrollLeft] = useState(false);
-    const [canScrollRight, setCanScrollRight] = useState(false);
-
-    const checkScroll = useCallback(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        setCanScrollLeft(el.scrollLeft > 0);
-        setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-    }, []);
-
-    useEffect(() => {
-        checkScroll();
-        const el = scrollRef.current;
-        if (!el) return;
-        el.addEventListener('scroll', checkScroll, { passive: true });
-        const observer = new ResizeObserver(checkScroll);
-        observer.observe(el);
-        return () => {
-            el.removeEventListener('scroll', checkScroll);
-            observer.disconnect();
-        };
-    }, [checkScroll, team.length]);
-
-    const scroll = (direction: 'left' | 'right') => {
-        const el = scrollRef.current;
-        if (!el) return;
-        const scrollAmount = 240;
-        el.scrollBy({
-            left: direction === 'left' ? -scrollAmount : scrollAmount,
-            behavior: 'smooth',
-        });
-    };
+export const BottomDock: React.FC = () => {
+    const { tabs, activeTabId, setActiveTab, removeTab } = useTerminalStore();
 
     return (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 max-w-[90vw]">
             <div className="bg-white px-3 py-3 rounded-lg shadow-[4px_4px_0_0_#000] border-2 border-black flex items-center gap-2">
-                {/* Left Arrow */}
-                {canScrollLeft && (
-                    <button
-                        onClick={() => scroll('left')}
-                        aria-label="Scroll agents left"
-                        className="flex-shrink-0 w-9 h-9 flex items-center justify-center border-2 border-black rounded-lg bg-white hover:bg-gray-100 hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
-                    >
-                        <ChevronLeft className="w-5 h-5 text-black" strokeWidth={3} />
-                    </button>
-                )}
-
-                {/* Scrollable Agent Container */}
-                <div
-                    ref={scrollRef}
-                    className="flex items-center gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory scrollbar-hide"
-                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                >
-                    {team.map(agent => {
-                        const isSelected = agent.id === selectedId;
+                {/* Scrollable tab area */}
+                <div className="flex items-center gap-3 overflow-x-auto scroll-smooth scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+                    {tabs.length === 0 && (
+                        <span className="text-sm text-gray-400 font-bold px-4">터미널이 없습니다</span>
+                    )}
+                    {tabs.map(tab => {
+                        const isActive = tab.id === activeTabId;
                         return (
-                            <button
-                                key={agent.id}
-                                onClick={() => onSelect(isSelected ? null : agent.id)}
-                                aria-label={`${agent.name} (${agent.role}), ${agent.status === 'working' ? 'working' : 'resting'}`}
-                                aria-pressed={isSelected}
-                                className={`relative group transition-transform snap-start flex-shrink-0 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 rounded-lg ${isSelected ? '-translate-y-3' : 'hover:-translate-y-1'}`}
-                            >
-                                <img
-                                    src={assetPath(agent.avatarUrl)}
-                                    alt={agent.name}
-                                    className={`w-14 h-14 rounded-lg border-2 border-black transition-all ${isSelected
-                                        ? 'shadow-[3px_3px_0_0_#000] bg-yellow-200'
-                                        : 'bg-white shadow-[2px_2px_0_0_#000]'
-                                        }`}
-                                />
-                                {/* Status Dot */}
-                                <div
-                                    className={`absolute -top-1 -right-1 w-4 h-4 border-2 border-black rounded-full ${agent.status === 'working' ? 'bg-green-400' : 'bg-amber-300'}`}
-                                    aria-hidden="true"
-                                />
-
-                                {/* Tooltip */}
-                                <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-black text-white text-xs font-bold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border-2 border-black shadow-[2px_2px_0_0_#000]">
-                                    {agent.name} ({agent.role})
-                                </div>
-                            </button>
+                            <div key={tab.id} className="relative group flex-shrink-0">
+                                <button
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-black transition-all ${
+                                        isActive
+                                            ? 'bg-[#E8DAFF] shadow-[3px_3px_0_0_#000] -translate-y-1'
+                                            : 'bg-white shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5'
+                                    }`}
+                                >
+                                    {/* Status dot */}
+                                    <span className={`w-2.5 h-2.5 rounded-full border border-black ${
+                                        tab.status === 'connected' ? 'bg-green-400'
+                                        : tab.status === 'connecting' ? 'bg-yellow-400 animate-pulse'
+                                        : 'bg-gray-300'
+                                    }`} />
+                                    {/* Label */}
+                                    <span className="text-xs font-bold text-black whitespace-nowrap max-w-[120px] truncate">
+                                        {tab.label}
+                                    </span>
+                                </button>
+                                {/* Close button */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.dogbaApi?.terminal?.destroy(tab.id);
+                                        removeTab(tab.id);
+                                    }}
+                                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-400 border border-black rounded-full text-white text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         );
                     })}
                 </div>
 
-                {/* Right Arrow */}
-                {canScrollRight && (
-                    <button
-                        onClick={() => scroll('right')}
-                        aria-label="Scroll agents right"
-                        className="flex-shrink-0 w-9 h-9 flex items-center justify-center border-2 border-black rounded-lg bg-white hover:bg-gray-100 hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
-                    >
-                        <ChevronRight className="w-5 h-5 text-black" strokeWidth={3} />
-                    </button>
-                )}
+                {/* New terminal button */}
+                <button
+                    onClick={async () => {
+                        const api = window.dogbaApi?.terminal;
+                        if (!api) return;
+                        const result = await api.create(80, 24, { label: 'Terminal' });
+                        if (result?.id) {
+                            useTerminalStore.getState().addTab({
+                                id: result.id,
+                                label: result.label || 'Terminal',
+                                cwd: result.cwd || '',
+                                status: 'connecting',
+                            });
+                        }
+                    }}
+                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center border-2 border-black rounded-lg bg-[#9DE5DC] hover:bg-[#7dd3c4] hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
+                    aria-label="New terminal"
+                >
+                    <span className="text-lg font-black text-black">+</span>
+                </button>
             </div>
         </div>
     );

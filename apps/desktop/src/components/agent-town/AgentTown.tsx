@@ -11,6 +11,7 @@ import {
 } from '../../systems/grid-world';
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { useAppStore } from '../../store/useAppStore';
+import { useTerminalStore } from '../../store/useTerminalStore';
 
 // Isometric coordinate system
 import {
@@ -88,6 +89,8 @@ export const AgentTown: React.FC = () => {
         let canvasElRef: HTMLCanvasElement | null = null;
         let unsubStream: (() => void) | null = null;
         let unsubStreamEnd: (() => void) | null = null;
+        let unsubToolUse: (() => void) | null = null;
+        let unsubTerminal: (() => void) | null = null;
 
         const initPixi = async () => {
             try {
@@ -407,7 +410,7 @@ export const AgentTown: React.FC = () => {
 
                     unsubStream = chatApi.onStream((agentName, _chunk) => {
                         const agent = isoAgentMap.get(agentName.toLowerCase());
-                        if (!agent) return;
+                        if (!agent || agent.id === 'cto') return;
 
                         // Only trigger on first chunk (stream start)
                         if (streamingAgents.has(agent.id)) return;
@@ -424,9 +427,20 @@ export const AgentTown: React.FC = () => {
 
                     unsubStreamEnd = chatApi.onStreamEnd((agentName) => {
                         const agent = isoAgentMap.get(agentName.toLowerCase());
-                        if (!agent) return;
+                        if (!agent || agent.id === 'cto') return;
 
+                        const wasStreaming = streamingAgents.has(agent.id);
                         streamingAgents.delete(agent.id);
+
+                        if (!wasStreaming) {
+                            // Stream ended but agent was never in streaming set — likely an error
+                            agent.state = 'ERROR';
+                            agent.visual.animState = 'error';
+                            agent.stateAnimTimer = 0;
+                            updateOtterStateDot(agent.visual, STATE_COLORS.ERROR);
+                            showOtterBubble(agent.visual, '오류 발생');
+                            return;
+                        }
 
                         // Transition to SUCCESS (auto-returns to IDLE after 72 frames)
                         agent.state = 'SUCCESS';
@@ -435,7 +449,53 @@ export const AgentTown: React.FC = () => {
                         updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
                         showOtterBubble(agent.visual, '완료!');
                     });
+
+                    // ── Item 2: chat:tool-use subscription → visual feedback ──
+                    unsubToolUse = chatApi.onToolUse((agentName, _toolData) => {
+                        const agent = isoAgentMap.get(agentName.toLowerCase());
+                        if (!agent || agent.id === 'cto') return;
+                        showOtterBubble(agent.visual, '\uD83D\uDD27 도구 사용 중...');
+                    });
                 }
+
+                // ══════════════════════════════════════════════════════
+                // ── useTerminalStore ↔ AgentTown 연결 ──
+                // ══════════════════════════════════════════════════════
+
+                unsubTerminal = useTerminalStore.subscribe((state, prevState) => {
+                    for (const tab of state.tabs) {
+                        const prev = prevState.tabs.find(t => t.id === tab.id);
+                        // Only react to status changes (or new tabs)
+                        if (prev && prev.status === tab.status) continue;
+
+                        // Find agent by agentId on the tab
+                        if (!tab.agentId) continue;
+                        const agent = isoAgentMap.get(tab.agentId);
+                        if (!agent || agent.id === 'cto') continue;
+
+                        if (tab.status === 'connecting') {
+                            // Walk to work zone
+                            agent.state = 'WALK';
+                            agent.visual.animState = 'walk';
+                            updateOtterStateDot(agent.visual, STATE_COLORS.WALK);
+                            pickIsoZoneDest(agent, 'work');
+                        } else if (tab.status === 'connected') {
+                            // Working
+                            agent.state = 'RUNNING';
+                            agent.visual.animState = 'walk';
+                            agent.stateAnimTimer = 0;
+                            updateOtterStateDot(agent.visual, STATE_COLORS.RUNNING);
+                            showOtterBubble(agent.visual, '터미널 작업 중...');
+                        } else if (tab.status === 'exited') {
+                            // Success then back to idle
+                            agent.state = 'SUCCESS';
+                            agent.visual.animState = 'success';
+                            agent.stateAnimTimer = 0;
+                            updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
+                            showOtterBubble(agent.visual, '완료!');
+                        }
+                    }
+                });
 
                 // ══════════════════════════════════════════════════════
                 // ── Animation Loop ──
@@ -623,6 +683,8 @@ export const AgentTown: React.FC = () => {
             // Unsubscribe IPC chat listeners
             if (unsubStream) { unsubStream(); unsubStream = null; }
             if (unsubStreamEnd) { unsubStreamEnd(); unsubStreamEnd = null; }
+            if (unsubToolUse) { unsubToolUse(); unsubToolUse = null; }
+            if (unsubTerminal) { unsubTerminal(); unsubTerminal = null; }
 
             if (appRef.current) {
                 try {

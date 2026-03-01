@@ -80,9 +80,11 @@ const SPRITES = {
     S13: '/assets/characters/media__1771900428230.png',
 } as const;
 
-// Default 25 agents based on .ref spec
-// 13 sprites distributed across 25 agents: first 13 unique, then cycle with offset
+// Default agents based on .ref spec
+// CTO (player character) + 25 agents
+// 13 sprites distributed across agents: first 13 unique, then cycle with offset
 export const DEFAULT_AGENTS: AgentProfile[] = [
+    { id: 'cto', name: 'You', role: 'CTO', sprite: SPRITES.S13, state: 'IDLE', currentJobId: null, home: { x: 20, y: 14 }, pos: { x: 20, y: 14 } },
     { id: 'a01', name: 'Sera', role: 'PM / 총괄', sprite: SPRITES.S01, state: 'IDLE', currentJobId: null, home: { x: 5, y: 3 }, pos: { x: 5, y: 3 } },
     { id: 'a02', name: 'Rio', role: '백엔드 개발', sprite: SPRITES.S02, state: 'IDLE', currentJobId: null, home: { x: 8, y: 3 }, pos: { x: 8, y: 3 } },
     { id: 'a03', name: 'Luna', role: '프론트엔드 개발', sprite: SPRITES.S03, state: 'IDLE', currentJobId: null, home: { x: 11, y: 3 }, pos: { x: 11, y: 3 } },

@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { AgentProfile, Job, LogEntry, Recipe, AgentState } from '../../types/platform';
+import React, { useState, useEffect, useRef } from 'react';
+import type { AgentProfile, Job, Recipe, AgentState } from '../../types/platform';
 import { DEFAULT_AGENTS, DEFAULT_RECIPES } from '../../types/platform';
 import { useAppStore, type LogVerbosity } from '../../store/useAppStore';
-import { parseLogState, getStateColor } from '../../lib/logParser';
 import { Activity, Search, FolderOpen, Image, FileText, Package } from 'lucide-react';
 import { assetPath } from '../../lib/assetPath';
 
 type SettingsSyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-type RunTab = 'agents' | 'jobs' | 'logs' | 'artifacts' | 'settings';
+type RunTab = 'agents' | 'jobs' | 'artifacts' | 'settings';
 
 // State color map per .ref/Specs/State_machine.md
 const STATE_COLORS: Record<AgentState, string> = {
@@ -31,16 +30,12 @@ const STATE_LABELS: Record<AgentState, string> = {
     NEEDS_INPUT: '입력 대기',
 };
 
-type LogFilter = 'all' | 'stdout' | 'stderr';
-
 export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [tab, setTab] = useState<RunTab>('agents');
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
     const [agents, setAgents] = useState<AgentProfile[]>(DEFAULT_AGENTS);
     const [jobs, setJobs] = useState<Job[]>([]);
-    const [logs, setLogs] = useState<LogEntry[]>([]);
     const [recipes] = useState<Recipe[]>(DEFAULT_RECIPES);
-    const logEndRef = useRef<HTMLDivElement>(null);
 
     // P2-9: Canvas highlight store
     const setHighlightedAgentId = useAppStore((s) => s.setHighlightedAgentId);
@@ -87,53 +82,16 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         };
     }, []);
 
-    // R-4: Log filtering
-    const [logFilter, setLogFilter] = useState<LogFilter>('all');
-    const [logSearch, setLogSearch] = useState('');
-    const [selectedJobFilter, setSelectedJobFilter] = useState<string>('all');
-
-    // P1-10: Agent filter for logs
-    const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>('all');
-
     // R-4: Artifacts mock data
     const [artifacts, setArtifacts] = useState<{ name: string; path: string; type: string; jobId: string; ts: number }[]>([]);
     const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({ image: true, document: true, archive: true, other: true });
 
-    // Job progress listener — updates logs from job:progress IPC events
-    useEffect(() => {
-        const jobApi = window.dogbaApi?.job;
-        if (!jobApi) return;
-
-        const unsub = jobApi.onProgress((agentName, chunk) => {
-            setLogs(prev => [...prev, {
-                ts: Date.now() / 1000,
-                stream: 'stdout' as const,
-                text: chunk,
-                jobId: agentName,
-                agentId: agentName,
-            }].slice(-500));
-        });
-
-        return () => { unsub(); };
-    }, []);
-
-    useEffect(() => {
-        logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [logs]);
 
     const runRecipe = async (recipeId: string) => {
         const recipe = recipes.find(r => r.id === recipeId);
         if (!recipe) return;
 
         const idle = agents.filter(a => a.state === 'IDLE');
-        if (idle.length === 0) {
-            setLogs(prev => [...prev, {
-                ts: Date.now() / 1000,
-                stream: 'stderr' as const,
-                text: '모든 에이전트가 작업 중입니다. 대기열에 추가됩니다.',
-                jobId: 'system',
-            }].slice(-500));
-        }
         const agent = idle[Math.floor(Math.random() * idle.length)] || agents[0];
         const jobApi = window.dogbaApi?.job;
         if (!jobApi) return;
@@ -161,33 +119,6 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         ));
     };
 
-    // R-4: Filtered logs
-    const filteredLogs = logs.filter(log => {
-        if (logFilter !== 'all' && log.stream !== logFilter) return false;
-        if (selectedJobFilter !== 'all' && log.jobId !== selectedJobFilter) return false;
-        if (selectedAgentFilter !== 'all' && log.agentId !== selectedAgentFilter) return false;
-        if (logSearch && !log.text.toLowerCase().includes(logSearch.toLowerCase())) return false;
-        return true;
-    });
-
-    // Unique jobIds from logs for filter dropdown
-    const uniqueJobIds = [...new Set(logs.map(l => l.jobId))];
-
-    // P1-10: Unique agentIds from logs for agent filter dropdown
-    const uniqueAgentIds = [...new Set(logs.map(l => l.agentId).filter((id): id is string => Boolean(id)))];
-
-    // P2-10: Build a merged keyword→state map from all recipes' parserRules
-    const parserRulesMap = useMemo(() => {
-        const merged: Record<string, AgentState> = {};
-        for (const recipe of recipes) {
-            if (recipe.parserRules?.keywordToState) {
-                for (const [keyword, state] of Object.entries(recipe.parserRules.keywordToState)) {
-                    merged[keyword] = state;
-                }
-            }
-        }
-        return merged;
-    }, [recipes]);
 
     // P1-11: Open artifact path via shell (Electron local file)
     const downloadFile = async (_path: string, _filename: string) => {
@@ -213,7 +144,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
             {/* Tab Buttons (Neo-Brutalist) */}
             <div className="flex border-b-2 border-black bg-white" role="tablist" aria-label="Run panel tabs">
-                {([['agents', `에이전트 (${agents.length})`], ['jobs', 'Jobs'], ['logs', 'Logs'], ['artifacts', '산출물'], ['settings', '설정']] as [RunTab, string][]).map(([key, label]) => (
+                {([['agents', `에이전트 (${agents.length})`], ['jobs', 'Jobs'], ['artifacts', '산출물'], ['settings', '설정']] as [RunTab, string][]).map(([key, label]) => (
                     <button key={key} role="tab" aria-selected={tab === key} aria-controls={`run-tabpanel-${key}`} id={`run-tab-${key}`} onClick={() => setTab(key)} className={`flex-1 py-3 text-xs font-black transition-all border-r-2 border-black last:border-r-0 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${tab === key ? 'text-black bg-[#E8DAFF]' : 'text-gray-500 hover:bg-gray-50'}`}>
                         {label}
                     </button>
@@ -256,13 +187,12 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                         </h4>
                                         <div className="bg-[#1e1e2e] rounded border-2 border-black p-2 text-[10px] font-mono leading-tight max-h-32 overflow-y-auto w-full">
                                             {(() => {
-                                                const agentJobs = jobs.filter(j => j.assignedAgentId === agent.id).map(j => j.id);
-                                                const agentLogs = logs.filter(l => agentJobs.includes(l.jobId)).slice(-15);
-                                                if (agentLogs.length === 0) return <span className="text-gray-500">실행된 작업 내역이 없습니다.</span>;
-                                                return agentLogs.map((l, idx) => (
-                                                    <div key={idx} className={`py-0.5 ${l.stream === 'stderr' ? 'text-red-400' : 'text-green-300'}`}>
-                                                        <span className="text-gray-500 select-none mr-1">[{new Date(l.ts * 1000).toLocaleTimeString()}]</span>
-                                                        {l.text}
+                                                const agentJobs = jobs.filter(j => j.assignedAgentId === agent.id);
+                                                if (agentJobs.length === 0) return <span className="text-gray-500">실행된 작업 내역이 없습니다.</span>;
+                                                return agentJobs.slice(-5).map((j, idx) => (
+                                                    <div key={idx} className={`py-0.5 ${j.state === 'ERROR' ? 'text-red-400' : 'text-green-300'}`}>
+                                                        <span className="text-gray-500 select-none mr-1">[{new Date(j.startedAt).toLocaleTimeString()}]</span>
+                                                        {j.recipeName} — {j.state}
                                                     </div>
                                                 ));
                                             })()}
@@ -330,89 +260,6 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                     ))}
                                 </div>
                             )}
-                        </div>
-                    </div>
-                )}
-
-                {/* ─── Logs Tab (R-4: Enhanced with filters) ─── */}
-                {tab === 'logs' && (
-                    <div className="p-3 space-y-2">
-                        {/* Log Filters */}
-                        <div className="flex gap-2 flex-wrap">
-                            <select
-                                value={logFilter}
-                                onChange={e => setLogFilter(e.target.value as LogFilter)}
-                                className="text-xs font-bold px-2 py-1.5 rounded-md border-2 border-black bg-white shadow-[1px_1px_0_0_#000]"
-                            >
-                                <option value="all">전체 스트림</option>
-                                <option value="stdout">stdout</option>
-                                <option value="stderr">stderr만</option>
-                            </select>
-                            <select
-                                value={selectedJobFilter}
-                                onChange={e => setSelectedJobFilter(e.target.value)}
-                                className="text-xs font-bold px-2 py-1.5 rounded-md border-2 border-black bg-white shadow-[1px_1px_0_0_#000]"
-                            >
-                                <option value="all">전체 Job</option>
-                                {uniqueJobIds.map(id => (
-                                    <option key={id} value={id}>{id}</option>
-                                ))}
-                            </select>
-                            <select
-                                value={selectedAgentFilter}
-                                onChange={e => setSelectedAgentFilter(e.target.value)}
-                                className="text-xs font-bold border-2 border-black rounded-lg px-3 py-1 bg-white shadow-[1px_1px_0_0_#000]"
-                            >
-                                <option value="all">전체 에이전트</option>
-                                {uniqueAgentIds.map(id => (
-                                    <option key={id} value={id}>{id}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                placeholder="키워드 검색..."
-                                value={logSearch}
-                                onChange={e => setLogSearch(e.target.value)}
-                                className="flex-1 text-xs px-2 py-1.5 rounded-md border-2 border-black bg-white shadow-[1px_1px_0_0_#000] min-w-[80px]"
-                            />
-                            <button
-                                onClick={() => setLogs([])}
-                                className="text-xs font-black px-2 py-1.5 rounded-md border-2 border-black bg-red-100 text-red-700 shadow-[1px_1px_0_0_#000] hover:bg-red-200 transition-colors"
-                            >
-                                Clear
-                            </button>
-                        </div>
-
-                        {/* Log Output */}
-                        <div className="bg-[#1e1e2e] rounded-lg p-3 min-h-[300px] max-h-[calc(100vh-300px)] overflow-y-auto font-mono text-xs leading-relaxed border-2 border-black shadow-[3px_3px_0_0_#000]">
-                            {filteredLogs.length === 0 ? (
-                                <span className="text-gray-500">
-                                    {logs.length === 0 ? '작업을 실행하면 로그가 여기에 표시됩니다...' : '필터 조건에 맞는 로그가 없습니다.'}
-                                </span>
-                            ) : (
-                                filteredLogs.map((log, i) => {
-                                    const parsedState = Object.keys(parserRulesMap).length > 0
-                                        ? parseLogState(log.text, parserRulesMap)
-                                        : null;
-                                    const stateColorClass = parsedState && parsedState !== 'IDLE'
-                                        ? getStateColor(parsedState)
-                                        : (log.stream === 'stderr' ? 'text-red-400' : 'text-green-300');
-                                    return (
-                                        <div key={i} className={`py-0.5 ${stateColorClass}`}>
-                                            <span className="text-gray-500 mr-1 select-none">[{new Date(log.ts * 1000).toLocaleTimeString()}]</span>
-                                            <span className="text-blue-400 mr-1 select-none">[{log.jobId}]</span>
-                                            {parsedState && parsedState !== 'IDLE' && (
-                                                <span className={`mr-1 font-bold ${getStateColor(parsedState)}`}>[{parsedState}]</span>
-                                            )}
-                                            {log.text}
-                                        </div>
-                                    );
-                                })
-                            )}
-                            <div ref={logEndRef} />
-                        </div>
-                        <div className="text-right text-xs text-gray-400 font-bold">
-                            {filteredLogs.length} / {logs.length} 건
                         </div>
                     </div>
                 )}

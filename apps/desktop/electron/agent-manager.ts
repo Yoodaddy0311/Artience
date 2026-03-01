@@ -9,6 +9,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { getSkillById, buildSkillSystemPrompt } from './skill-map';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -132,18 +133,21 @@ class AgentManager {
 
   // ── Chat (streaming) ──
 
-  async *chat(agentName: string, message: string, projectDir?: string): AsyncGenerator<StreamChunk> {
+  async *chat(agentName: string, message: string, projectDir?: string, skillId?: string): AsyncGenerator<StreamChunk> {
     await this.ensureReady();
 
     const session = this.startSession(agentName, projectDir || '.');
     session.status = 'busy';
     session.abortController = new AbortController();
 
+    // Resolve skill for enhanced prompt
+    const skill = skillId ? getSkillById(agentName, skillId) : undefined;
+
     try {
       if (this.sdkAvailable && sdkQuery) {
-        yield* this.chatViaSDK(session, message);
+        yield* this.chatViaSDK(session, message, skill);
       } else {
-        yield* this.chatViaSpawn(session, message);
+        yield* this.chatViaSpawn(session, message, skill);
       }
     } finally {
       session.status = 'idle';
@@ -152,8 +156,9 @@ class AgentManager {
 
   // ── SDK path ──
 
-  private async *chatViaSDK(session: AgentSession, message: string): AsyncGenerator<StreamChunk> {
-    const systemPrompt = buildSystemPrompt(session.agentName);
+  private async *chatViaSDK(session: AgentSession, message: string, skill?: import('./skill-map').ArtibotSkill): AsyncGenerator<StreamChunk> {
+    const basePrompt = buildSystemPrompt(session.agentName);
+    const systemPrompt = buildSkillSystemPrompt(basePrompt, skill);
 
     const queryOpts: any = {
       systemPrompt,
@@ -212,8 +217,9 @@ class AgentManager {
 
   // ── Spawn fallback path ──
 
-  private async *chatViaSpawn(session: AgentSession, message: string): AsyncGenerator<StreamChunk> {
-    const systemPrompt = buildSystemPrompt(session.agentName);
+  private async *chatViaSpawn(session: AgentSession, message: string, skill?: import('./skill-map').ArtibotSkill): AsyncGenerator<StreamChunk> {
+    const basePrompt = buildSystemPrompt(session.agentName);
+    const systemPrompt = buildSkillSystemPrompt(basePrompt, skill);
     const env = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
     env.FORCE_COLOR = '0';

@@ -1,18 +1,47 @@
+interface TerminalCreateOptions {
+    cwd?: string;
+    autoCommand?: string;
+    shell?: string;
+    label?: string;
+}
+
+interface TerminalCreateResult {
+    id: string;
+    label: string;
+    cwd: string;
+}
+
+interface TerminalInfo {
+    id: string;
+    cwd: string;
+    label: string;
+    pid: number;
+}
+
 interface DogbaTerminalApi {
-    create(cols: number, rows: number): Promise<string>;
+    create(cols: number, rows: number, options?: TerminalCreateOptions): Promise<TerminalCreateResult>;
     write(id: string, data: string): void;
     resize(id: string, cols: number, rows: number): void;
     destroy(id: string): void;
+    list(): Promise<TerminalInfo[]>;
     onData(callback: (id: string, data: string) => void): () => void;
     onExit(callback: (id: string, exitCode: number) => void): () => void;
 }
 
+interface AgentSkillInfo {
+    id: string;
+    label: string;
+    description: string;
+}
+
 interface DogbaChatApi {
-    send(agentName: string, message: string): Promise<{ success: boolean; text: string; sessionId?: string }>;
-    sendStream(agentName: string, message: string): Promise<{ success: boolean; text: string; sessionId?: string }>;
+    send(agentName: string, message: string, skillId?: string): Promise<{ success: boolean; text: string; sessionId?: string }>;
+    sendStream(agentName: string, message: string, skillId?: string): Promise<{ success: boolean; text: string; sessionId?: string }>;
+    getSkills(agentName: string): Promise<{ skills: AgentSkillInfo[] }>;
     onStream(callback: (agentName: string, chunk: string) => void): () => void;
     onStreamEnd(callback: (agentName: string) => void): () => void;
     onToolUse(callback: (agentName: string, toolData: string) => void): () => void;
+    closeSession(agentName: string): Promise<{ success: boolean }>;
 }
 
 interface DogbaCliApi {
@@ -51,6 +80,17 @@ interface DogbaJobApi {
     onProgress(callback: (agentName: string, chunk: string) => void): () => void;
 }
 
+interface DogbaMailApi {
+    onNewReport(callback: (report: {
+        fromAgentId: string;
+        fromAgentName: string;
+        subject: string;
+        body: string;
+        type: 'report' | 'error';
+        timestamp: number;
+    }) => void): () => void;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -62,6 +102,7 @@ interface DogbaApi {
     file: DogbaFileApi;
     studio: DogbaStudioApi;
     job: DogbaJobApi;
+    mail: DogbaMailApi;
 }
 
 declare global {
