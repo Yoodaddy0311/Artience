@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Teammate } from './MainLayout';
+import { assetPath } from '../../lib/assetPath';
 
 export const BottomDock: React.FC<{ team: Teammate[], selectedId: string | null, onSelect: (id: string | null) => void }> = ({ team, selectedId, onSelect }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -68,7 +69,7 @@ export const BottomDock: React.FC<{ team: Teammate[], selectedId: string | null,
                                 className={`relative group transition-transform snap-start flex-shrink-0 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 rounded-lg ${isSelected ? '-translate-y-3' : 'hover:-translate-y-1'}`}
                             >
                                 <img
-                                    src={agent.avatarUrl}
+                                    src={assetPath(agent.avatarUrl)}
                                     alt={agent.name}
                                     className={`w-14 h-14 rounded-lg border-2 border-black transition-all ${isSelected
                                         ? 'shadow-[3px_3px_0_0_#000] bg-yellow-200'

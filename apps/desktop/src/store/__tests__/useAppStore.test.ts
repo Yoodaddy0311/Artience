@@ -88,7 +88,7 @@ describe('useAppStore', () => {
     describe('updateAppSettings / resetAppSettings', () => {
         it('should have correct default settings', () => {
             const { appSettings } = useAppStore.getState();
-            expect(appSettings.apiUrl).toBe('http://localhost:8000');
+            expect(appSettings.projectDir).toBe('');
             expect(appSettings.language).toBe('ko');
             expect(appSettings.autoSaveInterval).toBe(30);
             expect(appSettings.notificationsEnabled).toBe(true);
@@ -101,19 +101,19 @@ describe('useAppStore', () => {
             const { appSettings } = useAppStore.getState();
             expect(appSettings.language).toBe('en');
             // Other fields should remain unchanged
-            expect(appSettings.apiUrl).toBe('http://localhost:8000');
+            expect(appSettings.projectDir).toBe('');
             expect(appSettings.autoSaveInterval).toBe(30);
         });
 
         it('should update multiple settings at once', () => {
             const { updateAppSettings } = useAppStore.getState();
             updateAppSettings({
-                apiUrl: 'https://api.example.com',
+                projectDir: '/home/user/project',
                 notificationsEnabled: false,
             });
 
             const { appSettings } = useAppStore.getState();
-            expect(appSettings.apiUrl).toBe('https://api.example.com');
+            expect(appSettings.projectDir).toBe('/home/user/project');
             expect(appSettings.notificationsEnabled).toBe(false);
         });
 
@@ -401,124 +401,87 @@ describe('useAppStore', () => {
     });
 
     describe('loadProject', () => {
-        it('should set projectLoading=true during fetch and false after success', async () => {
-            const mockProject: Partial<ProjectData> = {
+        it('should stay at defaults when no IPC is available', async () => {
+            // No dogbaApi on window => loadProject exits early
+            await useAppStore.getState().loadProject();
+
+            expect(useAppStore.getState().projectLoading).toBe(false);
+            expect(useAppStore.getState().projectConfig.meta.id).toBe('default-project');
+        });
+
+        it('should load project from IPC when available', async () => {
+            const mockProject = {
                 ...DEFAULT_PROJECT,
                 version: '2.0.0',
                 meta: { ...DEFAULT_PROJECT.meta, name: 'Loaded Project' },
             };
 
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve({ project: mockProject }),
-            });
+            (window as any).dogbaApi = {
+                project: {
+                    load: vi.fn().mockResolvedValueOnce({ success: true, data: mockProject }),
+                    save: vi.fn(),
+                    getDir: vi.fn(),
+                    setDir: vi.fn(),
+                },
+            };
 
-            const promise = useAppStore.getState().loadProject();
-            // projectLoading should be true immediately
-            expect(useAppStore.getState().projectLoading).toBe(true);
-
-            await promise;
+            await useAppStore.getState().loadProject();
 
             expect(useAppStore.getState().projectLoading).toBe(false);
             expect(useAppStore.getState().projectConfig.meta.name).toBe('Loaded Project');
             expect(useAppStore.getState().projectError).toBeNull();
-        });
 
-        it('should fallback to DEFAULT_PROJECT when server returns null project', async () => {
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve({ project: null, message: 'No project.json found.' }),
-            });
-
-            await useAppStore.getState().loadProject();
-
-            expect(useAppStore.getState().projectConfig.meta.id).toBe('default-project');
-            expect(useAppStore.getState().projectLoading).toBe(false);
-        });
-
-        it('should set projectError on fetch failure', async () => {
-            global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
-
-            await useAppStore.getState().loadProject();
-
-            expect(useAppStore.getState().projectLoading).toBe(false);
-            expect(useAppStore.getState().projectError).toBe('Network error');
-        });
-
-        it('should set projectError on non-ok HTTP response', async () => {
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: false,
-                status: 500,
-            });
-
-            await useAppStore.getState().loadProject();
-
-            expect(useAppStore.getState().projectLoading).toBe(false);
-            expect(useAppStore.getState().projectError).toBe('HTTP 500');
-        });
-
-        it('should use apiUrl from appSettings', async () => {
-            useAppStore.getState().updateAppSettings({ apiUrl: 'https://custom-api.example.com' });
-
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve({ project: DEFAULT_PROJECT }),
-            });
-
-            await useAppStore.getState().loadProject();
-
-            expect(global.fetch).toHaveBeenCalledWith(
-                'https://custom-api.example.com/api/studio/project',
-            );
+            delete (window as any).dogbaApi;
         });
     });
 
     describe('saveProject', () => {
-        it('should PUT current projectConfig to the API', async () => {
+        it('should do nothing when no IPC is available', async () => {
+            await useAppStore.getState().saveProject();
+            // Should not throw or set error
+        });
+
+        it('should save project via IPC when available', async () => {
             useAppStore.getState().updateProjectConfig({ version: '5.0.0' });
 
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve({ status: 'ok' }),
-            });
+            const saveFn = vi.fn().mockResolvedValueOnce({ success: true });
+            (window as any).dogbaApi = {
+                project: {
+                    load: vi.fn(),
+                    save: saveFn,
+                    getDir: vi.fn(),
+                    setDir: vi.fn(),
+                },
+            };
 
             await useAppStore.getState().saveProject();
 
-            expect(global.fetch).toHaveBeenCalledWith(
-                'http://localhost:8000/api/studio/project',
-                expect.objectContaining({
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                }),
-            );
-
-            // Verify the body contains the updated version
-            const callArgs = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-            const body = JSON.parse(callArgs[1].body);
-            expect(body.version).toBe('5.0.0');
+            expect(saveFn).toHaveBeenCalled();
+            const savedData = saveFn.mock.calls[0][0];
+            expect(savedData.version).toBe('5.0.0');
 
             expect(useAppStore.getState().projectLoading).toBe(false);
             expect(useAppStore.getState().projectError).toBeNull();
+
+            delete (window as any).dogbaApi;
         });
 
         it('should set projectError on save failure', async () => {
-            global.fetch = vi.fn().mockRejectedValueOnce(new Error('Save failed'));
+            (window as any).dogbaApi = {
+                project: {
+                    load: vi.fn(),
+                    save: vi.fn().mockRejectedValueOnce(new Error('Save failed')),
+                    getDir: vi.fn(),
+                    setDir: vi.fn(),
+                },
+            };
 
             await useAppStore.getState().saveProject();
 
             expect(useAppStore.getState().projectLoading).toBe(false);
             expect(useAppStore.getState().projectError).toBe('Save failed');
-        });
 
-        it('should set projectError on non-ok HTTP response', async () => {
-            global.fetch = vi.fn().mockResolvedValueOnce({
-                ok: false,
-                status: 422,
-            });
-
-            await useAppStore.getState().saveProject();
-
-            expect(useAppStore.getState().projectError).toBe('HTTP 422');
+            delete (window as any).dogbaApi;
         });
     });
 });

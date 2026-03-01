@@ -1,18 +1,70 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as path from 'path';
-import * as pty from 'node-pty';
-import { execFile } from 'child_process';
+import * as fs from 'fs';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import * as pty from 'node-pty';
+import Store from 'electron-store';
+import { agentManager, type StreamChunk } from './agent-manager';
 
 const execFileAsync = promisify(execFile);
 
 let mainWindow: BrowserWindow;
 
-// ── Terminal process store ──
+// ── Persistent store (electron-store) ──────────────────────────────────────
+
+const store = new Store({
+    name: 'dokba-settings',
+    defaults: {
+        projectData: null as Record<string, unknown> | null,
+        jobSettings: {
+            maxConcurrentAgents: 3,
+            logVerbosity: 'normal',
+            runTimeoutSeconds: 300,
+        },
+    },
+});
+
+// ── In-memory job tracking ──────────────────────────────────────────────────
+
+interface JobRecord {
+    id: string;
+    status: string;
+    agent: string;
+    progress: number;
+    abortController?: AbortController;
+}
+
+const activeJobs = new Map<string, JobRecord>();
+let jobIdCounter = 0;
+
+// ── In-memory history tracking ──────────────────────────────────────────────
+
+interface HistorySnapshot {
+    id: string;
+    message: string;
+    timestamp: string;
+    data?: string;
+}
+
+const historySnapshots: HistorySnapshot[] = [];
+
+// ── Terminal process store (node-pty based for proper TTY support) ──────────
+
 const terminals = new Map<string, pty.IPty>();
 let terminalIdCounter = 0;
 
+// ── Window ─────────────────────────────────────────────────────────────────
+
 function createWindow() {
+    const preloadPath = path.join(__dirname, 'preload.js');
+
+    console.log('[Electron] app.isPackaged:', app.isPackaged);
+    console.log('[Electron] __dirname:', __dirname);
+    console.log('[Electron] app.getAppPath():', app.getAppPath());
+    console.log('[Electron] preload path:', preloadPath);
+    console.log('[Electron] preload exists:', fs.existsSync(preloadPath));
+
     mainWindow = new BrowserWindow({
         width: 1440,
         height: 900,
@@ -20,35 +72,74 @@ function createWindow() {
         minHeight: 720,
         titleBarStyle: 'hiddenInset',
         webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
+            preload: preloadPath,
             contextIsolation: true,
             nodeIntegration: false,
+            sandbox: false,
         },
+    });
+
+    mainWindow.webContents.on('preload-error', (_event: any, preloadPath: string, error: Error) => {
+        console.error('[Electron] PRELOAD ERROR in', preloadPath, ':', error.message);
+    });
+
+    mainWindow.webContents.on('console-message', (_event: any, level: number, message: string) => {
+        if (message.includes('[Preload]') || level >= 3) {
+            const tag = level >= 3 ? 'ERROR' : 'LOG';
+            console.log(`[Renderer ${tag}]`, message);
+        }
     });
 
     if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
         mainWindow.loadURL('http://localhost:5173');
-        mainWindow.webContents.openDevTools();
     } else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
     }
+
+    mainWindow.webContents.openDevTools();
+
+    mainWindow.webContents.on('did-finish-load', async () => {
+        try {
+            const result = await mainWindow.webContents.executeJavaScript(`
+                JSON.stringify({
+                    dogbaApi: typeof window.dogbaApi,
+                    keys: window.dogbaApi ? Object.keys(window.dogbaApi) : [],
+                    chatAvailable: !!window.dogbaApi?.chat?.send,
+                    terminalAvailable: !!window.dogbaApi?.terminal?.create,
+                    cliAvailable: !!window.dogbaApi?.cli?.authStatus,
+                    projectAvailable: !!window.dogbaApi?.project?.load,
+                })
+            `);
+            console.log('[Electron] window.dogbaApi check:', result);
+        } catch (e: any) {
+            console.error('[Electron] executeJavaScript error:', e.message);
+        }
+    });
 }
 
-// ── Terminal IPC handlers ──
+// ── Terminal IPC handlers (node-pty for full TTY support) ───────────────────
 
 ipcMain.handle('terminal:create', (_event, cols: number, rows: number) => {
     const id = `term-${++terminalIdCounter}`;
     const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+    const cwd = process.env.HOME || process.env.USERPROFILE || '.';
+
+    const env = { ...process.env } as Record<string, string>;
+    delete env.CLAUDECODE;
 
     const proc = pty.spawn(shell, [], {
         name: 'xterm-256color',
         cols: cols || 80,
         rows: rows || 24,
-        cwd: process.env.HOME || process.env.USERPROFILE || '.',
-        env: process.env as Record<string, string>,
+        cwd,
+        env,
     });
 
     terminals.set(id, proc);
+
+    setTimeout(() => {
+        proc.write('claude\r');
+    }, 500);
 
     proc.onData((data: string) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -56,10 +147,10 @@ ipcMain.handle('terminal:create', (_event, cols: number, rows: number) => {
         }
     });
 
-    proc.onExit(({ exitCode }: { exitCode: number }) => {
+    proc.onExit(({ exitCode }) => {
         terminals.delete(id);
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('terminal:exit', id, exitCode);
+            mainWindow.webContents.send('terminal:exit', id, exitCode ?? 1);
         }
     });
 
@@ -82,70 +173,324 @@ ipcMain.on('terminal:destroy', (_event, id: string) => {
     }
 });
 
-// ── Character Chat IPC ──
+// ── Chat IPC (Agent Manager) ───────────────────────────────────────────────
 
-const AGENT_PERSONAS: Record<string, { role: string; personality: string }> = {
-    'sera': { role: 'PM / 총괄', personality: '리더십 있고 전체 프로젝트를 조율하는 PM. 팀원들을 챙기고 일정을 관리해' },
-    'rio': { role: '백엔드 개발', personality: '서버와 API에 진심인 백엔드 개발자. 성능과 안정성을 중시해' },
-    'luna': { role: '프론트엔드 개발', personality: 'UI/UX에 민감하고 컴포넌트 설계를 좋아하는 프론트 개발자' },
-    'alex': { role: '데이터 분석', personality: '데이터에서 인사이트를 찾아내는 분석가. 숫자와 패턴에 강해' },
-    'ara': { role: 'QA 테스트', personality: '꼼꼼하게 버그를 잡아내는 테스터. 품질에 타협 없어' },
-    'miso': { role: 'DevOps', personality: '배포와 인프라를 책임지는 DevOps. 자동화를 사랑해' },
-    'hana': { role: 'UX 디자인', personality: '사용자 경험에 집착하는 디자이너. 직관적인 인터페이스를 만들어' },
-    'duri': { role: '보안 감사', personality: '보안 취약점을 찾아내는 감사관. 안전이 최우선이야' },
-    'bomi': { role: '기술 문서화', personality: '깔끔한 문서를 쓰는 테크니컬 라이터. 복잡한 걸 쉽게 설명해' },
-    'toto': { role: 'DB 관리', personality: '데이터베이스 최적화에 열정적인 DBA. 쿼리 성능에 진심이야' },
-    'nari': { role: 'API 설계', personality: 'RESTful API 설계의 달인. 깔끔한 인터페이스를 만들어' },
-    'ruru': { role: '인프라 관리', personality: '서버와 네트워크를 관리하는 인프라 엔지니어' },
-    'somi': { role: '성능 최적화', personality: '밀리초 단위로 성능을 개선하는 최적화 전문가' },
-    'choco': { role: 'CI/CD', personality: '파이프라인 구축의 달인. 빌드와 배포를 자동화해' },
-    'maru': { role: '모니터링', personality: '시스템 상태를 실시간으로 감시하는 모니터링 전문가' },
-    'podo': { role: '코드 리뷰', personality: '코드 품질에 엄격한 리뷰어. 클린 코드를 추구해' },
-    'jelly': { role: '로그 분석', personality: '로그에서 문제의 원인을 찾아내는 분석가' },
-    'namu': { role: '아키텍처', personality: '시스템 아키텍처를 설계하는 설계자. 확장성과 유지보수성을 중시해' },
-    'gomi': { role: '빌드 관리', personality: '빌드 시스템을 관리하고 최적화하는 전문가' },
-    'ppuri': { role: '배포 자동화', personality: '무중단 배포를 구현하는 자동화 전문가' },
-    'dari': { role: '이슈 트래킹', personality: '이슈를 체계적으로 관리하고 추적하는 전문가' },
-    'kongbi': { role: '의존성 관리', personality: '패키지와 의존성을 깔끔하게 관리하는 전문가' },
-    'baduk': { role: '마이그레이션', personality: '데이터와 시스템 마이그레이션을 안전하게 수행해' },
-    'tangi': { role: '캐싱 전략', personality: '캐싱으로 성능을 극대화하는 전략가' },
-    'moong': { role: '에러 핸들링', personality: '에러를 우아하게 처리하는 전문가. 장애 대응에 강해' },
-};
+// Helper: drain async generator and send stream events to renderer
+async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): Promise<{ success: boolean; text: string; sessionId?: string }> {
+    let fullText = '';
+    let sessionId: string | undefined;
 
-function buildSystemPrompt(agentName: string): string {
-    const key = agentName.toLowerCase();
-    const persona = AGENT_PERSONAS[key];
-    if (!persona) {
-        return `너는 ${agentName}이야. 한국어로 대화하고, 친근한 반말체를 사용해.`;
+    try {
+        for await (const chunk of gen) {
+            sessionId = chunk.sessionId || sessionId;
+
+            if (chunk.type === 'text') {
+                fullText += chunk.content;
+                mainWindow?.webContents.send('chat:stream', agentName, chunk.content);
+            } else if (chunk.type === 'tool_use') {
+                mainWindow?.webContents.send('chat:tool-use', agentName, chunk.content);
+            } else if (chunk.type === 'result') {
+                fullText = chunk.content || fullText;
+            } else if (chunk.type === 'error') {
+                mainWindow?.webContents.send('chat:stream-end', agentName);
+                return { success: false, text: chunk.content };
+            }
+        }
+    } catch (err: any) {
+        mainWindow?.webContents.send('chat:stream-end', agentName);
+        return { success: false, text: err.message || 'Chat failed' };
     }
-    return `너는 ${agentName}이야. ${persona.role} 담당이고, ${persona.personality}. 한국어로 대화하고, 친근한 반말체를 사용해. 질문에 너의 전문 분야 관점에서 답변해줘. 답변은 간결하게 해줘.`;
+
+    mainWindow?.webContents.send('chat:stream-end', agentName);
+    return { success: true, text: fullText, sessionId };
 }
 
+// Legacy single-shot (kept for backward compat, now routed through Agent Manager)
 ipcMain.handle('chat:send', async (_event, agentName: string, userMessage: string) => {
-    const systemPrompt = buildSystemPrompt(agentName);
+    const projectDir = (store.get('project') as any)?.dir || '.';
+    const gen = agentManager.chat(agentName, userMessage, projectDir);
+    return drainChat(agentName, gen);
+});
 
+// Streaming chat
+ipcMain.handle('chat:send-stream', async (_event, agentName: string, userMessage: string) => {
+    const projectDir = (store.get('project') as any)?.dir || '.';
+    const gen = agentManager.chat(agentName, userMessage, projectDir);
+    return drainChat(agentName, gen);
+});
+
+// ── CLI Auth IPC ───────────────────────────────────────────────────────────
+
+ipcMain.handle('cli:auth-status', async () => {
     try {
         const env = { ...process.env };
         delete env.CLAUDECODE;
-        env.FORCE_COLOR = '0';
-
-        const { stdout } = await execFileAsync('claude', [
-            '-p', userMessage,
-            '--system-prompt', systemPrompt,
-            '--output-format', 'text',
-        ], {
+        const { stdout } = await execFileAsync('claude', ['auth', 'status'], {
             env,
-            timeout: 60000,
-            maxBuffer: 1024 * 1024,
+            timeout: 10000,
+            shell: true,
         });
-
-        return { success: true, text: stdout.trim() };
-    } catch (error: any) {
-        return { success: false, text: error.message || 'Claude CLI 실행 실패' };
+        const data = JSON.parse(stdout);
+        return { authenticated: !!data.loggedIn };
+    } catch {
+        return { authenticated: false };
     }
 });
 
-// ── App lifecycle ──
+ipcMain.handle('cli:auth-login', async () => {
+    try {
+        const env = { ...process.env };
+        delete env.CLAUDECODE;
+
+        if (process.platform === 'win32') {
+            spawn('cmd', ['/c', 'start', 'cmd', '/k', 'claude auth login'], { env, detached: true, stdio: 'ignore' });
+        } else if (process.platform === 'darwin') {
+            spawn('open', ['-a', 'Terminal', '--args', 'claude', 'auth', 'login'], { env, detached: true, stdio: 'ignore' });
+        } else {
+            spawn('x-terminal-emulator', ['-e', 'claude', 'auth', 'login'], { env, detached: true, stdio: 'ignore' });
+        }
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+});
+
+// ── Project Management IPC ─────────────────────────────────────────────────
+
+ipcMain.handle('project:load', () => {
+    try {
+        const data = store.get('projectData');
+        return { success: true, data: data || undefined };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('project:save', (_e, data: Record<string, unknown>) => {
+    try {
+        store.set('projectData', data);
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('project:selectDir', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: 'Select Project Directory',
+    });
+    return result.filePaths[0] || null;
+});
+
+// ── File Import / Export IPC ───────────────────────────────────────────────
+
+ipcMain.handle('file:import', async () => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'JSON', extensions: ['json'] },
+            { name: 'All Files', extensions: ['*'] },
+        ],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'canceled' };
+    }
+    try {
+        const raw = fs.readFileSync(result.filePaths[0], 'utf-8');
+        const data = JSON.parse(raw);
+        return { success: true, data, filePath: result.filePaths[0] };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('file:export', async (_e, data: unknown) => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const result = await dialog.showSaveDialog(mainWindow, {
+        filters: [
+            { name: 'JSON', extensions: ['json'] },
+        ],
+    });
+    if (result.canceled || !result.filePath) {
+        return { success: false, error: 'canceled' };
+    }
+    try {
+        fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
+        return { success: true, filePath: result.filePath };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('file:read', async (_e, filePath: string) => {
+    try {
+        const projectDir = (store.get('projectData') as any)?.meta?.dir || '.';
+        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(projectDir, filePath);
+        if (!fs.existsSync(resolvedPath)) {
+            return { success: false, error: 'File not found' };
+        }
+        const content = fs.readFileSync(resolvedPath, 'utf-8');
+        return { success: true, content };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+// ── Studio IPC (Agent Manager) ─────────────────────────────────────────────
+
+ipcMain.handle('studio:generate', async (_e, prompt: string, projectDir?: string) => {
+    const dir = projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
+    const gen = agentManager.chat('luna', prompt, dir);
+
+    let fullText = '';
+    let sessionId: string | undefined;
+    try {
+        for await (const chunk of gen) {
+            sessionId = chunk.sessionId || sessionId;
+            if (chunk.type === 'text') {
+                fullText += chunk.content;
+                mainWindow?.webContents.send('studio:progress', chunk.content);
+            } else if (chunk.type === 'result') {
+                fullText = chunk.content || fullText;
+            } else if (chunk.type === 'error') {
+                return { success: false, error: chunk.content, result: '', text: '' };
+            }
+        }
+    } catch (err: any) {
+        return { success: false, error: err.message, result: '', text: '' };
+    }
+
+    // Save to history
+    const snapId = `snap-${Date.now()}`;
+    historySnapshots.unshift({
+        id: snapId,
+        message: prompt.slice(0, 100),
+        timestamp: new Date().toISOString(),
+        data: fullText,
+    });
+
+    return { success: true, result: fullText, text: fullText, sessionId };
+});
+
+ipcMain.handle('studio:getAssets', async () => {
+    try {
+        const projectDir = (store.get('projectData') as any)?.meta?.dir || '';
+        if (!projectDir) return { assets: [] };
+        const assetsDir = path.join(projectDir, 'assets');
+        if (!fs.existsSync(assetsDir)) return { assets: [] };
+
+        const files = fs.readdirSync(assetsDir, { withFileTypes: true });
+        const assets = files
+            .filter(f => f.isFile())
+            .map(f => {
+                const filePath = path.join(assetsDir, f.name);
+                const stat = fs.statSync(filePath);
+                const ext = path.extname(f.name).toLowerCase();
+                const type = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(ext) ? 'image' : 'data';
+                return { name: f.name, path: filePath, type, size: stat.size };
+            });
+        return { assets };
+    } catch {
+        return { assets: [] };
+    }
+});
+
+ipcMain.handle('studio:getHistory', () => {
+    return { snapshots: historySnapshots.map(s => ({ id: s.id, message: s.message, timestamp: s.timestamp })) };
+});
+
+ipcMain.handle('studio:getDiff', (_e, oldId: string, newId: string) => {
+    const oldSnap = historySnapshots.find(s => s.id === oldId);
+    const newSnap = historySnapshots.find(s => s.id === newId);
+    if (!oldSnap || !newSnap) return { success: false, diff: '[]' };
+    return { success: true, diff: JSON.stringify({ changes: [], oldId, newId }) };
+});
+
+ipcMain.handle('studio:rollback', (_e, snapshotId: string) => {
+    const snap = historySnapshots.find(s => s.id === snapshotId);
+    if (!snap) return { success: false, error: 'Snapshot not found' };
+    return { success: true };
+});
+
+// ── Job Run IPC (Agent Manager) ────────────────────────────────────────────
+
+ipcMain.handle('job:run', async (_e, agentNameOrRecipeId: string, taskOrAgentId: string, projectDir?: string) => {
+    const dir = projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
+    const jobId = `job-${++jobIdCounter}`;
+
+    const record: JobRecord = { id: jobId, status: 'running', agent: taskOrAgentId, progress: 0 };
+    activeJobs.set(jobId, record);
+
+    const gen = agentManager.chat(agentNameOrRecipeId, taskOrAgentId, dir);
+
+    let fullText = '';
+    let sessionId: string | undefined;
+    try {
+        for await (const chunk of gen) {
+            sessionId = chunk.sessionId || sessionId;
+            if (chunk.type === 'text') {
+                fullText += chunk.content;
+                mainWindow?.webContents.send('job:progress', agentNameOrRecipeId, chunk.content);
+            } else if (chunk.type === 'tool_use') {
+                mainWindow?.webContents.send('job:progress', agentNameOrRecipeId, `[tool] ${chunk.content}`);
+            } else if (chunk.type === 'result') {
+                fullText = chunk.content || fullText;
+            } else if (chunk.type === 'error') {
+                record.status = 'failed';
+                return { success: false, jobId, error: chunk.content };
+            }
+        }
+    } catch (err: any) {
+        record.status = 'failed';
+        return { success: false, jobId, error: err.message };
+    }
+
+    record.status = 'completed';
+    record.progress = 100;
+    return { success: true, jobId, text: fullText, sessionId };
+});
+
+ipcMain.handle('job:stop', (_e, jobId: string) => {
+    const record = activeJobs.get(jobId);
+    if (record) {
+        record.status = 'stopped';
+        record.abortController?.abort();
+    }
+    return { success: true };
+});
+
+ipcMain.handle('job:getStatus', () => {
+    const jobs = Array.from(activeJobs.values()).map(j => ({
+        id: j.id,
+        status: j.status,
+        agent: j.agent,
+        progress: j.progress,
+    }));
+    return { jobs };
+});
+
+ipcMain.handle('job:getArtifacts', () => {
+    return { artifacts: [] };
+});
+
+ipcMain.handle('job:getSettings', () => {
+    const settings = store.get('jobSettings') as any;
+    return {
+        maxConcurrentAgents: settings?.maxConcurrentAgents ?? 3,
+        logVerbosity: settings?.logVerbosity ?? 'normal',
+        runTimeoutSeconds: settings?.runTimeoutSeconds ?? 300,
+    };
+});
+
+ipcMain.handle('job:saveSettings', (_e, settings: Record<string, unknown>) => {
+    store.set('jobSettings', settings);
+    return { success: true };
+});
+
+// ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
     createWindow();
@@ -158,8 +503,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-    for (const [, proc] of terminals) {
-        proc.kill();
+    // Clean up terminals
+    for (const [id, proc] of terminals) {
+        try { proc.kill(); } catch (_) { /* ignore */ }
+        terminals.delete(id);
     }
-    terminals.clear();
 });

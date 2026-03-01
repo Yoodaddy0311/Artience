@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Target, FolderOpen, Image, FileText, Package, Paperclip, Inbox, MailOpen } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
 
 interface AssetFile {
     id: string;
@@ -41,7 +40,6 @@ export const AssetInbox: React.FC = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [filter, setFilter] = useState<string>('all');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { appSettings } = useAppStore();
 
     const classifyType = (file: File): AssetFile['type'] => {
         return FILE_TYPE_MAP[file.type] || 'unknown';
@@ -79,28 +77,23 @@ export const AssetInbox: React.FC = () => {
             // Skip upload for oversized files (already marked as error)
             if (asset.size > MAX_FILE_SIZE) return;
 
+            const fileApi = window.dogbaApi?.file;
+            if (!fileApi) {
+                setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, status: 'ready' as const } : a));
+                return;
+            }
             try {
-                const formData = new FormData();
-                formData.append('file', asset.file);
-                formData.append('tags', JSON.stringify(asset.tags));
-                const res = await fetch(`${appSettings.apiUrl}/api/studio/upload`, {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!res.ok) throw new Error('Upload failed');
-                const data = await res.json();
-
+                // For local-first: files are already on disk, just mark as ready
+                // TODO: implement file copy via dogbaApi.file.copy when project dir is set
                 setAssets(prev => prev.map(a => a.id === asset.id ? {
                     ...a,
-                    type: data.type || a.type,
-                    tags: Array.from(new Set([...a.tags, ...(data.tags || [])])),
                     status: 'ready' as const
                 } : a));
             } catch {
                 setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, status: 'error' as const } : a));
             }
         });
-    }, [appSettings.apiUrl]);
+    }, []);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();

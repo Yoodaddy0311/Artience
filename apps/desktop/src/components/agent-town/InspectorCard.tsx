@@ -2,6 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { type AgentProfile, type AgentState } from '../../types/platform';
 import { STATE_COLORS_CSS, STATE_LABELS } from './agent-runtime';
+import { assetPath } from '../../lib/assetPath';
 
 const STATE_BG: Record<AgentState, string> = {
     IDLE: 'bg-gray-100',
@@ -24,7 +25,7 @@ export const InspectorCard: React.FC<InspectorCardProps> = ({ agent, onClose }) 
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3 border-b-2 border-black bg-[#FFD100]">
                 <img
-                    src={agent.sprite}
+                    src={assetPath(agent.sprite)}
                     alt={agent.name}
                     className="w-12 h-12 rounded-xl border-2 border-black bg-white object-contain shadow-[2px_2px_0_0_#000]"
                 />

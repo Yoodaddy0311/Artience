@@ -53,15 +53,20 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, handleKeyDown]);
 
-    const checkAuthStatus = async () => {
+    const checkAuthStatus = async (): Promise<boolean> => {
         try {
-            // Check if .claude.json exists in user profile (using a dedicated endpoint or generic job)
-            const res = await fetch(`${appSettings.apiUrl}/api/cli/auth-status`);
-            const data = await res.json();
-            setAuthStatus(data.authenticated ? 'authenticated' : 'unauthenticated');
-        } catch (e) {
-            if (import.meta.env.DEV) console.error("Failed to check auth status", e);
+            const cliApi = window.dogbaApi?.cli;
+            if (!cliApi) {
+                setAuthStatus('unauthenticated');
+                return false;
+            }
+            const data = await cliApi.authStatus();
+            const authed = !!data.authenticated;
+            setAuthStatus(authed ? 'authenticated' : 'unauthenticated');
+            return authed;
+        } catch {
             setAuthStatus('unauthenticated');
+            return false;
         }
     };
 
@@ -72,19 +77,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }, [isOpen]);
 
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: ReturnType<typeof setInterval>;
         if (isPolling) {
-            interval = setInterval(() => {
-                checkAuthStatus().then(() => {
-                    // if it becomes authenticated while polling, stop polling
-                    setAuthStatus(current => {
-                        if (current === 'authenticated') {
-                            setIsPolling(false);
-                            return 'authenticated';
-                        }
-                        return current;
-                    });
-                });
+            interval = setInterval(async () => {
+                const authed = await checkAuthStatus();
+                if (authed) {
+                    setIsPolling(false);
+                }
             }, 2000);
         }
         return () => clearInterval(interval);
@@ -92,22 +91,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     const handleLogin = async () => {
         try {
-            // Trigger backend to spawn a native terminal window for login
-            await fetch(`${appSettings.apiUrl}/api/cli/auth-login`, { method: 'POST' });
+            const cliApi = window.dogbaApi?.cli;
+            if (!cliApi) return;
+            await cliApi.authLogin();
             setIsPolling(true);
         } catch (e) {
             if (import.meta.env.DEV) console.error("Failed to open login terminal", e);
         }
     };
-
-    const isRemote = (() => {
-        const url = import.meta.env.VITE_API_URL;
-        if (!url) return false;
-        try {
-            const host = new URL(url).hostname;
-            return host !== 'localhost' && host !== '127.0.0.1';
-        } catch { return false; }
-    })();
 
     if (!isOpen) return null;
 
@@ -146,49 +137,41 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                         <div className="border-t-4 border-dashed border-gray-300 my-2"></div>
 
-                        {isRemote ? (
-                            <p className="text-sm font-bold text-gray-500 bg-gray-200 border-2 border-black rounded-lg px-4 py-3 text-center">
-                                이 기능은 데스크탑 앱에서만 사용 가능합니다.
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-lg">상태:</span>
+
+                            {authStatus === 'checking' && (
+                                <span className="px-3 py-1 bg-gray-200 border-2 border-black rounded-lg font-bold animate-pulse">확인 중...</span>
+                            )}
+                            {authStatus === 'authenticated' && (
+                                <span className="px-3 py-1 bg-[#A0E8AF] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
+                                    <CheckCircle className="w-4 h-4" strokeWidth={2.5} /> 인증 완료
+                                </span>
+                            )}
+                            {authStatus === 'unauthenticated' && !isPolling && (
+                                <span className="px-3 py-1 bg-[#FF6B6B] border-2 border-black rounded-lg font-bold text-white flex gap-2 items-center">
+                                    <XCircle className="w-4 h-4" strokeWidth={2.5} /> 미인증
+                                </span>
+                            )}
+                            {isPolling && (
+                                <span className="px-3 py-1 bg-[#FFD100] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
+                                    <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> 로그인 대기 중...
+                                </span>
+                            )}
+                        </div>
+
+                        {authStatus === 'unauthenticated' && !isPolling && (
+                            <button
+                                onClick={handleLogin}
+                                className="mt-2 w-full py-3 bg-black text-white font-bold text-lg rounded-xl border-4 border-black hover:bg-[#FFD100] hover:text-black transition-colors"
+                            >
+                                로그인 터미널 열기
+                            </button>
+                        )}
+                        {isPolling && (
+                            <p className="text-sm text-center font-bold text-gray-500 mt-2">
+                                열려있는 터미널 창에서 브라우저 인증을 완료해주세요.
                             </p>
-                        ) : (
-                            <>
-                                <div className="flex items-center justify-between">
-                                    <span className="font-bold text-lg">상태:</span>
-
-                                    {authStatus === 'checking' && (
-                                        <span className="px-3 py-1 bg-gray-200 border-2 border-black rounded-lg font-bold animate-pulse">확인 중...</span>
-                                    )}
-                                    {authStatus === 'authenticated' && (
-                                        <span className="px-3 py-1 bg-[#A0E8AF] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
-                                            <CheckCircle className="w-4 h-4" strokeWidth={2.5} /> 인증 완료
-                                        </span>
-                                    )}
-                                    {authStatus === 'unauthenticated' && !isPolling && (
-                                        <span className="px-3 py-1 bg-[#FF6B6B] border-2 border-black rounded-lg font-bold text-white flex gap-2 items-center">
-                                            <XCircle className="w-4 h-4" strokeWidth={2.5} /> 미인증
-                                        </span>
-                                    )}
-                                    {isPolling && (
-                                        <span className="px-3 py-1 bg-[#FFD100] border-2 border-black rounded-lg font-bold text-black flex gap-2 items-center">
-                                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> 로그인 대기 중...
-                                        </span>
-                                    )}
-                                </div>
-
-                                {authStatus === 'unauthenticated' && !isPolling && (
-                                    <button
-                                        onClick={handleLogin}
-                                        className="mt-2 w-full py-3 bg-black text-white font-bold text-lg rounded-xl border-4 border-black hover:bg-[#FFD100] hover:text-black transition-colors"
-                                    >
-                                        로그인 터미널 열기
-                                    </button>
-                                )}
-                                {isPolling && (
-                                    <p className="text-sm text-center font-bold text-gray-500 mt-2">
-                                        열려있는 터미널 창에서 브라우저 인증을 완료해주세요.
-                                    </p>
-                                )}
-                            </>
                         )}
                     </div>
 
@@ -198,24 +181,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <div className="w-10 h-10 bg-[#FFE066] border-2 border-black rounded-lg flex items-center justify-center"><Wrench className="w-6 h-6 text-black" strokeWidth={2.5} /></div>
                             <div>
                                 <h3 className="text-xl font-bold text-black">앱 설정</h3>
-                                <p className="text-sm font-medium text-gray-600 mt-1">API 연결, 언어, 자동저장 등 앱 동작을 설정합니다.</p>
+                                <p className="text-sm font-medium text-gray-600 mt-1">언어, 자동저장 등 앱 동작을 설정합니다.</p>
                             </div>
                         </div>
 
                         <div className="border-t-4 border-dashed border-gray-300 my-2"></div>
-
-                        {/* API URL */}
-                        <div className="flex flex-col gap-1.5">
-                            <label htmlFor="settings-api-url" className="font-bold text-sm text-black">API URL</label>
-                            <input
-                                id="settings-api-url"
-                                type="text"
-                                value={appSettings.apiUrl}
-                                onChange={(e) => updateAppSettings({ apiUrl: e.target.value })}
-                                placeholder="http://localhost:8000"
-                                className="w-full px-3 py-2.5 border-4 border-black rounded-lg font-mono text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FFD100] focus:ring-offset-2 shadow-[2px_2px_0_0_#000]"
-                            />
-                        </div>
 
                         {/* Language */}
                         <div className="flex flex-col gap-1.5">

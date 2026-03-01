@@ -28,14 +28,14 @@ export interface Toast {
 export type AppLanguage = 'ko' | 'en' | 'ja';
 
 export interface AppSettings {
-    apiUrl: string;
+    projectDir: string;
     language: AppLanguage;
     autoSaveInterval: number;
     notificationsEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    apiUrl: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+    projectDir: '',
     language: 'ko',
     autoSaveInterval: 30,
     notificationsEnabled: true,
@@ -145,7 +145,7 @@ interface AppState {
     addAsset: (asset: ProjectAsset) => void;
     removeAsset: (id: string) => void;
 
-    // Project Config (S-6: Studio ↔ Run real-time sync)
+    // Project Config
     projectConfig: ProjectData;
     projectLoading: boolean;
     projectError: string | null;
@@ -241,14 +241,16 @@ export const useAppStore = create<AppState>()(
             projectError: null,
 
             loadProject: async () => {
+                const api = window.dogbaApi?.project;
+                if (!api) {
+                    set({ projectLoading: false });
+                    return;
+                }
                 set({ projectLoading: true, projectError: null });
                 try {
-                    const { apiUrl } = get().appSettings;
-                    const res = await fetch(`${apiUrl}/api/studio/project`);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const json = await res.json();
-                    if (json.project) {
-                        set({ projectConfig: json.project, projectLoading: false });
+                    const result = await api.load();
+                    if (result.success && result.data) {
+                        set({ projectConfig: result.data, projectLoading: false });
                     } else {
                         set({ projectConfig: { ...DEFAULT_PROJECT }, projectLoading: false });
                     }
@@ -261,16 +263,13 @@ export const useAppStore = create<AppState>()(
             },
 
             saveProject: async () => {
+                const api = window.dogbaApi?.project;
+                if (!api) return;
                 set({ projectLoading: true, projectError: null });
                 try {
-                    const { apiUrl } = get().appSettings;
                     const config = get().projectConfig;
-                    const res = await fetch(`${apiUrl}/api/studio/project`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(config),
-                    });
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const result = await api.save(config);
+                    if (!result.success) throw new Error(result.error || 'Failed to save');
                     set({ projectLoading: false });
                 } catch (err) {
                     set({

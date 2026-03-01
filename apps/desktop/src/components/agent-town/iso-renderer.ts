@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { assetPath } from '../../lib/assetPath';
 
 /**
  * Isometric floor and room renderer for the Town view.
@@ -179,7 +180,7 @@ export async function createRoomSprites(
 
     for (const room of ROOM_ASSETS) {
         try {
-            const texture = await PIXI.Assets.load(room.asset);
+            const texture = await PIXI.Assets.load(assetPath(room.asset));
             const sprite = new PIXI.Sprite(texture);
             sprite.anchor.set(0.5, 0.7); // Anchor near bottom-center for proper iso placement
 

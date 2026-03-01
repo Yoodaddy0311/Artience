@@ -63,6 +63,7 @@ export type WsMessage =
     | { type: 'CHAT_COMMAND'; text: string; target_agent: string };
 
 // Available character sprites (13 unique, excluding raccoon_spritesheet.png)
+// Paths are absolute — use assetPath() when rendering in <img> or PIXI to support file:// protocol
 const SPRITES = {
     S01: '/assets/characters/media__1771899019764.png',
     S02: '/assets/characters/media__1771899416589.png',

@@ -48,17 +48,6 @@ import {
     STAGGER_DELAY_MS,
 } from './agent-runtime';
 
-// Multiuser character system
-import {
-    createUserCharacter,
-    tickUserCharacter,
-    updateUserStatus,
-    updateUserProgress,
-    removeUserCharacter,
-    type RoomMember,
-    type UserCharacterRuntime,
-    type UserStatus,
-} from './UserCharacter';
 
 // ── Isometric agent speed: pixels per frame ──
 const AGENT_SPEED_PX = AGENT_SPEED_TILES_PER_SEC * 1.0;
@@ -87,12 +76,8 @@ export const AgentTown: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<PIXI.Application | null>(null);
     const [renderError, setRenderError] = useState<string | null>(null);
-    const appSettings = useAppStore((s) => s.appSettings);
-
     useEffect(() => {
         let isMounted = true;
-        let wsRef: WebSocket | null = null;
-        let reconnectTimerRef: ReturnType<typeof setTimeout> | null = null;
 
         // References for cleanup of event listeners and observers
         let wheelHandler: ((e: WheelEvent) => void) | null = null;
@@ -101,6 +86,8 @@ export const AgentTown: React.FC = () => {
         let pointerUpHandler: ((e: PointerEvent) => void) | null = null;
         let resizeObserver: ResizeObserver | null = null;
         let canvasElRef: HTMLCanvasElement | null = null;
+        let unsubStream: (() => void) | null = null;
+        let unsubStreamEnd: (() => void) | null = null;
 
         const initPixi = async () => {
             try {
@@ -291,54 +278,6 @@ export const AgentTown: React.FC = () => {
                 }
 
                 // ══════════════════════════════════════════════════════
-                // ── MULTIUSER: User character management ──
-                // ══════════════════════════════════════════════════════
-
-                const userCharacters: UserCharacterRuntime[] = [];
-                const userCharMap = new Map<string, UserCharacterRuntime>();
-
-                /** Add or update a user character from room member data */
-                const syncUserCharacter = (member: RoomMember) => {
-                    if (!member.is_online) {
-                        // Remove offline user
-                        const existing = userCharMap.get(member.id);
-                        if (existing) {
-                            removeUserCharacter(existing, worldContainer);
-                            userCharMap.delete(member.id);
-                            const idx = userCharacters.indexOf(existing);
-                            if (idx >= 0) userCharacters.splice(idx, 1);
-                        }
-                        return;
-                    }
-
-                    const existing = userCharMap.get(member.id);
-                    if (existing) {
-                        // Update existing user
-                        updateUserStatus(existing, member.status, member.current_task);
-                        if (member.task_progress !== undefined) {
-                            updateUserProgress(existing, member.task_progress);
-                        }
-                    } else {
-                        // Create new user character
-                        const userChar = createUserCharacter(otterTextures, member, gridWorld);
-
-                        // Click handler for user inspection
-                        userChar.visual.container.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
-                            e.stopPropagation();
-                            // User characters use a prefixed ID to distinguish from AI agents
-                            const store = useAppStore.getState();
-                            const currentId = store.highlightedAgentId;
-                            const userId = `user:${member.id}`;
-                            store.setHighlightedAgentId(currentId === userId ? null : userId);
-                        });
-
-                        worldContainer.addChild(userChar.visual.container);
-                        userCharacters.push(userChar);
-                        userCharMap.set(member.id, userChar);
-                    }
-                };
-
-                // ══════════════════════════════════════════════════════
                 // ── ZOOM (mouse wheel) ──
                 // ══════════════════════════════════════════════════════
 
@@ -457,159 +396,46 @@ export const AgentTown: React.FC = () => {
 
                 resizeObserver.observe(containerRef.current);
 
-                // ── WebSocket for state changes (auto-reconnect) ──
-                let reconnectDelay = 1000;
+                // ══════════════════════════════════════════════════════
+                // ── IPC Chat Events → Agent Movement ──
+                // ══════════════════════════════════════════════════════
 
-                const connectWs = () => {
-                    const wsUrl = appSettings.apiUrl.replace(/^http/, 'ws');
-                    const ws = new WebSocket(`${wsUrl}/ws/town`);
-                    wsRef = ws;
+                const chatApi = window.dogbaApi?.chat;
+                if (chatApi) {
+                    // Track which agents are currently streaming (to avoid duplicate triggers)
+                    const streamingAgents = new Set<string>();
 
-                    ws.onopen = () => {
-                        reconnectDelay = 1000;
-                    };
+                    unsubStream = chatApi.onStream((agentName, _chunk) => {
+                        const agent = isoAgentMap.get(agentName.toLowerCase());
+                        if (!agent) return;
 
-                    ws.onmessage = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
+                        // Only trigger on first chunk (stream start)
+                        if (streamingAgents.has(agent.id)) return;
+                        streamingAgents.add(agent.id);
 
-                            if (data.type === 'AGENT_STATE_CHANGE') {
-                                const agentId = data.agentId as string;
-                                const newState = data.state as AgentState;
-                                const agent = isoAgentMap.get(agentId);
+                        // Move agent to WORK ZONE with THINKING state
+                        agent.state = 'THINKING';
+                        agent.visual.animState = 'think';
+                        agent.stateAnimTimer = 0;
+                        updateOtterStateDot(agent.visual, STATE_COLORS.THINKING);
+                        showOtterBubble(agent.visual, '작업 중...');
+                        pickIsoZoneDest(agent, 'work');
+                    });
 
-                                if (agent) {
-                                    agent.state = newState;
-                                    agent.stateAnimTimer = 0;
-                                    updateOtterStateDot(
-                                        agent.visual,
-                                        STATE_COLORS[newState] || STATE_COLORS.IDLE,
-                                    );
+                    unsubStreamEnd = chatApi.onStreamEnd((agentName) => {
+                        const agent = isoAgentMap.get(agentName.toLowerCase());
+                        if (!agent) return;
 
-                                    if (newState === 'RUNNING') {
-                                        pickIsoZoneDest(agent, 'work');
-                                    } else if (newState === 'THINKING') {
-                                        agent.path = [];
-                                        agent.visual.animState = 'think';
-                                    } else if (newState === 'SUCCESS') {
-                                        agent.path = [];
-                                        agent.visual.animState = 'success';
-                                    } else if (newState === 'ERROR') {
-                                        agent.path = [];
-                                        agent.visual.animState = 'error';
-                                    } else if (
-                                        (newState === 'IDLE' || newState === 'WALK') &&
-                                        agent.path.length === 0
-                                    ) {
-                                        pickIsoWanderDest(agent);
-                                    }
-                                }
-                            }
+                        streamingAgents.delete(agent.id);
 
-                            if (data.type === 'TASK_ASSIGNED') {
-                                const agentName = (data.agent as string || '').toLowerCase();
-                                const agent = isoAgentMap.get(agentName);
-                                if (agent) {
-                                    showOtterBubble(
-                                        agent.visual,
-                                        data.taskContent || '\uC0C8 \uC791\uC5C5 \uC218\uC2E0',
-                                    );
-                                }
-                            }
-
-                            if (data.type === 'JOB_UPDATE') {
-                                const job = data.job;
-                                if (job && job.assignedAgentId) {
-                                    const agent = isoAgentMap.get(job.assignedAgentId);
-                                    if (agent) {
-                                        const jobState = job.state as string;
-                                        if (jobState === 'SUCCESS' || jobState === 'ERROR' || jobState === 'RUNNING') {
-                                            const newState = jobState as AgentState;
-                                            agent.state = newState;
-                                            agent.stateAnimTimer = 0;
-                                            updateOtterStateDot(
-                                                agent.visual,
-                                                STATE_COLORS[newState] || STATE_COLORS.IDLE,
-                                            );
-
-                                            if (newState === 'RUNNING') {
-                                                pickIsoZoneDest(agent, 'work');
-                                            } else if (newState === 'SUCCESS') {
-                                                agent.path = [];
-                                                agent.visual.animState = 'success';
-                                            } else if (newState === 'ERROR') {
-                                                agent.path = [];
-                                                agent.visual.animState = 'error';
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── Multiuser: Room member events ──
-
-                            if (data.type === 'ROOM_MEMBERS_SYNC') {
-                                // Full sync of all room members
-                                const members = data.members as RoomMember[];
-                                if (Array.isArray(members)) {
-                                    for (const member of members) {
-                                        syncUserCharacter(member);
-                                    }
-                                }
-                            }
-
-                            if (data.type === 'ROOM_MEMBER_JOIN') {
-                                const member = data.member as RoomMember;
-                                if (member) {
-                                    syncUserCharacter(member);
-                                }
-                            }
-
-                            if (data.type === 'ROOM_MEMBER_LEAVE') {
-                                const memberId = data.memberId as string;
-                                const existing = userCharMap.get(memberId);
-                                if (existing) {
-                                    removeUserCharacter(existing, worldContainer);
-                                    userCharMap.delete(memberId);
-                                    const idx = userCharacters.indexOf(existing);
-                                    if (idx >= 0) userCharacters.splice(idx, 1);
-                                }
-                            }
-
-                            if (data.type === 'ROOM_MEMBER_STATUS') {
-                                const memberId = data.memberId as string;
-                                const status = data.status as UserStatus;
-                                const existing = userCharMap.get(memberId);
-                                if (existing) {
-                                    updateUserStatus(existing, status, data.currentTask as string | undefined);
-                                }
-                            }
-
-                            if (data.type === 'ROOM_TASK_PROGRESS') {
-                                const memberId = data.memberId as string;
-                                const progress = data.progress as number;
-                                const existing = userCharMap.get(memberId);
-                                if (existing) {
-                                    updateUserProgress(existing, progress);
-                                }
-                            }
-                        } catch (_e) {
-                            /* ignore parse errors */
-                        }
-                    };
-
-                    ws.onclose = () => {
-                        if (!isMounted) return;
-                        reconnectTimerRef = setTimeout(connectWs, reconnectDelay);
-                        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-                    };
-
-                    ws.onerror = () => {
-                        ws.close();
-                    };
-                };
-
-                connectWs();
+                        // Transition to SUCCESS (auto-returns to IDLE after 72 frames)
+                        agent.state = 'SUCCESS';
+                        agent.visual.animState = 'success';
+                        agent.stateAnimTimer = 0;
+                        updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
+                        showOtterBubble(agent.visual, '완료!');
+                    });
+                }
 
                 // ══════════════════════════════════════════════════════
                 // ── Animation Loop ──
@@ -637,10 +463,36 @@ export const AgentTown: React.FC = () => {
                         // Bubble tick
                         tickOtterBubble(agent.visual);
 
-                        // ── THINKING: sway animation, no movement ──
+                        // ── THINKING: walk to destination first, then sway in place ──
                         if (agent.state === 'THINKING') {
-                            agent.visual.animState = 'think';
-                            tickOtterAnimation(agent.visual, now, false);
+                            if (agent.path.length > 0) {
+                                // Still walking to work zone — use walk animation
+                                const target = agent.path[0];
+                                const targetIso = gridToIso(target.x, target.y);
+                                const dx = targetIso.x - agent.visual.container.x;
+                                const dy = targetIso.y - agent.visual.container.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                                if (dist > AGENT_SPEED_PX) {
+                                    agent.visual.container.x += (dx / dist) * AGENT_SPEED_PX;
+                                    agent.visual.container.y += (dy / dist) * AGENT_SPEED_PX;
+                                    const gridDx = target.x - agent.gridX;
+                                    const gridDy = target.y - agent.gridY;
+                                    const dir = getIsoDirection(gridDx, gridDy);
+                                    setOtterDirection(agent.visual, otterTextures, dir);
+                                } else {
+                                    agent.visual.container.x = targetIso.x;
+                                    agent.visual.container.y = targetIso.y;
+                                    agent.gridX = target.x;
+                                    agent.gridY = target.y;
+                                    agent.path.shift();
+                                }
+                                tickOtterAnimation(agent.visual, now, true);
+                            } else {
+                                // Arrived — sway in place
+                                agent.visual.animState = 'think';
+                                tickOtterAnimation(agent.visual, now, false);
+                            }
                             continue;
                         }
 
@@ -723,17 +575,9 @@ export const AgentTown: React.FC = () => {
                         tickOtterAnimation(agent.visual, now, isMoving);
                     }
 
-                    // ── Tick user characters ──
-                    for (const userChar of userCharacters) {
-                        tickUserCharacter(userChar, otterTextures, gridWorld, now);
-                    }
-
                     // ── Depth sort: re-order children by iso depth (row+col) ──
                     for (const agent of isoAgents) {
                         agent.visual.container.zIndex = 100 + agent.gridX + agent.gridY;
-                    }
-                    for (const userChar of userCharacters) {
-                        userChar.visual.container.zIndex = 100 + userChar.gridX + userChar.gridY;
                     }
                     worldContainer.sortChildren();
                 }); // close ticker.add
@@ -748,17 +592,6 @@ export const AgentTown: React.FC = () => {
 
         return () => {
             isMounted = false;
-
-            // Close WebSocket and cancel reconnect timer
-            if (reconnectTimerRef) clearTimeout(reconnectTimerRef);
-            if (wsRef) {
-                try {
-                    wsRef.close();
-                } catch (_) {
-                    /* ignore */
-                }
-                wsRef = null;
-            }
 
             // Remove event listeners (use saved canvas ref — app.canvas may be undefined after destroy)
             if (canvasElRef) {
@@ -787,11 +620,15 @@ export const AgentTown: React.FC = () => {
                 resizeObserver = null;
             }
 
+            // Unsubscribe IPC chat listeners
+            if (unsubStream) { unsubStream(); unsubStream = null; }
+            if (unsubStreamEnd) { unsubStreamEnd(); unsubStreamEnd = null; }
+
             if (appRef.current) {
                 try {
                     appRef.current.destroy();
-                } catch (e) {
-                    console.warn('[AgentTown] destroy() error (HMR safe):', e);
+                } catch (_) {
+                    /* HMR safe: _cancelResize etc. */
                 }
                 appRef.current = null;
             }

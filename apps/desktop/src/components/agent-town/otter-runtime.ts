@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { assetPath } from '../../lib/assetPath';
 
 // ── Isometric direction and character state types ──
 
@@ -127,10 +128,10 @@ function easeInQuad(t: number): number {
  */
 export async function loadOtterTextures(): Promise<OtterTextures> {
     const [nw, ne, sw, se] = await Promise.all([
-        PIXI.Assets.load(OTTER_PATHS.nw),
-        PIXI.Assets.load(OTTER_PATHS.ne),
-        PIXI.Assets.load(OTTER_PATHS.sw),
-        PIXI.Assets.load(OTTER_PATHS.se),
+        PIXI.Assets.load(assetPath(OTTER_PATHS.nw)),
+        PIXI.Assets.load(assetPath(OTTER_PATHS.ne)),
+        PIXI.Assets.load(assetPath(OTTER_PATHS.sw)),
+        PIXI.Assets.load(assetPath(OTTER_PATHS.se)),
     ]);
     return { nw, ne, sw, se };
 }

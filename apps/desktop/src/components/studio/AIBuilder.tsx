@@ -26,7 +26,6 @@ export const AIBuilder: React.FC<AIBuilderProps> = ({ onDraftGenerated }) => {
     const aiBuilderMessages = useAppStore((s) => s.aiBuilderMessages);
     const addAiBuilderMessage = useAppStore((s) => s.addAiBuilderMessage);
     const clearAiBuilderMessages = useAppStore((s) => s.clearAiBuilderMessages);
-    const apiUrl = useAppStore((s) => s.appSettings.apiUrl);
 
     const [input, setInput] = useState('');
     const [scope, setScope] = useState<BuildScope>('all');
@@ -67,23 +66,23 @@ export const AIBuilder: React.FC<AIBuilderProps> = ({ onDraftGenerated }) => {
         setLastFailedPrompt(null);
         scrollToBottom();
 
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setGenerateError('Studio API not available.');
+            setIsGenerating(false);
+            return;
+        }
         try {
-            const res = await fetch(`${apiUrl}/api/studio/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: text, scope }),
-            });
+            const result = await studioApi.generate(`[scope:${scope}] ${text}`);
 
-            if (!res.ok) {
-                throw new Error(`Server responded with ${res.status}`);
+            if (!result.success) {
+                throw new Error(result.error || 'Generation failed');
             }
-
-            const data = await res.json();
 
             const assistantMsg: AiBuilderMessage = {
                 id: crypto.randomUUID(),
                 role: 'assistant',
-                content: data.result || data.message || 'Generation complete! Check the Draft Preview.',
+                content: result.result || 'Generation complete! Check the Draft Preview.',
                 timestamp: Date.now(),
             };
             addAiBuilderMessage(assistantMsg);
@@ -97,7 +96,7 @@ export const AIBuilder: React.FC<AIBuilderProps> = ({ onDraftGenerated }) => {
             const errorMsg: AiBuilderMessage = {
                 id: crypto.randomUUID(),
                 role: 'assistant',
-                content: `Server connection failed: ${errorMessage}`,
+                content: `Generation failed: ${errorMessage}`,
                 timestamp: Date.now(),
             };
             addAiBuilderMessage(errorMsg);

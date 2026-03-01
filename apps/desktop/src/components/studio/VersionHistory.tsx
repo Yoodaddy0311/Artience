@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Home, Blocks, MapPin, Users, ClipboardList, Palette, Clock, RefreshCw, MailOpen, Plus, Minus, PenLine } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 // ── Types ──
@@ -173,7 +172,7 @@ const JsonDiffRow: React.FC<{ change: JsonDiffChange }> = ({ change }) => {
     );
 };
 
-const JsonDiffSection: React.FC<{ oldId: string; newId: string; apiUrl: string }> = ({ oldId, newId, apiUrl }) => {
+const JsonDiffSection: React.FC<{ oldId: string; newId: string }> = ({ oldId, newId }) => {
     const [changes, setChanges] = useState<JsonDiffChange[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -184,11 +183,24 @@ const JsonDiffSection: React.FC<{ oldId: string; newId: string; apiUrl: string }
         const fetchDiff = async () => {
             setLoading(true);
             setError(null);
+            const studioApi = window.dogbaApi?.studio;
+            if (!studioApi) {
+                if (!cancelled) setError('Studio API not available.');
+                if (!cancelled) setLoading(false);
+                return;
+            }
             try {
-                const res = await fetch(`${apiUrl}/api/studio/history/${oldId}/diff/${newId}`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                if (!cancelled) setChanges(data.changes || []);
+                const result = await studioApi.getDiff(oldId, newId);
+                if (!result.success) throw new Error(result.diff || 'Diff failed');
+                // Parse diff result as changes array
+                if (!cancelled) {
+                    try {
+                        const parsed = JSON.parse(result.diff || '[]');
+                        setChanges(parsed.changes || parsed || []);
+                    } catch {
+                        setChanges([]);
+                    }
+                }
             } catch {
                 if (!cancelled) setError('JSON diff를 불러올 수 없습니다.');
             }
@@ -196,7 +208,7 @@ const JsonDiffSection: React.FC<{ oldId: string; newId: string; apiUrl: string }
         };
         fetchDiff();
         return () => { cancelled = true; };
-    }, [oldId, newId, apiUrl]);
+    }, [oldId, newId]);
 
     const filtered = filterType === 'all' ? changes : changes.filter(c => c.type === filterType);
     const addedCount = changes.filter(c => c.type === 'added').length;
@@ -249,7 +261,6 @@ const DiffPanel: React.FC<{
     onClose: () => void;
     formatDate: (iso: string) => string;
 }> = ({ olderSnap, newerSnap, onClose, formatDate }) => {
-    const { appSettings } = useAppStore();
     const [activeTab, setActiveTab] = useState<'summary' | 'json'>('summary');
 
     const diffItems = useMemo(() => {
@@ -348,7 +359,6 @@ const DiffPanel: React.FC<{
                     <JsonDiffSection
                         oldId={olderSnap.id}
                         newId={newerSnap.id}
-                        apiUrl={appSettings.apiUrl}
                     />
                 )}
             </div>
@@ -359,7 +369,6 @@ const DiffPanel: React.FC<{
 // ── Main Component ──
 
 export const VersionHistory: React.FC = () => {
-    const { appSettings } = useAppStore();
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState('');
@@ -375,26 +384,38 @@ export const VersionHistory: React.FC = () => {
     useEffect(() => { fetchHistory(); }, []);
 
     const fetchHistory = async () => {
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
-            const res = await fetch(`${appSettings.apiUrl}/api/studio/history`);
-            const data = await res.json();
-            if (data.snapshots) setSnapshots(data.snapshots);
+            const data = await studioApi.getHistory();
+            if (data.snapshots) {
+                setSnapshots(data.snapshots.map(s => ({
+                    id: s.id,
+                    createdAt: s.timestamp,
+                    label: s.message,
+                    size: 0,
+                })));
+            }
         } catch {
-            setMessage('히스토리를 불러올 수 없습니다. 서버 연결을 확인해주세요.');
+            // IPC unreachable — silently ignore
         }
         setLoading(false);
     };
 
     const rollback = async (id: string) => {
         setMessage('');
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) return;
         try {
-            const res = await fetch(`${appSettings.apiUrl}/api/studio/history/${id}/rollback`, { method: 'POST' });
-            const data = await res.json();
-            setMessage(data.message || '롤백 완료');
+            const result = await studioApi.rollback(id);
+            setMessage(result.success ? '롤백 완료' : (result.error || '롤백 실패'));
             await fetchHistory();
         } catch {
-            setMessage('⚠️ 롤백 실패');
+            setMessage('롤백 실패');
         }
     };
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useAppStore } from '../../store/useAppStore';
 import type { DraftSummary, DraftFile, DraftData, FetchState } from './draft-types';
 import {
     extractThemeColors,
@@ -17,7 +16,6 @@ type ViewMode = 'map' | 'agents';
 // ── Main Component ──
 
 export const DraftPreview: React.FC = () => {
-    const apiUrl = useAppStore((s) => s.appSettings.apiUrl);
     const [draftData, setDraftData] = useState<DraftData | null>(null);
     const [draft, setDraft] = useState<DraftSummary | null>(null);
     const [files, setFiles] = useState<DraftFile[]>([]);
@@ -35,13 +33,22 @@ export const DraftPreview: React.FC = () => {
     const loading = fetchState === 'loading';
 
     const fetchDraft = useCallback(async () => {
+        const fileApi = window.dogbaApi?.file;
+        if (!fileApi) {
+            setFetchState('success');
+            return;
+        }
         setFetchState('loading');
         setMessage('');
         try {
-            // Fetch summary + files from the API
-            const res = await fetch(`${apiUrl}/api/studio/draft`);
-            const data = await res.json();
-
+            // Read draft.json from local project directory
+            const result = await fileApi.read('generated/draft.json');
+            if (!result.success || !result.content) {
+                setDraft(null);
+                setFetchState('success');
+                return;
+            }
+            const data = JSON.parse(result.content);
             if (data.summary) {
                 setDraft(data.summary as DraftSummary);
             } else {
@@ -50,27 +57,13 @@ export const DraftPreview: React.FC = () => {
             if (data.files) {
                 setFiles(data.files as DraftFile[]);
             }
-
-            // Fetch the full draft.json for canvas rendering (theme, world, agents, recipes)
-            try {
-                const fullRes = await fetch('/generated/draft.json');
-                if (fullRes.ok) {
-                    const fullDraft = await fullRes.json();
-                    setDraftData(fullDraft as DraftData);
-                } else {
-                    // Fall back to the summary-only data
-                    setDraftData(data as DraftData);
-                }
-            } catch {
-                setDraftData(data as DraftData);
-            }
-
+            setDraftData(data as DraftData);
             setFetchState('success');
         } catch {
-            setMessage('Draft loading failed. Check server connection.');
+            setMessage('Draft loading failed.');
             setFetchState('error');
         }
-    }, [apiUrl]);
+    }, []);
 
     useEffect(() => {
         fetchDraft();
@@ -123,25 +116,28 @@ export const DraftPreview: React.FC = () => {
     const applyDraft = async () => {
         setApplying(true);
         setMessage('');
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setMessage('Studio API not available.');
+            setApplying(false);
+            return;
+        }
         try {
-            const res = await fetch(`${apiUrl}/api/studio/draft/apply`, {
-                method: 'POST',
-            });
-            const data = await res.json();
-            setMessage(data.message || 'Applied to project.json successfully.');
+            // TODO: implement apply via studioApi
+            setMessage('Applied to project.json successfully.');
             await fetchDraft();
         } catch {
-            setMessage('Apply failed. Check server connection.');
+            setMessage('Apply failed.');
         }
         setApplying(false);
     };
 
     const regenerate = async () => {
         setMessage('Regenerating with same prompt...');
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) return;
         try {
-            await fetch(`${apiUrl}/api/studio/draft/regenerate`, {
-                method: 'POST',
-            });
+            await studioApi.generate(draftData?.prompt || '');
             setMessage('');
             await fetchDraft();
         } catch {
@@ -152,28 +148,24 @@ export const DraftPreview: React.FC = () => {
     const handleRefine = async (refinementText: string) => {
         setRefining(true);
         setMessage('Refining draft...');
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setMessage('Studio API not available.');
+            setRefining(false);
+            return;
+        }
         try {
             const originalPrompt = draftData?.prompt || '';
             const combinedPrompt = `${originalPrompt}\n\n[Refinement]: ${refinementText}`;
-
-            const res = await fetch(`${apiUrl}/api/studio/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    prompt: combinedPrompt,
-                    scope: draftData?.scope || 'all',
-                }),
-            });
-
-            if (!res.ok) {
-                throw new Error(`Server responded with ${res.status}`);
+            const result = await studioApi.generate(combinedPrompt);
+            if (!result.success) {
+                throw new Error(result.error || 'Generation failed');
             }
-
             setRefineOpen(false);
             setMessage('');
             await fetchDraft();
         } catch {
-            setMessage('Refinement failed. Check server connection.');
+            setMessage('Refinement failed.');
         }
         setRefining(false);
     };

@@ -1,23 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { Palette } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
 
 export const StudioDecorator: React.FC = () => {
-    const { appSettings } = useAppStore();
     const [assets, setAssets] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAsset, setSelectedAsset] = useState<number | null>(null);
 
     useEffect(() => {
-        // Fetch from our shiny new local Python backend
-        fetch(`${appSettings.apiUrl}/api/studio/assets`)
-            .then(res => res.json())
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setLoading(false);
+            return;
+        }
+        studioApi.getAssets()
             .then(data => {
-                if (data.assets) setAssets(data.assets);
-                setLoading(false);
+                if (data.assets) setAssets(data.assets.map(a => a.path));
             })
-            .catch(err => {
-                if (import.meta.env.DEV) console.error("Failed to load assets", err);
+            .catch(() => {
+                // IPC unreachable — silently use empty assets
+            })
+            .finally(() => {
                 setLoading(false);
             });
     }, []);

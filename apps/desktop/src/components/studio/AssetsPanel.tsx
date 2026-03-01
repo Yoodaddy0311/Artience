@@ -3,29 +3,33 @@ import { FolderOpen, Image, FileText, RefreshCw } from 'lucide-react';
 import { useAppStore, type ProjectAsset } from '../../store/useAppStore';
 
 export const AssetsPanel: React.FC = () => {
-    const { assets, setAssets, appSettings } = useAppStore();
+    const { assets, setAssets } = useAppStore();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const fetchAssets = async () => {
+        const studioApi = window.dogbaApi?.studio;
+        if (!studioApi) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`${appSettings.apiUrl}/api/studio/assets`);
-            const data = await res.json();
+            const data = await studioApi.getAssets();
             if (data.assets && Array.isArray(data.assets)) {
-                const mapped: ProjectAsset[] = data.assets.map((url: string, idx: number) => ({
+                const mapped: ProjectAsset[] = data.assets.map((a, idx) => ({
                     id: `asset-${idx}`,
-                    name: url.split('/').pop() || `asset_${idx + 1}`,
-                    type: /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) ? 'image' as const : 'data' as const,
-                    url,
-                    size: 0,
+                    name: a.name || `asset_${idx + 1}`,
+                    type: /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(a.name) ? 'image' as const : 'data' as const,
+                    url: a.path,
+                    size: a.size || 0,
                     createdAt: new Date().toISOString(),
                 }));
                 setAssets(mapped);
             }
         } catch {
-            setError('에셋을 불러올 수 없습니다.');
+            // IPC unreachable — silently ignore
         }
         setLoading(false);
     };

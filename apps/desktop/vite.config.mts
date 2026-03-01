@@ -5,6 +5,8 @@ import path from 'path';
 
 export default defineConfig({
     plugins: [react(), tailwindcss()],
+    // Electron loads via file:// protocol — assets must use relative paths
+    base: './',
     server: {
         port: 5173,
         strictPort: true,

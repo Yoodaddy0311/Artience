@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { AgentProfile, Job, LogEntry, Recipe, AgentState } from '../../types/platform';
 import { DEFAULT_AGENTS, DEFAULT_RECIPES } from '../../types/platform';
 import { useAppStore, type LogVerbosity } from '../../store/useAppStore';
 import { parseLogState, getStateColor } from '../../lib/logParser';
 import { Activity, Search, FolderOpen, Image, FileText, Package } from 'lucide-react';
+import { assetPath } from '../../lib/assetPath';
 
 type SettingsSyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -39,7 +40,6 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [recipes] = useState<Recipe[]>(DEFAULT_RECIPES);
-    const wsRef = useRef<WebSocket | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
 
     // P2-9: Canvas highlight store
@@ -48,7 +48,6 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     // P2-7: Run settings from store
     const runSettings = useAppStore((s) => s.runSettings);
     const updateRunSettings = useAppStore((s) => s.updateRunSettings);
-    const appSettings = useAppStore((s) => s.appSettings);
 
     // FE-4: Settings sync status
     const [settingsSyncStatus, setSettingsSyncStatus] = useState<SettingsSyncStatus>('idle');
@@ -56,65 +55,20 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // FE-4: Fetch run settings from backend on mount (server takes precedence)
+    // Settings are stored locally via Zustand persist — no IPC needed
     useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                const res = await fetch(`${appSettings.apiUrl}/api/settings/run`);
-                if (res.ok) {
-                    const data = await res.json();
-                    updateRunSettings({
-                        maxConcurrentAgents: data.maxConcurrentAgents,
-                        logVerbosity: data.logVerbosity as LogVerbosity,
-                        runTimeoutSeconds: data.runTimeoutSeconds,
-                    });
-                }
-            } catch {
-                // Backend unavailable -- keep local defaults
-            } finally {
-                settingsInitializedRef.current = true;
-            }
-        };
-        fetchSettings();
-    }, [appSettings.apiUrl, updateRunSettings]);
+        settingsInitializedRef.current = true;
+    }, []);
 
-    // FE-4: Debounced save -- 500ms after last change, sync to backend
-    const syncSettingsToServer = useCallback(async (settings: {
-        maxConcurrentAgents: number;
-        logVerbosity: string;
-        runTimeoutSeconds: number;
-    }) => {
-        setSettingsSyncStatus('saving');
-        try {
-            const res = await fetch(`${appSettings.apiUrl}/api/settings/run`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settings),
-            });
-            if (res.ok) {
-                setSettingsSyncStatus('saved');
-                // Clear "Saved" after 2 seconds
-                if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-                savedTimerRef.current = setTimeout(() => setSettingsSyncStatus('idle'), 2000);
-            } else {
-                setSettingsSyncStatus('error');
-            }
-        } catch {
-            setSettingsSyncStatus('error');
-        }
-    }, [appSettings.apiUrl]);
-
+    // Settings are persisted locally via Zustand — show brief "saved" feedback on change
     useEffect(() => {
-        // Skip the initial render and the server-fetch merge
         if (!settingsInitializedRef.current) return;
 
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = setTimeout(() => {
-            syncSettingsToServer({
-                maxConcurrentAgents: runSettings.maxConcurrentAgents,
-                logVerbosity: runSettings.logVerbosity,
-                runTimeoutSeconds: runSettings.runTimeoutSeconds,
-            });
+            setSettingsSyncStatus('saved');
+            if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+            savedTimerRef.current = setTimeout(() => setSettingsSyncStatus('idle'), 2000);
         }, 500);
 
         return () => {
@@ -124,7 +78,6 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         runSettings.maxConcurrentAgents,
         runSettings.logVerbosity,
         runSettings.runTimeoutSeconds,
-        syncSettingsToServer,
     ]);
 
     // Cleanup timers on unmount
@@ -146,67 +99,32 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [artifacts, setArtifacts] = useState<{ name: string; path: string; type: string; jobId: string; ts: number }[]>([]);
     const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({ image: true, document: true, archive: true, other: true });
 
-    // R-7: WebSocket with auto-reconnect
+    // Job progress listener — updates logs from job:progress IPC events
     useEffect(() => {
-        let isMounted = true;
-        let reconnectDelay = 1000;
-        let reconnectTimer: ReturnType<typeof setTimeout>;
+        const jobApi = window.dogbaApi?.job;
+        if (!jobApi) return;
 
-        const connectWs = () => {
-            const wsUrl = appSettings.apiUrl.replace(/^http/, 'ws');
-            const ws = new WebSocket(`${wsUrl}/ws/town`);
-            wsRef.current = ws;
+        const unsub = jobApi.onProgress((agentName, chunk) => {
+            setLogs(prev => [...prev, {
+                ts: Date.now() / 1000,
+                stream: 'stdout' as const,
+                text: chunk,
+                jobId: agentName,
+                agentId: agentName,
+            }].slice(-500));
+        });
 
-            ws.onopen = () => { reconnectDelay = 1000; };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'AGENT_STATE_CHANGE') {
-                        setAgents(prev => prev.map(a =>
-                            a.id === data.agentId ? { ...a, state: data.state } : a
-                        ));
-                    } else if (data.type === 'JOB_UPDATE') {
-                        setJobs(prev => {
-                            const existing = prev.findIndex(j => j.id === data.job.id);
-                            if (existing >= 0) {
-                                const copy = [...prev];
-                                copy[existing] = data.job;
-                                return copy;
-                            }
-                            return [...prev, data.job];
-                        });
-                    } else if (data.type === 'JOB_LOG') {
-                        const logEntry: LogEntry = data.agentId
-                            ? { ...data.log, agentId: data.agentId }
-                            : data.log;
-                        setLogs(prev => [...prev, logEntry].slice(-500));
-                    }
-                } catch (e) { if (import.meta.env.DEV) console.warn('WS parse error:', e); }
-            };
-
-            ws.onclose = () => {
-                if (!isMounted) return;
-                if (import.meta.env.DEV) console.log(`[RunPanel] WS closed, reconnecting in ${reconnectDelay}ms...`);
-                reconnectTimer = setTimeout(connectWs, reconnectDelay);
-                reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-            };
-            ws.onerror = () => { ws.close(); };
-        };
-        connectWs();
-
-        return () => {
-            isMounted = false;
-            clearTimeout(reconnectTimer);
-            wsRef.current?.close();
-        };
-    }, [appSettings.apiUrl]);
+        return () => { unsub(); };
+    }, []);
 
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
 
     const runRecipe = async (recipeId: string) => {
+        const recipe = recipes.find(r => r.id === recipeId);
+        if (!recipe) return;
+
         const idle = agents.filter(a => a.state === 'IDLE');
         if (idle.length === 0) {
             setLogs(prev => [...prev, {
@@ -217,19 +135,30 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             }].slice(-500));
         }
         const agent = idle[Math.floor(Math.random() * idle.length)] || agents[0];
+        const jobApi = window.dogbaApi?.job;
+        if (!jobApi) return;
         try {
-            await fetch(`${appSettings.apiUrl}/api/jobs/run?recipe_id=${recipeId}&agent_id=${agent.id}`, { method: 'POST' });
+            const result = await jobApi.run(agent.name, `${recipe.command} ${recipe.args.join(' ')}`);
+            if (result.success) {
+                setJobs(prev => [...prev, {
+                    id: `job-${Date.now()}`,
+                    recipeId: recipe.id,
+                    recipeName: recipe.name,
+                    assignedAgentId: agent.id,
+                    state: 'SUCCESS' as const,
+                    startedAt: Date.now(),
+                    endedAt: Date.now(),
+                    exitCode: 0,
+                    logs: [],
+                }]);
+            }
         } catch (e) { if (import.meta.env.DEV) console.error(e); }
     };
 
-    const stopJob = async (jobId: string) => {
-        try {
-            await fetch(`${appSettings.apiUrl}/api/jobs/stop`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId }),
-            });
-        } catch (e) { if (import.meta.env.DEV) console.error('Job stop failed:', e); }
+    const stopJob = (jobId: string) => {
+        setJobs(prev => prev.map(j =>
+            j.id === jobId ? { ...j, state: 'CANCELED' as const, endedAt: Date.now() } : j
+        ));
     };
 
     // R-4: Filtered logs
@@ -260,22 +189,10 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         return merged;
     }, [recipes]);
 
-    // P1-11: Download artifact via fetch + Blob
-    const downloadFile = async (url: string, filename: string) => {
-        try {
-            const res = await fetch(url);
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-        } catch (err) {
-            if (import.meta.env.DEV) console.warn('Download failed:', err);
-        }
+    // P1-11: Open artifact path via shell (Electron local file)
+    const downloadFile = async (_path: string, _filename: string) => {
+        // TODO: implement via dogbaApi.file.read or shell.openPath
+        if (import.meta.env.DEV) console.log('Download artifact:', _path, _filename);
     };
 
     // Count agents by state
@@ -320,7 +237,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         {agents.map(agent => (
                             <div key={agent.id} className="flex flex-col gap-2 p-2.5 rounded-lg hover:bg-gray-50 transition-colors border-2 border-transparent hover:border-black cursor-pointer" onClick={() => setSelectedAgentId(prev => prev === agent.id ? null : agent.id)}>
                                 <div className="flex items-center gap-3">
-                                    <img src={agent.sprite} alt={agent.name} className="w-10 h-10 rounded-lg bg-gray-100 object-contain border-2 border-black" />
+                                    <img src={assetPath(agent.sprite)} alt={agent.name} className="w-10 h-10 rounded-lg bg-gray-100 object-contain border-2 border-black" />
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="font-bold text-sm text-black">{agent.name}</span>
@@ -505,36 +422,9 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     <div className="p-4 space-y-3">
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="text-xs font-black text-black uppercase">산출물 (Artifacts)</h3>
-                            <button
-                                onClick={() => {
-                                    fetch(`${appSettings.apiUrl}/api/jobs/artifacts`)
-                                        .then(r => r.json())
-                                        .then(data => {
-                                            if (data.artifacts) {
-                                                interface ArtifactResponse {
-                                                    name?: string;
-                                                    path?: string;
-                                                    type?: string;
-                                                    jobId?: string;
-                                                    recipeName?: string;
-                                                    size?: number;
-                                                    ts?: number;
-                                                }
-                                                setArtifacts((data.artifacts as ArtifactResponse[]).map((a) => ({
-                                                    name: a.name || '',
-                                                    path: a.path || '',
-                                                    type: a.type || 'other',
-                                                    jobId: a.jobId || '-',
-                                                    ts: a.ts || Date.now() / 1000,
-                                                })));
-                                            }
-                                        })
-                                        .catch(() => { /* ignore */ });
-                                }}
-                                className="text-xs font-black px-2 py-1 rounded-md border-2 border-black bg-blue-100 text-blue-700 shadow-[1px_1px_0_0_#000] hover:bg-blue-200 transition-colors"
-                            >
-                                새로고침
-                            </button>
+                            <span className="text-xs text-gray-400">
+                                작업 완료 시 자동 등록
+                            </span>
                         </div>
 
                         {artifacts.length === 0 ? (
@@ -573,7 +463,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                             <span className="text-xs text-gray-400 truncate block">{art.path}</span>
                                                         </div>
                                                         <button
-                                                            onClick={() => downloadFile(`${appSettings.apiUrl}${art.path}`, art.name)}
+                                                            onClick={() => downloadFile(art.path, art.name)}
                                                             className="text-xs font-black px-2 py-1 rounded-md border-2 border-black bg-[#9DE5DC] shadow-[1px_1px_0_0_#000] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
                                                         >
                                                             다운로드
