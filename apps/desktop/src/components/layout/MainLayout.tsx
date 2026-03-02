@@ -7,7 +7,6 @@ const TerminalPanel = React.lazy(() =>
     import('../terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel }))
 );
 import { BottomDock } from './BottomDock';
-// import { RightSidebar } from './RightSidebar'; // Phase 2에서 재설계 예정
 import { StudioDecorator } from '../studio/StudioDecorator';
 import { AssetInbox } from '../studio/AssetInbox';
 import { AIBuilder } from '../studio/AIBuilder';
@@ -56,14 +55,6 @@ class AgentTownBoundary extends React.Component<{ children: React.ReactNode }, {
 }
 
 // ── Types ──
-
-export interface Teammate {
-    id: string;
-    name: string;
-    role: string;
-    status: 'working' | 'resting' | 'error';
-    avatarUrl: string;
-}
 
 type StudioTab = 'inbox' | 'builder' | 'draft' | 'history' | 'assets';
 
@@ -187,6 +178,7 @@ export const MainLayout: React.FC = () => {
     // Terminal panel visibility (right side, like RunPanel)
     const hasTerminalTabs = useTerminalStore((s) => s.tabs.length > 0);
     const panelVisible = useTerminalStore((s) => s.panelVisible);
+    const panelFullscreen = useTerminalStore((s) => s.panelFullscreen);
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -434,7 +426,7 @@ export const MainLayout: React.FC = () => {
 
             {/* Terminal/Chat Panel (Right side, like RunPanel) */}
             {hasTerminalTabs && panelVisible && !showRunPanel && !isInboxOpen && (
-                <div className="w-full max-w-lg h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0">
+                <div className={`w-full ${panelFullscreen ? 'max-w-full' : 'max-w-lg'} h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0`}>
                     <Suspense fallback={<div className="w-full h-full bg-cream-50 flex items-center justify-center text-black text-sm font-bold">Loading...</div>}>
                         <TerminalPanel />
                     </Suspense>

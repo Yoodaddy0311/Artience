@@ -25,7 +25,7 @@ function gridToIso(col: number, row: number): { x: number; y: number } {
 }
 
 // ── Zone Colors ──
-// Matching the established palette from agent-runtime / canvas-renderer
+// Matching the established palette from agent-runtime
 
 const ZONE_COLORS: Record<string, { fill: number; alpha: number }> = {
     work: { fill: 0xfde68a, alpha: 0.35 },

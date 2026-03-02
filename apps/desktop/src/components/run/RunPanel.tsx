@@ -191,7 +191,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                 if (agentJobs.length === 0) return <span className="text-gray-500">실행된 작업 내역이 없습니다.</span>;
                                                 return agentJobs.slice(-5).map((j, idx) => (
                                                     <div key={idx} className={`py-0.5 ${j.state === 'ERROR' ? 'text-red-400' : 'text-green-300'}`}>
-                                                        <span className="text-gray-500 select-none mr-1">[{new Date(j.startedAt).toLocaleTimeString()}]</span>
+                                                        <span className="text-gray-500 select-none mr-1">[{new Date(j.startedAt ?? Date.now()).toLocaleTimeString()}]</span>
                                                         {j.recipeName} — {j.state}
                                                     </div>
                                                 ));

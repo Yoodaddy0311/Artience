@@ -349,6 +349,8 @@ export const TerminalPanel: React.FC = () => {
     const viewMode = useTerminalStore((s) => s.viewMode);
     const setViewMode = useTerminalStore((s) => s.setViewMode);
     const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
+    const panelFullscreen = useTerminalStore((s) => s.panelFullscreen);
+    const togglePanelFullscreen = useTerminalStore((s) => s.togglePanelFullscreen);
 
     const xtermMapRef = useRef<Map<string, { terminal: Terminal; fitAddon: FitAddon }>>(new Map());
     const containerRef = useRef<HTMLDivElement>(null);
@@ -451,6 +453,16 @@ export const TerminalPanel: React.FC = () => {
         // Parsed events from PTY parser (tee path from main process)
         const unsubParsed = api.onParsedEvent?.((tabId: string, event: ParsedEvent) => {
             useTerminalStore.getState().addParsedEvent(tabId, event);
+
+            // team_update 이벤트 → 캐릭터 자동 매핑
+            if (event.type === 'team_update') {
+                const store = useTerminalStore.getState();
+                if (event.teamMembers && event.teamMembers.length > 0) {
+                    store.setActiveTeamMembers(event.teamMembers);
+                } else {
+                    store.clearActiveTeam();
+                }
+            }
         });
 
         // Activity changes → agentActivity store (for badge + AgentTown)
@@ -658,6 +670,28 @@ export const TerminalPanel: React.FC = () => {
                             {activeTab.cwd}
                         </span>
                     )}
+                    {/* 전체 화면 토글 버튼 */}
+                    <button
+                        onClick={togglePanelFullscreen}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-black bg-white shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-black"
+                        title={panelFullscreen ? '패널 축소' : '패널 전체 화면'}
+                    >
+                        {panelFullscreen ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="4 14 10 14 10 20" />
+                                <polyline points="20 10 14 10 14 4" />
+                                <line x1="14" y1="10" x2="21" y2="3" />
+                                <line x1="3" y1="21" x2="10" y2="14" />
+                            </svg>
+                        ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="15 3 21 3 21 9" />
+                                <polyline points="9 21 3 21 3 15" />
+                                <line x1="21" y1="3" x2="14" y2="10" />
+                                <line x1="3" y1="21" x2="10" y2="14" />
+                            </svg>
+                        )}
+                    </button>
                     {/* 패널 닫기 버튼 */}
                     <button
                         onClick={() => setPanelVisible(false)}

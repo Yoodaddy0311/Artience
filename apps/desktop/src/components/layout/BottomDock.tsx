@@ -50,6 +50,8 @@ export const BottomDock: React.FC = () => {
     const removeDockAgent = useTerminalStore((s) => s.removeDockAgent);
     const agentSettings = useTerminalStore((s) => s.agentSettings);
     const setAgentSettings = useTerminalStore((s) => s.setAgentSettings);
+    const activeTeamMembers = useTerminalStore((s) => s.activeTeamMembers);
+    const teamAddedAgents = useTerminalStore((s) => s.teamAddedAgents);
 
     const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; agentId: string } | null>(null);
     const [addPopup, setAddPopup] = useState(false);
@@ -154,12 +156,13 @@ export const BottomDock: React.FC = () => {
         }
     }, [ctxMenu, tabs, removeTab]);
 
-    // --- 독에서 제거 (CTO 제외) ---
+    // --- 독에서 제거 (CTO 및 팀 멤버 제외) ---
     const handleRemoveFromDock = useCallback(() => {
         if (!ctxMenu) return;
         const agentId = ctxMenu.agentId;
         setCtxMenu(null);
         if (agentId === CTO_ID) return; // CTO는 제거 불가
+        if (teamAddedAgents.includes(agentId)) return; // 팀 멤버는 팀 해산 시에만 제거
 
         // 세션/터미널도 정리
         window.dogbaApi?.chat?.closeSession(agentId);
@@ -170,7 +173,7 @@ export const BottomDock: React.FC = () => {
             removeTab(existingTab.id);
         }
         removeDockAgent(agentId);
-    }, [ctxMenu, tabs, removeTab, removeDockAgent]);
+    }, [ctxMenu, tabs, removeTab, removeDockAgent, teamAddedAgents]);
 
     // --- 설정 팝업 열기 ---
     const handleOpenSettings = useCallback(() => {
@@ -372,6 +375,7 @@ export const BottomDock: React.FC = () => {
                     const tab = tabs.find(t => t.agentId === agentId);
                     const hasTab = !!tab;
                     const isActive = hasTab && tab!.id === activeTabId;
+                    const isTeamMember = teamAddedAgents.includes(agentId);
 
                     return (
                         <button
@@ -379,7 +383,9 @@ export const BottomDock: React.FC = () => {
                             onClick={() => handleCharacterClick(agentId)}
                             onContextMenu={(e) => handleContextMenu(e, agentId)}
                             title={`${agent.name} - ${agent.role}`}
-                            className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 border-black ${
+                            className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 ${
+                                isTeamMember ? 'border-blue-500' : 'border-black'
+                            } ${
                                 isActive
                                     ? 'bg-[#E8DAFF] -translate-y-2'
                                     : hasTab
@@ -387,6 +393,12 @@ export const BottomDock: React.FC = () => {
                                         : 'hover:-translate-y-1'
                             }`}
                         >
+                            {/* 팀 뱃지 */}
+                            {isTeamMember && (
+                                <span className="absolute -top-2 -left-1 bg-blue-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-white z-10">
+                                    T
+                                </span>
+                            )}
                             <div className="relative">
                                 <img
                                     src={assetPath(agent.sprite)}
@@ -483,7 +495,7 @@ export const BottomDock: React.FC = () => {
                             터미널 닫기
                         </button>
                     )}
-                    {ctxMenu.agentId !== CTO_ID && (
+                    {ctxMenu.agentId !== CTO_ID && !teamAddedAgents.includes(ctxMenu.agentId) && (
                         <button
                             onClick={handleRemoveFromDock}
                             className="w-full text-left px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors border-t border-gray-200"

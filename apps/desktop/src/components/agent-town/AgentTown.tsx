@@ -47,6 +47,8 @@ import {
     AGENT_SPEED_TILES_PER_SEC,
     IDLE_WANDER_RADIUS,
     STAGGER_DELAY_MS,
+    BUBBLE_CONFIGS,
+    TOOL_BUBBLES,
 } from './agent-runtime';
 
 
@@ -75,6 +77,12 @@ const DOKBA_PROFILE: AgentProfile = {
 const SOLO_MODE = true;
 
 // ── Per-agent isometric runtime state ──
+// ── Idle debounce: 3초(180프레임) 이상 idle 지속 시에만 REST로 복귀 ──
+const IDLE_DEBOUNCE_FRAMES = 180; // ~3s at 60fps
+
+// ── Success/Error → REST 복귀 딜레이: 5초(300프레임) ──
+const SUCCESS_REST_DELAY_FRAMES = 300;
+
 interface IsoAgent {
     id: string;
     name: string;
@@ -87,6 +95,7 @@ interface IsoAgent {
     pauseTimer: number;
     stateAnimTimer: number;
     visible: boolean; // SOLO_MODE에서 숨김 제어
+    idleDebounceTimer: number; // idle 디바운스 카운터 (프레임)
 }
 
 export const AgentTown: React.FC = () => {
@@ -255,6 +264,7 @@ export const AgentTown: React.FC = () => {
                         pauseTimer: Math.floor(Math.random() * 120) + 60,
                         stateAnimTimer: 0,
                         visible: isVisible,
+                        idleDebounceTimer: 0,
                     };
 
                     // 숨김 처리
@@ -288,6 +298,21 @@ export const AgentTown: React.FC = () => {
                     const target = cells[Math.floor(Math.random() * cells.length)];
                     const path = findPath(gridWorld, agent.gridX, agent.gridY, target.x, target.y);
                     agent.path = path;
+                };
+
+                // ── Helper: get bubble text for activity, with optional tool-specific text ──
+                const getBubbleText = (activity: string, toolName?: string): string => {
+                    // Tool-specific bubble for 'working' state
+                    if (activity === 'working' && toolName) {
+                        const toolBubble = TOOL_BUBBLES[toolName];
+                        if (toolBubble) return `${toolBubble.emoji} ${toolBubble.text}`;
+                    }
+                    const config = BUBBLE_CONFIGS[activity];
+                    if (config) {
+                        const text = config.texts[Math.floor(Math.random() * config.texts.length)];
+                        return `${config.emoji} ${text}`;
+                    }
+                    return activity;
                 };
 
                 // Stagger initial pathfinding for visible agents only
@@ -419,22 +444,23 @@ export const AgentTown: React.FC = () => {
                         if (!agent || agent.id === 'cto') continue;
 
                         if (tab.status === 'connecting') {
-                            agent.state = 'WALK';
-                            agent.visual.animState = 'walk';
-                            updateOtterStateDot(agent.visual, STATE_COLORS.WALK);
-                            pickIsoZoneDest(agent, 'work');
+                            // A-1: connecting에서 Work Zone 이동 제거 — REST에서 대기
+                            agent.state = 'IDLE';
+                            agent.visual.animState = 'idle';
+                            updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
+                            showOtterBubble(agent.visual, getBubbleText('connecting'));
                         } else if (tab.status === 'connected') {
-                            agent.state = 'RUNNING';
-                            agent.visual.animState = 'walk';
+                            agent.state = 'IDLE';
+                            agent.visual.animState = 'idle';
                             agent.stateAnimTimer = 0;
-                            updateOtterStateDot(agent.visual, STATE_COLORS.RUNNING);
-                            showOtterBubble(agent.visual, '터미널 연결됨');
+                            updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
+                            showOtterBubble(agent.visual, getBubbleText('connected'));
                         } else if (tab.status === 'exited') {
                             agent.state = 'SUCCESS';
                             agent.visual.animState = 'success';
                             agent.stateAnimTimer = 0;
                             updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
-                            showOtterBubble(agent.visual, '세션 종료');
+                            showOtterBubble(agent.visual, getBubbleText('exited'));
                         }
                     }
 
@@ -446,30 +472,39 @@ export const AgentTown: React.FC = () => {
                         const agent = isoAgentMap.get(agentId);
                         if (!agent || agent.id === 'cto') continue;
 
+                        // 활동 상태 변경 시 idle 디바운스 리셋
+                        if (activity !== 'idle') {
+                            agent.idleDebounceTimer = 0;
+                        }
+
                         switch (activity) {
                             case 'thinking':
                                 agent.state = 'THINKING';
                                 agent.visual.animState = 'think';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.THINKING);
-                                showOtterBubble(agent.visual, '생각 중...');
+                                showOtterBubble(agent.visual, getBubbleText('thinking'));
                                 pickIsoZoneDest(agent, 'work');
                                 break;
-                            case 'working':
+                            case 'working': {
                                 agent.state = 'RUNNING';
                                 agent.visual.animState = 'walk';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.RUNNING);
-                                showOtterBubble(agent.visual, '도구 사용 중...');
-                                // 이미 WORK ZONE이 아니면 이동
+                                // B-3: parsedMessages에서 최근 toolName 추출
+                                const tab = state.tabs.find(t => t.agentId === agentId);
+                                const msgs = tab ? state.parsedMessages[tab.id] : undefined;
+                                const lastToolEvent = msgs?.slice(-5).reverse().find(e => e.type === 'tool_use');
+                                showOtterBubble(agent.visual, getBubbleText('working', lastToolEvent?.toolName));
                                 pickIsoZoneDest(agent, 'work');
                                 break;
+                            }
                             case 'success': {
                                 agent.state = 'SUCCESS';
                                 agent.visual.animState = 'success';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
-                                showOtterBubble(agent.visual, '완료!');
+                                showOtterBubble(agent.visual, getBubbleText('success'));
                                 // 게이미피케이션: XP + 코인 적립
                                 const appStore = useAppStore.getState();
                                 const hadError = prevActivity === 'error';
@@ -480,7 +515,7 @@ export const AgentTown: React.FC = () => {
                                 if (newGam.lastLevelUp && newGam.lastLevelUp > Date.now() - 1000) {
                                     appStore.addToast({
                                         type: 'success',
-                                        message: `레벨 업! Lv.${newGam.level} ${newGam.levelTitle}`,
+                                        message: `\uB808\uBCA8 \uC5C5! Lv.${newGam.level} ${newGam.levelTitle}`,
                                     });
                                 }
                                 break;
@@ -490,17 +525,13 @@ export const AgentTown: React.FC = () => {
                                 agent.visual.animState = 'error';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.ERROR);
-                                showOtterBubble(agent.visual, '오류 발생');
+                                showOtterBubble(agent.visual, getBubbleText('error'));
                                 break;
                             case 'idle':
-                                // SUCCESS/ERROR → IDLE 전환은 애니메이션 루프에서 처리
+                                // A-2: idle 디바운스 — 즉시 전환하지 않고 타이머만 시작
+                                // 실제 REST 복귀는 애니메이션 루프에서 IDLE_DEBOUNCE_FRAMES 경과 후 처리
                                 if (agent.state === 'THINKING' || agent.state === 'RUNNING') {
-                                    agent.state = 'IDLE';
-                                    agent.visual.animState = 'idle';
-                                    agent.stateAnimTimer = 0;
-                                    updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
-                                    // idle → REST AREA로 복귀
-                                    pickIsoZoneDest(agent, 'rest');
+                                    agent.idleDebounceTimer = 1; // 디바운스 카운트 시작
                                 }
                                 break;
                         }
@@ -534,6 +565,23 @@ export const AgentTown: React.FC = () => {
                         // Bubble tick
                         tickOtterBubble(agent.visual);
 
+                        // ── A-2: Idle debounce — 3초 경과 후 실제 REST 복귀 ──
+                        if (agent.idleDebounceTimer > 0) {
+                            agent.idleDebounceTimer++;
+                            if (agent.idleDebounceTimer >= IDLE_DEBOUNCE_FRAMES) {
+                                agent.idleDebounceTimer = 0;
+                                // 아직 THINKING/RUNNING이면 이제 진짜 IDLE로 전환
+                                if (agent.state === 'THINKING' || agent.state === 'RUNNING') {
+                                    agent.state = 'IDLE';
+                                    agent.visual.animState = 'idle';
+                                    agent.stateAnimTimer = 0;
+                                    updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
+                                    showOtterBubble(agent.visual, getBubbleText('idle'));
+                                    pickIsoZoneDest(agent, 'rest');
+                                }
+                            }
+                        }
+
                         // ── THINKING: walk to destination first, then sway in place ──
                         if (agent.state === 'THINKING') {
                             if (agent.path.length > 0) {
@@ -565,35 +613,35 @@ export const AgentTown: React.FC = () => {
                             continue;
                         }
 
-                        // ── SUCCESS: celebratory bounce, then return to REST AREA ──
+                        // ── SUCCESS: celebratory bounce, then return to REST AREA (A-3: 5초 딜레이) ──
                         if (agent.state === 'SUCCESS') {
                             agent.visual.animState = 'success';
                             agent.stateAnimTimer++;
                             tickOtterAnimation(agent.visual, now, false);
-                            if (agent.stateAnimTimer >= 72) {
+                            if (agent.stateAnimTimer >= SUCCESS_REST_DELAY_FRAMES) {
                                 agent.state = 'IDLE';
                                 agent.visual.animState = 'idle';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
-                                // 성공 후 REST AREA로 복귀
+                                showOtterBubble(agent.visual, getBubbleText('idle'));
                                 pickIsoZoneDest(agent, 'rest');
                             }
                             continue;
                         }
 
-                        // ── ERROR: shake + red flash, then return to REST AREA ──
+                        // ── ERROR: shake + red flash, then return to REST AREA (A-3: 5초 딜레이) ──
                         if (agent.state === 'ERROR') {
                             agent.visual.animState = 'error';
                             agent.stateAnimTimer++;
                             tickOtterAnimation(agent.visual, now, false);
-                            if (agent.stateAnimTimer >= 72) {
+                            if (agent.stateAnimTimer >= SUCCESS_REST_DELAY_FRAMES) {
                                 agent.state = 'IDLE';
                                 agent.visual.animState = 'idle';
                                 agent.stateAnimTimer = 0;
                                 agent.visual.sprite.tint = 0xffffff;
                                 agent.visual.sprite.x = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
-                                // 에러 후 REST AREA로 복귀
+                                showOtterBubble(agent.visual, getBubbleText('idle'));
                                 pickIsoZoneDest(agent, 'rest');
                             }
                             continue;

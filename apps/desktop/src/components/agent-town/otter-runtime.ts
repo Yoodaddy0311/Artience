@@ -38,6 +38,10 @@ export interface OtterVisual {
     bubbleContainer: PIXI.Container | null;
     bubbleFadeTimer: number;
     bubbleFading: boolean;
+    bubblePopTimer: number;   // pop-in animation frame counter (0 = start, POP_FRAMES = done)
+    bubblePopping: boolean;   // true while pop-in is active
+    bubbleMinTimer: number;   // frames since current bubble was shown (anti-flicker)
+    bubblePendingText: string | null; // queued text while min display timer is active
     // Internal animation state
     _lastTickTime: number;
     _prevAnimState: CharacterAnimState;
@@ -61,6 +65,9 @@ const OTTER_PATHS = {
 
 const BUBBLE_DISPLAY_FRAMES = 210; // ~3.5s at 60fps
 const BUBBLE_FADE_FRAMES = 60;     // ~1s fade
+const BUBBLE_POP_FRAMES = 12;      // ~0.2s pop-in animation
+const MIN_BUBBLE_DISPLAY_FRAMES = 60; // ~1s minimum display before replacing (anti-flicker)
+const BUBBLE_POP_OVERSHOOT = 1.15; // scale overshoots to 115% then settles
 
 // Walk animation tuning
 const WALK_HOP_HEIGHT = 1.5;        // Minimal hop — feet stay near the tile surface
@@ -210,6 +217,10 @@ export function createOtterVisual(
         bubbleContainer: null,
         bubbleFadeTimer: 0,
         bubbleFading: false,
+        bubblePopTimer: 0,
+        bubblePopping: false,
+        bubbleMinTimer: 0,
+        bubblePendingText: null,
         _lastTickTime: now,
         _prevAnimState: 'idle',
         _idleMicroTimer: now + IDLE_MICRO_INTERVAL + Math.random() * 2000,
@@ -570,11 +581,22 @@ export function updateOtterStateDot(visual: OtterVisual, color: number): void {
 
 // ── Speech bubble ──
 
+/** Regex to detect emoji-only strings (common emoji ranges) */
+const EMOJI_ONLY_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u;
+
 /**
  * Show a speech bubble above the otter.
  * Replaces any existing bubble. Text is truncated to 30 characters.
+ * Emoji-only messages get a larger font size for visual impact.
+ * Starts with a pop-in scale animation.
  */
 export function showOtterBubble(visual: OtterVisual, text: string): void {
+    // Anti-flicker: if a bubble is showing and hasn't reached minimum display time, queue the new text
+    if (visual.bubbleContainer && visual.bubbleMinTimer < MIN_BUBBLE_DISPLAY_FRAMES) {
+        visual.bubblePendingText = text;
+        return;
+    }
+
     if (visual.bubbleContainer) {
         visual.container.removeChild(visual.bubbleContainer);
         visual.bubbleContainer = null;
@@ -585,10 +607,12 @@ export function showOtterBubble(visual: OtterVisual, text: string): void {
     bubble.zIndex = 10;
 
     const truncated = text.length > 30 ? text.slice(0, 30) + '...' : text;
+    const isEmojiOnly = EMOJI_ONLY_RE.test(truncated.trim());
+
     const bubbleText = new PIXI.Text({
         text: truncated,
         style: {
-            fontSize: 9,
+            fontSize: isEmojiOnly ? 16 : 9,
             fontFamily: 'system-ui, sans-serif',
             fontWeight: '700',
             fill: 0x18181b,
@@ -598,8 +622,8 @@ export function showOtterBubble(visual: OtterVisual, text: string): void {
     });
     bubbleText.anchor.set(0.5, 0.5);
 
-    const padX = 6;
-    const padY = 4;
+    const padX = isEmojiOnly ? 8 : 6;
+    const padY = isEmojiOnly ? 6 : 4;
     const bg = new PIXI.Graphics();
     const bw = bubbleText.width + padX * 2;
     const bh = bubbleText.height + padY * 2;
@@ -619,33 +643,77 @@ export function showOtterBubble(visual: OtterVisual, text: string): void {
 
     bubble.addChild(bg);
     bubble.addChild(bubbleText);
+
+    // Start pop-in from scale 0
+    bubble.scale.set(0);
+    bubble.alpha = 1;
+
     visual.container.addChild(bubble);
     visual.bubbleContainer = bubble;
     visual.bubbleFadeTimer = 0;
     visual.bubbleFading = false;
+    visual.bubblePopTimer = 0;
+    visual.bubblePopping = true;
+    visual.bubbleMinTimer = 0;
+    visual.bubblePendingText = null;
 }
 
 /**
- * Tick bubble fade animation. Call every frame.
- * Manages the display duration and fade-out transition.
+ * Tick bubble animation. Call every frame.
+ * Manages three phases: pop-in -> display -> fade-out.
  */
 export function tickOtterBubble(visual: OtterVisual): void {
-    if (!visual.bubbleContainer) return;
+    // Anti-flicker: process pending text when no bubble is showing
+    if (!visual.bubbleContainer) {
+        if (visual.bubblePendingText) {
+            const pending = visual.bubblePendingText;
+            visual.bubblePendingText = null;
+            showOtterBubble(visual, pending);
+        }
+        return;
+    }
 
+    // Increment minimum display timer for anti-flicker
+    visual.bubbleMinTimer++;
+
+    // Phase 1: Pop-in animation (scale 0 -> overshoot -> 1)
+    if (visual.bubblePopping) {
+        visual.bubblePopTimer++;
+        const t = Math.min(visual.bubblePopTimer / BUBBLE_POP_FRAMES, 1);
+        // Elastic overshoot: rises to OVERSHOOT then settles to 1.0
+        const eased = t < 0.6
+            ? easeInOutQuad(t / 0.6) * BUBBLE_POP_OVERSHOOT
+            : BUBBLE_POP_OVERSHOOT - (BUBBLE_POP_OVERSHOOT - 1) * easeOutQuad((t - 0.6) / 0.4);
+        visual.bubbleContainer.scale.set(eased);
+        if (t >= 1) {
+            visual.bubbleContainer.scale.set(1);
+            visual.bubblePopping = false;
+        }
+        return; // Don't count display frames during pop-in
+    }
+
+    // Phase 2: Display hold
     visual.bubbleFadeTimer++;
 
     if (!visual.bubbleFading && visual.bubbleFadeTimer >= BUBBLE_DISPLAY_FRAMES) {
         visual.bubbleFading = true;
         visual.bubbleFadeTimer = 0;
     }
+
+    // Phase 3: Fade-out
     if (visual.bubbleFading) {
         const progress = visual.bubbleFadeTimer / BUBBLE_FADE_FRAMES;
         visual.bubbleContainer.alpha = Math.max(0, 1 - progress);
+        // Slight shrink during fade for polish
+        const shrink = 1 - progress * 0.15;
+        visual.bubbleContainer.scale.set(shrink);
         if (progress >= 1) {
             visual.container.removeChild(visual.bubbleContainer);
             visual.bubbleContainer = null;
             visual.bubbleFading = false;
             visual.bubbleFadeTimer = 0;
+            visual.bubblePopping = false;
+            visual.bubblePopTimer = 0;
         }
     }
 }

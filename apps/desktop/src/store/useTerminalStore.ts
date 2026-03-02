@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ParsedEvent, AgentActivity } from '../lib/pty-parser';
+import { resolveTeamMembers } from '../lib/team-character-map';
 
 export interface TerminalTab {
     id: string;          // pty ID from main process
@@ -26,6 +27,10 @@ interface TerminalState {
     // 패널 표시/숨기기
     panelVisible: boolean;
     setPanelVisible: (visible: boolean) => void;
+
+    // 패널 전체 화면 (비영속)
+    panelFullscreen: boolean;
+    togglePanelFullscreen: () => void;
 
     // 뷰 모드: 탭별 터미널/채팅 전환 (메모리 only)
     viewMode: Record<string, ViewMode>; // tabId → mode
@@ -57,6 +62,12 @@ interface TerminalState {
     inputHistory: Record<string, string[]>; // tabId → 최근 입력 50개
     addInputHistory: (tabId: string, text: string) => void;
 
+    // 팀원 ↔ 캐릭터 매핑 (비영속)
+    activeTeamMembers: Record<string, string>; // teamMemberName → agentId
+    teamAddedAgents: string[]; // 팀으로 인해 dock에 추가된 agentId 목록
+    setActiveTeamMembers: (members: string[]) => void;
+    clearActiveTeam: () => void;
+
     // 기존 actions
     addTab: (tab: TerminalTab) => void;
     removeTab: (id: string) => void;
@@ -71,6 +82,8 @@ export const useTerminalStore = create<TerminalState>()(
             activeTabId: null,
             panelVisible: true,
             setPanelVisible: (visible) => set({ panelVisible: visible }),
+            panelFullscreen: false,
+            togglePanelFullscreen: () => set((s) => ({ panelFullscreen: !s.panelFullscreen })),
             viewMode: {},
             parsedMessages: {},
             characterDirMap: {},
@@ -78,6 +91,8 @@ export const useTerminalStore = create<TerminalState>()(
             agentActivity: {},
             agentSettings: {},
             inputHistory: {},
+            activeTeamMembers: {},
+            teamAddedAgents: [],
 
             setViewMode: (tabId, mode) => set((s) => ({
                 viewMode: { ...s.viewMode, [tabId]: mode },
@@ -118,6 +133,24 @@ export const useTerminalStore = create<TerminalState>()(
                 const next = [...prev, text].slice(-50);
                 return { inputHistory: { ...s.inputHistory, [tabId]: next } };
             }),
+
+            setActiveTeamMembers: (members) => set((s) => {
+                const mapping = resolveTeamMembers(members, s.dockAgents);
+                // Determine which agents need to be added to dock
+                const newAgentIds = Object.values(mapping);
+                const toAdd = newAgentIds.filter(id => !s.dockAgents.includes(id));
+                return {
+                    activeTeamMembers: mapping,
+                    teamAddedAgents: toAdd,
+                    dockAgents: [...s.dockAgents, ...toAdd],
+                };
+            }),
+
+            clearActiveTeam: () => set((s) => ({
+                activeTeamMembers: {},
+                teamAddedAgents: [],
+                dockAgents: s.dockAgents.filter(id => !s.teamAddedAgents.includes(id)),
+            })),
 
             setAgentSettings: (agentId, settings) => set((s) => ({
                 agentSettings: {

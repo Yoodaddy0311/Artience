@@ -11,7 +11,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
-        "electron:dev": "esbuild electron/main.ts electron/preload.ts --outdir=dist-electron --platform=node --format=cjs --bundle --external:electron --external:node-pty --external:electron-store --external:@anthropic-ai/claude-agent-sdk && vite & sleep 3 && electron .",
+        "electron:dev": "node scripts/electron-dev.mjs",
         "electron:build": "esbuild electron/main.ts electron/preload.ts --outdir=dist-electron --platform=node --format=cjs --bundle --external:electron --external:node-pty --external:electron-store --external:@anthropic-ai/claude-agent-sdk && vite build --mode electron && electron-builder --publish never"
     },
     "build": {

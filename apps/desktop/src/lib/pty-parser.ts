@@ -16,9 +16,10 @@
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface ParsedEvent {
-    type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'error' | 'prompt';
+    type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'error' | 'prompt' | 'team_update';
     content: string;
     toolName?: string;
+    teamMembers?: string[];
     timestamp: number;
 }
 
@@ -122,6 +123,13 @@ const ERROR_PATTERNS = [
     /\u2573/,        // ╳ Claude Code error marker
 ];
 
+/** Team member pattern: @name appearing 2+ times on a single line.
+ *  Matches Claude Code's team status bar, e.g. "@main @frontend-dev @planner · ↓ to expand" */
+const TEAM_MEMBER_RE = /@(\w[\w-]*)/g;
+
+/** Team dissolution patterns */
+const TEAM_SHUTDOWN_RE = /\bshutdown\b/i;
+
 /** Tool result patterns — usually follow tool_use with output content */
 const TOOL_RESULT_PATTERNS = [
     /^\s*\u2713\s/,          // ✓ at line start (with content after)
@@ -154,6 +162,30 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
 
         // Skip empty lines and TUI noise
         if (isNoiseLine(trimmed)) continue;
+
+        // 0. Team member detection: lines with 2+ @name patterns
+        //    e.g. "@main @frontend-dev @planner · ↓ to expand"
+        const atMatches = [...trimmed.matchAll(TEAM_MEMBER_RE)];
+        if (atMatches.length >= 2) {
+            events.push({
+                type: 'team_update',
+                content: trimmed,
+                teamMembers: atMatches.map(m => m[1]),
+                timestamp: now,
+            });
+            continue;
+        }
+
+        // 0b. Team shutdown detection
+        if (TEAM_SHUTDOWN_RE.test(trimmed) && trimmed.length < 100) {
+            events.push({
+                type: 'team_update',
+                content: trimmed,
+                teamMembers: [],
+                timestamp: now,
+            });
+            continue;
+        }
 
         // 1. Prompt detection (idle / waiting for input)
         if (trimmed.includes(PROMPT_MARKER) || /^\s*>\s*$/.test(trimmed)) {
