@@ -7,21 +7,26 @@ export const StudioDecorator: React.FC = () => {
     const [selectedAsset, setSelectedAsset] = useState<number | null>(null);
 
     useEffect(() => {
-        const studioApi = window.dogbaApi?.studio;
-        if (!studioApi) {
-            setLoading(false);
-            return;
-        }
-        studioApi.getAssets()
-            .then(data => {
-                if (data.assets) setAssets(data.assets.map(a => a.path));
-            })
-            .catch(() => {
-                // IPC unreachable — silently use empty assets
-            })
-            .finally(() => {
+        try {
+            const studioApi = window.dogbaApi?.studio;
+            if (!studioApi) {
                 setLoading(false);
-            });
+                return;
+            }
+            studioApi.getAssets()
+                .then((data: any) => {
+                    if (data?.assets) setAssets(data.assets.map((a: any) => a.path).filter(Boolean));
+                })
+                .catch((err: any) => {
+                    console.warn('[StudioDecorator] getAssets failed:', err?.message);
+                })
+                .finally(() => {
+                    setLoading(false);
+                });
+        } catch (err: any) {
+            console.error('[StudioDecorator] useEffect error:', err?.message, err?.stack);
+            setLoading(false);
+        }
     }, []);
 
     return (

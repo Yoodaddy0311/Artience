@@ -162,7 +162,7 @@ export const BottomDock: React.FC = () => {
         const agentId = ctxMenu.agentId;
         setCtxMenu(null);
         if (agentId === CTO_ID) return; // CTO는 제거 불가
-        if (teamAddedAgents.includes(agentId)) return; // 팀 멤버는 팀 해산 시에만 제거
+        if ((teamAddedAgents ?? []).includes(agentId)) return; // 팀 멤버는 팀 해산 시에만 제거
 
         // 세션/터미널도 정리
         window.dogbaApi?.chat?.closeSession(agentId);
@@ -247,7 +247,7 @@ export const BottomDock: React.FC = () => {
             if (!api) return;
 
             // cwd가 설정된 에이전트만 복원 대상
-            const restorable = dockAgents.filter(id => {
+            const restorable = (dockAgents ?? []).filter(id => {
                 const agent = AGENT_MAP.get(id);
                 const cwd = characterDirMap[id];
                 return agent && cwd;
@@ -282,11 +282,11 @@ export const BottomDock: React.FC = () => {
     }, []);
 
     // 독에 없는 에이전트 목록 (추가 팝업용)
-    const availableAgents = DEFAULT_AGENTS.filter(a => !dockAgents.includes(a.id));
+    const availableAgents = DEFAULT_AGENTS.filter(a => !(dockAgents ?? []).includes(a.id));
 
     // 독에 표시할 에이전트: Dokba(CTO)를 항상 첫 번째, 추가 에이전트는 그 뒤
     const dokbaAgent = AGENT_MAP.get(CTO_ID)!;
-    const extraDockAgents = dockAgents.filter(id => id !== CTO_ID);
+    const extraDockAgents = (dockAgents ?? []).filter(id => id !== CTO_ID);
 
     // 활동 상태
     const agentActivity = useTerminalStore((s) => s.agentActivity);
@@ -375,7 +375,7 @@ export const BottomDock: React.FC = () => {
                     const tab = tabs.find(t => t.agentId === agentId);
                     const hasTab = !!tab;
                     const isActive = hasTab && tab!.id === activeTabId;
-                    const isTeamMember = teamAddedAgents.includes(agentId);
+                    const isTeamMember = (teamAddedAgents ?? []).includes(agentId);
 
                     return (
                         <button
@@ -495,7 +495,7 @@ export const BottomDock: React.FC = () => {
                             터미널 닫기
                         </button>
                     )}
-                    {ctxMenu.agentId !== CTO_ID && !teamAddedAgents.includes(ctxMenu.agentId) && (
+                    {ctxMenu.agentId !== CTO_ID && !(teamAddedAgents ?? []).includes(ctxMenu.agentId) && (
                         <button
                             onClick={handleRemoveFromDock}
                             className="w-full text-left px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors border-t border-gray-200"

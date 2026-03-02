@@ -255,6 +255,101 @@ describe('parsePtyChunk', () => {
     });
 });
 
+describe('parsePtyChunk — team detection', () => {
+    it('detects single-line team status bar with 2+ @names', () => {
+        const events = parsePtyChunk('@main @frontend-dev @planner · ↓ to expand');
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe('team_update');
+        expect(events[0].teamMembers).toEqual(['main', 'frontend-dev', 'planner']);
+    });
+
+    it('detects multi-line "N agents launched" format', () => {
+        const raw = [
+            '2 agents launched (ctrl+o to expand)',
+            '    @backend-investigator (artibot:backend-developer)',
+            '        └ Main process PTY activity investigation',
+            '    @frontend-investigator (artibot:frontend-developer)',
+            '        └ Renderer state flow investigation',
+        ].join('\n');
+        const events = parsePtyChunk(raw);
+        const teamEvents = events.filter(e => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(1);
+        expect(teamEvents[0].teamMembers).toEqual([
+            'backend-investigator',
+            'frontend-investigator',
+        ]);
+    });
+
+    it('detects "1 agent launched" (singular)', () => {
+        const raw = [
+            '1 agent launched (ctrl+o to expand)',
+            '    @code-reviewer (artibot:code-reviewer)',
+            '        └ Review the PR',
+        ].join('\n');
+        const events = parsePtyChunk(raw);
+        const teamEvents = events.filter(e => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(1);
+        expect(teamEvents[0].teamMembers).toEqual(['code-reviewer']);
+    });
+
+    it('detects "3 agents launched" with many members', () => {
+        const raw = [
+            '3 agents launched (ctrl+o to expand)',
+            '    @planner (artibot:planner)',
+            '        └ Create architecture plan',
+            '    @frontend-dev (artibot:frontend-developer)',
+            '        └ Build React components',
+            '    @backend-dev (artibot:backend-developer)',
+            '        └ Build API endpoints',
+        ].join('\n');
+        const events = parsePtyChunk(raw);
+        const teamEvents = events.filter(e => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(1);
+        expect(teamEvents[0].teamMembers).toEqual([
+            'planner', 'frontend-dev', 'backend-dev',
+        ]);
+    });
+
+    it('detects team shutdown', () => {
+        const events = parsePtyChunk('shutdown');
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe('team_update');
+        expect(events[0].teamMembers).toEqual([]);
+    });
+
+    it('does not match single @name as team_update', () => {
+        const events = parsePtyChunk('Message from @user about the task');
+        expect(events).toHaveLength(1);
+        expect(events[0].type).not.toBe('team_update');
+    });
+
+    it('does not match "agents launched" without subsequent @names', () => {
+        const raw = [
+            '2 agents launched (ctrl+o to expand)',
+            'Some unrelated text follows',
+        ].join('\n');
+        const events = parsePtyChunk(raw);
+        const teamEvents = events.filter(e => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(0);
+    });
+
+    it('handles multi-line team followed by regular content', () => {
+        const raw = [
+            '2 agents launched (ctrl+o to expand)',
+            '    @investigator-a (artibot:frontend-developer)',
+            '        └ Task A',
+            '    @investigator-b (artibot:backend-developer)',
+            '        └ Task B',
+            '⏺ Analyzing the codebase...',
+        ].join('\n');
+        const events = parsePtyChunk(raw);
+        expect(events).toHaveLength(2);
+        expect(events[0].type).toBe('team_update');
+        expect(events[0].teamMembers).toEqual(['investigator-a', 'investigator-b']);
+        expect(events[1].type).toBe('thinking');
+    });
+});
+
 describe('detectActivity', () => {
     const makeEvent = (type: ParsedEvent['type'], toolName?: string): ParsedEvent => ({
         type,

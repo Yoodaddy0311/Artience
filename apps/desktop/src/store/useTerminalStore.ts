@@ -114,12 +114,13 @@ export const useTerminalStore = create<TerminalState>()(
             })),
 
             addDockAgent: (agentId) => set((s) => {
-                if (s.dockAgents.includes(agentId)) return s;
-                return { dockAgents: [...s.dockAgents, agentId] };
+                const agents = s.dockAgents ?? [];
+                if (agents.includes(agentId)) return s;
+                return { dockAgents: [...agents, agentId] };
             }),
 
             removeDockAgent: (agentId) => set((s) => ({
-                dockAgents: s.dockAgents.filter(id => id !== agentId),
+                dockAgents: (s.dockAgents ?? [] as string[]).filter((id: string) => id !== agentId),
             })),
 
             setAgentActivity: (agentId, status) => set((s) => ({
@@ -135,21 +136,21 @@ export const useTerminalStore = create<TerminalState>()(
             }),
 
             setActiveTeamMembers: (members) => set((s) => {
-                const mapping = resolveTeamMembers(members, s.dockAgents);
-                // Determine which agents need to be added to dock
+                const agents = s.dockAgents ?? [];
+                const mapping = resolveTeamMembers(members, agents);
                 const newAgentIds = Object.values(mapping);
-                const toAdd = newAgentIds.filter(id => !s.dockAgents.includes(id));
+                const toAdd = newAgentIds.filter(id => !agents.includes(id));
                 return {
                     activeTeamMembers: mapping,
                     teamAddedAgents: toAdd,
-                    dockAgents: [...s.dockAgents, ...toAdd],
+                    dockAgents: [...agents, ...toAdd],
                 };
             }),
 
             clearActiveTeam: () => set((s) => ({
                 activeTeamMembers: {},
                 teamAddedAgents: [],
-                dockAgents: s.dockAgents.filter(id => !s.teamAddedAgents.includes(id)),
+                dockAgents: (s.dockAgents ?? [] as string[]).filter((id: string) => !(s.teamAddedAgents ?? []).includes(id)),
             })),
 
             setAgentSettings: (agentId, settings) => set((s) => ({
@@ -178,6 +179,16 @@ export const useTerminalStore = create<TerminalState>()(
                 characterDirMap: state.characterDirMap,
                 dockAgents: state.dockAgents,
                 agentSettings: state.agentSettings,
+            }),
+            merge: (persisted: any, current: TerminalState) => ({
+                ...current,
+                ...(persisted as Partial<TerminalState>),
+                // 영속 데이터가 손상된 경우 기본값으로 폴백
+                dockAgents: Array.isArray((persisted as any)?.dockAgents)
+                    ? (persisted as any).dockAgents
+                    : current.dockAgents,
+                characterDirMap: (persisted as any)?.characterDirMap ?? current.characterDirMap,
+                agentSettings: (persisted as any)?.agentSettings ?? current.agentSettings,
             }),
         }
     )

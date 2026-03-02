@@ -127,6 +127,12 @@ const ERROR_PATTERNS = [
  *  Matches Claude Code's team status bar, e.g. "@main @frontend-dev @planner · ↓ to expand" */
 const TEAM_MEMBER_RE = /@(\w[\w-]*)/g;
 
+/** Multi-line team launch: "N agents launched" header followed by indented @name lines */
+const AGENTS_LAUNCHED_RE = /^\d+\s+agents?\s+launched/i;
+
+/** Single @name on an indented line (multi-line team output) */
+const INDENTED_AGENT_RE = /^\s+@(\w[\w-]*)/;
+
 /** Team dissolution patterns */
 const TEAM_SHUTDOWN_RE = /\bshutdown\b/i;
 
@@ -157,14 +163,46 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
     // Split into lines for pattern matching
     const lines = cleaned.split('\n');
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const trimmed = line.trim();
 
         // Skip empty lines and TUI noise
         if (isNoiseLine(trimmed)) continue;
 
-        // 0. Team member detection: lines with 2+ @name patterns
-        //    e.g. "@main @frontend-dev @planner · ↓ to expand"
+        // 0a. Multi-line team launch: "N agents launched" followed by @name lines
+        if (AGENTS_LAUNCHED_RE.test(trimmed)) {
+            const members: string[] = [];
+            const contentLines = [trimmed];
+            // Scan ahead for indented @name lines
+            while (i + 1 < lines.length) {
+                const nextLine = lines[i + 1];
+                const agentMatch = nextLine.match(INDENTED_AGENT_RE);
+                if (agentMatch) {
+                    members.push(agentMatch[1]);
+                    contentLines.push(nextLine.trim());
+                    i++;
+                } else if (nextLine.trim() === '' || /^\s+[└├─│]/.test(nextLine)) {
+                    // Skip tree-drawing lines and blank lines within the block
+                    contentLines.push(nextLine.trim());
+                    i++;
+                } else {
+                    break;
+                }
+            }
+            if (members.length > 0) {
+                events.push({
+                    type: 'team_update',
+                    content: contentLines.filter(Boolean).join('\n'),
+                    teamMembers: members,
+                    timestamp: now,
+                });
+            }
+            continue;
+        }
+
+        // 0b. Single-line team detection: 2+ @name patterns on one line
+        //     e.g. "@main @frontend-dev @planner · ↓ to expand"
         const atMatches = [...trimmed.matchAll(TEAM_MEMBER_RE)];
         if (atMatches.length >= 2) {
             events.push({
@@ -176,7 +214,7 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
             continue;
         }
 
-        // 0b. Team shutdown detection
+        // 0c. Team shutdown detection
         if (TEAM_SHUTDOWN_RE.test(trimmed) && trimmed.length < 100) {
             events.push({
                 type: 'team_update',

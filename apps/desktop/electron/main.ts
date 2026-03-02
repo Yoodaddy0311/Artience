@@ -16,7 +16,14 @@ import { hooksManager } from './hooks-manager';
 import { registerMcpServer, MCP_BRIDGE_DIR, type McpBridge } from './mcp-artience-server';
 import { loadSkills, installDefaultSkills, getAgentSkills } from './skill-manager';
 
-console.log('[Electron] BUILD_ID: 20260302-v6 (MCP-Bridge+Job-Complete)');
+console.log('[Electron] BUILD_ID: 20260303-v8 (Hydration-Fix)');
+
+// Dev mode: disable ALL caches to prevent stale assets from previous builds
+if (process.env.VITE_DEV_SERVER_URL) {
+    app.commandLine.appendSwitch('disable-http-cache');
+    app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+    app.commandLine.appendSwitch('js-flags', '--no-compilation-cache');
+}
 
 // ── Permission Mode Presets ─────────────────────────────────────────────────
 
@@ -132,6 +139,8 @@ interface TabParserState {
     workCycleActive: boolean;
     /** Incomplete line buffer — holds partial line from previous chunk */
     lineBuffer: string;
+    /** Timer to flush lineBuffer when no newline arrives (ink TUI partial lines) */
+    flushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const tabParserState = new Map<string, TabParserState>();
@@ -139,50 +148,20 @@ const tabParserState = new Map<string, TabParserState>();
 function getOrCreateParserState(tabId: string): TabParserState {
     let state = tabParserState.get(tabId);
     if (!state) {
-        state = { lastActivity: 'idle', events: [], workCycleActive: false, lineBuffer: '' };
+        state = { lastActivity: 'idle', events: [], workCycleActive: false, lineBuffer: '', flushTimer: null };
         tabParserState.set(tabId, state);
     }
     return state;
 }
 
+/** Flush timer delay for partial lines without newline (ms) */
+const LINE_BUFFER_FLUSH_MS = 200;
+
 /**
- * Process PTY output through the parser (tee path — does NOT affect xterm rendering).
- * Sends parsed events and activity changes to the renderer.
- *
- * Handles chunk boundaries by buffering incomplete lines: if a chunk does not
- * end with a newline, the last partial line is held in `lineBuffer` and
- * prepended to the next chunk for that tab.
+ * Process parsed events: push to event buffer, send to renderer, detect activity changes.
+ * Shared by both the normal parse path and the flush-timer path.
  */
-function processPtyForParser(tabId: string, rawData: string): void {
-    const state = getOrCreateParserState(tabId);
-
-    // Prepend any buffered partial line from previous chunk
-    const data = state.lineBuffer + rawData;
-
-    // DEBUG: log raw data info
-    const hasNewline = data.includes('\n') || data.includes('\r');
-    console.log(`[PTY-DEBUG] tabId=${tabId} rawLen=${rawData.length} bufLen=${state.lineBuffer.length} hasNewline=${hasNewline}`);
-
-    // If the chunk does not end with a newline, the last segment is incomplete
-    let dataToParse: string;
-    if (data.length > 0 && !data.endsWith('\n') && !data.endsWith('\r')) {
-        const lastNewline = Math.max(data.lastIndexOf('\n'), data.lastIndexOf('\r'));
-        if (lastNewline === -1) {
-            // Entire chunk is a partial line — buffer it and wait
-            state.lineBuffer = data;
-            console.log(`[PTY-DEBUG] BUFFERED (no newline) bufLen=${state.lineBuffer.length}`);
-            return;
-        }
-        // Parse complete lines, buffer the trailing partial
-        state.lineBuffer = data.slice(lastNewline + 1);
-        dataToParse = data.slice(0, lastNewline + 1);
-    } else {
-        state.lineBuffer = '';
-        dataToParse = data;
-    }
-
-    const parsed = parsePtyChunk(dataToParse);
-    console.log(`[PTY-DEBUG] parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+function processParsedEvents(tabId: string, state: TabParserState, parsed: ParsedEvent[]): void {
     if (parsed.length === 0) return;
 
     for (const event of parsed) {
@@ -263,9 +242,84 @@ function processPtyForParser(tabId: string, rawData: string): void {
     }
 }
 
+/**
+ * Process PTY output through the parser (tee path — does NOT affect xterm rendering).
+ * Sends parsed events and activity changes to the renderer.
+ *
+ * Handles chunk boundaries by buffering incomplete lines: if a chunk does not
+ * end with a newline, the last partial line is held in `lineBuffer` and
+ * prepended to the next chunk for that tab.
+ *
+ * A flush timer ensures that partial lines (e.g. ink TUI's ⏺ thinking marker
+ * sent without a trailing newline) are still parsed after a short delay,
+ * preventing activity detection from being blocked indefinitely.
+ */
+function processPtyForParser(tabId: string, rawData: string): void {
+    const state = getOrCreateParserState(tabId);
+
+    // Clear any pending flush timer — new data arrived
+    if (state.flushTimer !== null) {
+        clearTimeout(state.flushTimer);
+        state.flushTimer = null;
+    }
+
+    // Prepend any buffered partial line from previous chunk
+    const data = state.lineBuffer + rawData;
+
+    // DEBUG: log raw data info
+    const hasNewline = data.includes('\n') || data.includes('\r');
+    console.log(`[PTY-DEBUG] tabId=${tabId} rawLen=${rawData.length} bufLen=${state.lineBuffer.length} hasNewline=${hasNewline}`);
+
+    // If the chunk does not end with a newline, the last segment is incomplete
+    let dataToParse: string;
+    if (data.length > 0 && !data.endsWith('\n') && !data.endsWith('\r')) {
+        const lastNewline = Math.max(data.lastIndexOf('\n'), data.lastIndexOf('\r'));
+        if (lastNewline === -1) {
+            // Entire chunk is a partial line — buffer it, schedule flush
+            state.lineBuffer = data;
+            console.log(`[PTY-DEBUG] BUFFERED (no newline) bufLen=${state.lineBuffer.length}`);
+            state.flushTimer = setTimeout(() => {
+                state.flushTimer = null;
+                if (state.lineBuffer.length === 0) return;
+                const buffered = state.lineBuffer;
+                state.lineBuffer = '';
+                console.log(`[PTY-DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`);
+                const parsed = parsePtyChunk(buffered);
+                console.log(`[PTY-DEBUG] flush parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+                processParsedEvents(tabId, state, parsed);
+            }, LINE_BUFFER_FLUSH_MS);
+            return;
+        }
+        // Parse complete lines, buffer the trailing partial
+        state.lineBuffer = data.slice(lastNewline + 1);
+        dataToParse = data.slice(0, lastNewline + 1);
+
+        // Schedule flush for remaining partial line in buffer
+        if (state.lineBuffer.length > 0) {
+            state.flushTimer = setTimeout(() => {
+                state.flushTimer = null;
+                if (state.lineBuffer.length === 0) return;
+                const buffered = state.lineBuffer;
+                state.lineBuffer = '';
+                console.log(`[PTY-DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`);
+                const parsed = parsePtyChunk(buffered);
+                console.log(`[PTY-DEBUG] flush parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+                processParsedEvents(tabId, state, parsed);
+            }, LINE_BUFFER_FLUSH_MS);
+        }
+    } else {
+        state.lineBuffer = '';
+        dataToParse = data;
+    }
+
+    const parsed = parsePtyChunk(dataToParse);
+    console.log(`[PTY-DEBUG] parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+    processParsedEvents(tabId, state, parsed);
+}
+
 // ── Window ─────────────────────────────────────────────────────────────────
 
-function createWindow() {
+async function createWindow() {
     const preloadPath = path.join(__dirname, 'preload.js');
 
     console.log('[Electron] app.isPackaged:', app.isPackaged);
@@ -292,14 +346,19 @@ function createWindow() {
         console.error('[Electron] PRELOAD ERROR in', preloadPath, ':', error.message);
     });
 
-    mainWindow.webContents.on('console-message', (_event: any, level: number, message: string) => {
-        if (message.includes('[Preload]') || message.includes('[ChatSend]') || message.includes('[terminal') || level >= 3) {
+    mainWindow.webContents.on('console-message', (_event: any, level: number, message: string, line: number, sourceId: string) => {
+        const msg = typeof message === 'string' ? message : String(message ?? '');
+        if (msg.includes('[Preload]') || msg.includes('[ChatSend]') || msg.includes('[terminal') || level >= 3) {
             const tag = level >= 3 ? 'ERROR' : 'LOG';
-            console.log(`[Renderer ${tag}]`, message);
+            const src = sourceId && line ? ` [${sourceId}:${line}]` : '';
+            console.log(`[Renderer ${tag}]${src}`, msg);
         }
     });
 
     if (process.env.VITE_DEV_SERVER_URL) {
+        // Purge Chromium HTTP cache to prevent stale JS from previous builds
+        await mainWindow.webContents.session.clearCache();
+        console.log('[Electron] Dev cache purged');
         mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     } else {
         // __dirname = dist-electron/, Vite 출력 = ../dist/index.html
@@ -399,6 +458,10 @@ ipcMain.handle('terminal:create', (_event, cols: number, rows: number, options?:
     proc.onExit(({ exitCode }) => {
         terminals.delete(id);
         terminalMeta.delete(id);
+        const parserState = tabParserState.get(id);
+        if (parserState?.flushTimer !== null && parserState?.flushTimer !== undefined) {
+            clearTimeout(parserState.flushTimer);
+        }
         tabParserState.delete(id);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('terminal:exit', id, exitCode ?? 1);
@@ -428,6 +491,10 @@ ipcMain.on('terminal:destroy', (_event, id: string) => {
         proc.kill();
         terminals.delete(id);
         terminalMeta.delete(id);
+        const parserState = tabParserState.get(id);
+        if (parserState?.flushTimer !== null && parserState?.flushTimer !== undefined) {
+            clearTimeout(parserState.flushTimer);
+        }
         tabParserState.delete(id);
     }
 });
@@ -1236,8 +1303,8 @@ ipcMain.handle('agent:delegate-task', async (_e, agentName: string, task: string
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
-    createWindow();
+app.whenReady().then(async () => {
+    await createWindow();
 
     // Start MCP bridge file watcher (serves standalone MCP server requests)
     startMcpBridgeWatcher();

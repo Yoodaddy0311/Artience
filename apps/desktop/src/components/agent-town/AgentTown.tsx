@@ -434,6 +434,39 @@ export const AgentTown: React.FC = () => {
                 // ══════════════════════════════════════════════════════
 
                 unsubTerminal = useTerminalStore.subscribe((state, prevState) => {
+                    // ── 팀원 캐릭터 표시/숨김 ──
+                    if (state.activeTeamMembers !== prevState.activeTeamMembers) {
+                        const currentTeamAgentIds = new Set(Object.values(state.activeTeamMembers));
+                        const prevTeamAgentIds = new Set(Object.values(prevState.activeTeamMembers));
+
+                        for (const agent of isoAgents) {
+                            if (agent.id === 'raccoon' || agent.id === 'cto') continue;
+
+                            const inTeam = currentTeamAgentIds.has(agent.id);
+                            const wasInTeam = prevTeamAgentIds.has(agent.id);
+
+                            if (inTeam && !wasInTeam) {
+                                // 새로 팀에 합류: 보이게 + WORK ZONE으로 이동
+                                agent.visible = true;
+                                agent.visual.container.visible = true;
+                                agent.state = 'IDLE';
+                                agent.visual.animState = 'idle';
+                                updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
+                                showOtterBubble(agent.visual, getBubbleText('connecting'));
+                                pickIsoZoneDest(agent, 'work');
+                            } else if (!inTeam && wasInTeam) {
+                                // 팀에서 제거: 숨김 + 상태 초기화
+                                agent.visible = false;
+                                agent.visual.container.visible = false;
+                                agent.path = [];
+                                agent.state = 'IDLE';
+                                agent.visual.animState = 'idle';
+                                agent.stateAnimTimer = 0;
+                                agent.idleDebounceTimer = 0;
+                            }
+                        }
+                    }
+
                     // ── 탭 상태 변경 감지 ──
                     for (const tab of state.tabs) {
                         const prev = prevState.tabs.find(t => t.id === tab.id);
