@@ -3,6 +3,7 @@ interface TerminalCreateOptions {
     autoCommand?: string;
     shell?: string;
     label?: string;
+    agentSettings?: { model?: string; permissionMode?: string; maxTurns?: number };
 }
 
 interface TerminalCreateResult {
@@ -18,6 +19,15 @@ interface TerminalInfo {
     pid: number;
 }
 
+interface ParsedEvent {
+    type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'error' | 'prompt';
+    content: string;
+    toolName?: string;
+    timestamp: number;
+}
+
+type AgentActivity = 'idle' | 'thinking' | 'working' | 'success' | 'error';
+
 interface DogbaTerminalApi {
     create(cols: number, rows: number, options?: TerminalCreateOptions): Promise<TerminalCreateResult>;
     write(id: string, data: string): void;
@@ -26,12 +36,22 @@ interface DogbaTerminalApi {
     list(): Promise<TerminalInfo[]>;
     onData(callback: (id: string, data: string) => void): () => void;
     onExit(callback: (id: string, exitCode: number) => void): () => void;
+    onParsedEvent(callback: (tabId: string, event: ParsedEvent) => void): () => void;
+    onActivityChange(callback: (tabId: string, activity: AgentActivity) => void): () => void;
 }
 
 interface AgentSkillInfo {
     id: string;
     label: string;
     description: string;
+}
+
+interface ChatStreamEvent {
+    type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'error';
+    content: string;
+    partial?: boolean;
+    toolName?: string;
+    toolUseId?: string;
 }
 
 interface DogbaChatApi {
@@ -41,7 +61,13 @@ interface DogbaChatApi {
     onStream(callback: (agentName: string, chunk: string) => void): () => void;
     onStreamEnd(callback: (agentName: string) => void): () => void;
     onToolUse(callback: (agentName: string, toolData: string) => void): () => void;
-    closeSession(agentName: string): Promise<{ success: boolean }>;
+    // 신규: stream-event 통합 IPC
+    onStreamEvent(callback: (agentId: string, event: ChatStreamEvent) => void): () => void;
+    onResponseEnd(callback: (agentId: string) => void): () => void;
+    createSession(agentId: string, agentName: string, cwd: string, extraArgs?: string[]): Promise<{ success: boolean; sessionId?: string; error?: string }>;
+    sendMessage(agentId: string, message: string): Promise<{ success: boolean }>;
+    closeSession(agentId: string): Promise<{ success: boolean }>;
+    onSessionClosed(callback: (agentId: string, code: number) => void): () => void;
 }
 
 interface DogbaCliApi {
@@ -59,6 +85,7 @@ interface DogbaFileApi {
     import(): Promise<{ success: boolean; data?: unknown; filePath?: string; error?: string }>;
     export(data: unknown): Promise<{ success: boolean; filePath?: string; error?: string }>;
     read(path: string): Promise<{ success: boolean; content?: string; error?: string }>;
+    saveTempFile(base64: string, filename: string): Promise<{ success: boolean; filePath?: string; error?: string }>;
 }
 
 interface DogbaStudioApi {
@@ -77,6 +104,7 @@ interface DogbaJobApi {
     getArtifacts(): Promise<{ artifacts: { name: string; path: string; type: string; jobId: string; ts: number }[] }>;
     getSettings(): Promise<{ maxConcurrentAgents: number; logVerbosity: string; runTimeoutSeconds: number }>;
     saveSettings(settings: Record<string, unknown>): Promise<{ success: boolean }>;
+    getHistory(): Promise<{ history: { id: string; agent: string; task: string; status: string; startedAt: string; completedAt?: string; resultPreview?: string }[] }>;
     onProgress(callback: (agentName: string, chunk: string) => void): () => void;
 }
 
@@ -91,6 +119,42 @@ interface DogbaMailApi {
     }) => void): () => void;
 }
 
+interface DogbaAgentApi {
+    createTeam(cwd?: string): Promise<{ success: boolean; error?: string }>;
+    delegateTask(agentName: string, task: string): Promise<{ success: boolean; error?: string }>;
+    onTaskResult(callback: (agentId: string, event: any) => void): () => void;
+}
+
+interface SkillInfo {
+    id: string;
+    name: string;
+    description: string;
+    path: string;
+    agent?: string;
+}
+
+interface DogbaSkillApi {
+    list(projectDir?: string): Promise<{ success: boolean; skills: SkillInfo[]; error?: string }>;
+    installDefaults(projectDir?: string): Promise<{ success: boolean; installed: string[]; skipped: string[]; error?: string }>;
+    getAgentSkills(agentName: string, projectDir?: string): Promise<{ success: boolean; skills: SkillInfo[]; error?: string }>;
+}
+
+interface DogbaWorktreeApi {
+    create(agentId: string, projectDir?: string): Promise<{ success: boolean; path?: string; error?: string }>;
+    remove(agentId: string, projectDir?: string): Promise<{ success: boolean; error?: string }>;
+    list(projectDir?: string): Promise<{ worktrees: { agentId: string; path: string; branch: string; head: string }[] }>;
+}
+
+interface DogbaHooksApi {
+    setup(projectDir?: string): Promise<{ success: boolean; created: boolean; error?: string }>;
+    generateClaudeMd(projectDir?: string): Promise<{ success: boolean; created: boolean; error?: string }>;
+    initProject(projectDir?: string): Promise<{ hooks: boolean; claudeMd: boolean }>;
+}
+
+interface DogbaNotificationApi {
+    onToast(callback: (data: { message: string; type: string }) => void): () => void;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -103,6 +167,11 @@ interface DogbaApi {
     studio: DogbaStudioApi;
     job: DogbaJobApi;
     mail: DogbaMailApi;
+    agent: DogbaAgentApi;
+    skill: DogbaSkillApi;
+    worktree: DogbaWorktreeApi;
+    hooks: DogbaHooksApi;
+    notification: DogbaNotificationApi;
 }
 
 declare global {

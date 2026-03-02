@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { AppErrorBoundary } from './components/layout/AppErrorBoundary';
+import { AuthGate } from './components/auth/AuthGate';
 
 const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -27,7 +28,9 @@ const App: React.FC = () => {
 
     return (
         <AppErrorBoundary>
-            <MainLayout />
+            <AuthGate>
+                <MainLayout />
+            </AuthGate>
         </AppErrorBoundary>
     );
 };

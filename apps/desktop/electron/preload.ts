@@ -35,6 +35,18 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.on('terminal:exit', listener);
             return () => ipcRenderer.removeListener('terminal:exit', listener);
         },
+        onParsedEvent: (callback: (tabId: string, event: any) => void) => {
+            const listener = (_event: Electron.IpcRendererEvent, tabId: string, event: any) =>
+                callback(tabId, event);
+            ipcRenderer.on('terminal:parsed-event', listener);
+            return () => ipcRenderer.removeListener('terminal:parsed-event', listener);
+        },
+        onActivityChange: (callback: (tabId: string, activity: string) => void) => {
+            const listener = (_event: Electron.IpcRendererEvent, tabId: string, activity: string) =>
+                callback(tabId, activity);
+            ipcRenderer.on('terminal:activity-change', listener);
+            return () => ipcRenderer.removeListener('terminal:activity-change', listener);
+        },
     },
 
     // ── Chat ──
@@ -63,8 +75,31 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.on('chat:tool-use', listener);
             return () => ipcRenderer.removeListener('chat:tool-use', listener);
         },
+        // ── 신규: stream-event 통합 IPC ──
+        onStreamEvent: (callback: (agentId: string, event: any) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, agentId: string, event: any) =>
+                callback(agentId, event);
+            ipcRenderer.on('chat:stream-event', listener);
+            return () => ipcRenderer.removeListener('chat:stream-event', listener);
+        },
+        onResponseEnd: (callback: (agentId: string) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, agentId: string) =>
+                callback(agentId);
+            ipcRenderer.on('chat:response-end', listener);
+            return () => ipcRenderer.removeListener('chat:response-end', listener);
+        },
+        sendMessage: (agentId: string, message: string): Promise<{ success: boolean }> =>
+            ipcRenderer.invoke('chat:send-message', agentId, message),
+        createSession: (agentId: string, agentName: string, cwd: string, extraArgs?: string[]): Promise<{ success: boolean; sessionId?: string; error?: string }> =>
+            ipcRenderer.invoke('chat:create-session', agentId, agentName, cwd, extraArgs),
         closeSession: (agentName: string): Promise<{ success: boolean }> =>
             ipcRenderer.invoke('chat:close-session', agentName),
+        onSessionClosed: (callback: (agentId: string, code: number) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, agentId: string, code: number) =>
+                callback(agentId, code);
+            ipcRenderer.on('chat:session-closed', listener);
+            return () => ipcRenderer.removeListener('chat:session-closed', listener);
+        },
     },
 
     // ── CLI Auth ──
@@ -93,6 +128,8 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.invoke('file:export', data),
         read: (filePath: string): Promise<{ success: boolean; content?: string; error?: string }> =>
             ipcRenderer.invoke('file:read', filePath),
+        saveTempFile: (base64: string, filename: string): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+            ipcRenderer.invoke('file:saveTempFile', base64, filename),
     },
 
     // ── Studio ──
@@ -129,6 +166,8 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             ipcRenderer.invoke('job:getSettings'),
         saveSettings: (settings: Record<string, unknown>): Promise<{ success: boolean }> =>
             ipcRenderer.invoke('job:saveSettings', settings),
+        getHistory: (): Promise<{ history: { id: string; agent: string; task: string; status: string; startedAt: string; completedAt?: string; resultPreview?: string }[] }> =>
+            ipcRenderer.invoke('job:getHistory'),
         onProgress: (callback: (agentName: string, chunk: string) => void) => {
             const listener = (_e: Electron.IpcRendererEvent, agentName: string, chunk: string) =>
                 callback(agentName, chunk);
@@ -143,6 +182,59 @@ contextBridge.exposeInMainWorld('dogbaApi', {
             const listener = (_e: Electron.IpcRendererEvent, report: any) => callback(report);
             ipcRenderer.on('mail:new-report', listener);
             return () => ipcRenderer.removeListener('mail:new-report', listener);
+        },
+    },
+
+    // ── Agent Team (CTO Controller) ──
+    agent: {
+        createTeam: (cwd?: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('agent:create-team', cwd),
+        delegateTask: (agentName: string, task: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('agent:delegate-task', agentName, task),
+        onTaskResult: (callback: (agentId: string, event: any) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, agentId: string, event: any) =>
+                callback(agentId, event);
+            ipcRenderer.on('agent:task-result', listener);
+            return () => ipcRenderer.removeListener('agent:task-result', listener);
+        },
+    },
+
+    // ── Skill Manager ──
+    skill: {
+        list: (projectDir?: string): Promise<{ success: boolean; skills: { id: string; name: string; description: string; path: string; agent?: string }[]; error?: string }> =>
+            ipcRenderer.invoke('skill:list', projectDir),
+        installDefaults: (projectDir?: string): Promise<{ success: boolean; installed: string[]; skipped: string[]; error?: string }> =>
+            ipcRenderer.invoke('skill:install-defaults', projectDir),
+        getAgentSkills: (agentName: string, projectDir?: string): Promise<{ success: boolean; skills: { id: string; name: string; description: string; path: string; agent?: string }[]; error?: string }> =>
+            ipcRenderer.invoke('skill:get-agent-skills', agentName, projectDir),
+    },
+
+    // ── Worktree Manager ──
+    worktree: {
+        create: (agentId: string, projectDir?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+            ipcRenderer.invoke('worktree:create', agentId, projectDir),
+        remove: (agentId: string, projectDir?: string): Promise<{ success: boolean; error?: string }> =>
+            ipcRenderer.invoke('worktree:remove', agentId, projectDir),
+        list: (projectDir?: string): Promise<{ worktrees: { agentId: string; path: string; branch: string; head: string }[] }> =>
+            ipcRenderer.invoke('worktree:list', projectDir),
+    },
+
+    // ── Hooks Manager ──
+    hooks: {
+        setup: (projectDir?: string): Promise<{ success: boolean; created: boolean; error?: string }> =>
+            ipcRenderer.invoke('hooks:setup', projectDir),
+        generateClaudeMd: (projectDir?: string): Promise<{ success: boolean; created: boolean; error?: string }> =>
+            ipcRenderer.invoke('hooks:generate-claude-md', projectDir),
+        initProject: (projectDir?: string): Promise<{ hooks: boolean; claudeMd: boolean }> =>
+            ipcRenderer.invoke('hooks:init-project', projectDir),
+    },
+
+    // ── App Notifications (from MCP server / main process) ──
+    notification: {
+        onToast: (callback: (data: { message: string; type: string }) => void) => {
+            const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+            ipcRenderer.on('app:toast', listener);
+            return () => ipcRenderer.removeListener('app:toast', listener);
         },
     },
 });

@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { ParsedEvent, AgentActivity } from '../lib/pty-parser';
 
 export interface TerminalTab {
     id: string;          // pty ID from main process
@@ -9,28 +11,135 @@ export interface TerminalTab {
     status: 'connecting' | 'connected' | 'exited';
 }
 
+export interface AgentSettings {
+    model?: 'opus' | 'sonnet' | 'haiku';
+    permissionMode?: 'default' | 'plan' | 'bypassPermissions';
+    maxTurns?: number;
+}
+
+export type ViewMode = 'terminal' | 'chat';
+
 interface TerminalState {
     tabs: TerminalTab[];
     activeTabId: string | null;
+
+    // 뷰 모드: 탭별 터미널/채팅 전환 (메모리 only)
+    viewMode: Record<string, ViewMode>; // tabId → mode
+    setViewMode: (tabId: string, mode: ViewMode) => void;
+
+    // PTY 파서 결과 (메모리 only)
+    parsedMessages: Record<string, ParsedEvent[]>; // tabId → events
+    addParsedEvent: (tabId: string, event: ParsedEvent) => void;
+    clearParsedMessages: (tabId: string) => void;
+
+    // 캐릭터별 디렉토리 매핑 (persist)
+    characterDirMap: Record<string, string>; // agentId → cwd
+    setCharacterDir: (agentId: string, dir: string) => void;
+
+    // 독에 배치된 에이전트 목록 (persist)
+    dockAgents: string[]; // agentId[]
+    addDockAgent: (agentId: string) => void;
+    removeDockAgent: (agentId: string) => void;
+
+    // 에이전트 활동 상태 (AgentTown 시각화용, 메모리 only)
+    agentActivity: Record<string, AgentActivity>;
+    setAgentActivity: (agentId: string, status: AgentActivity) => void;
+
+    // 캐릭터별 Claude 설정 (persist)
+    agentSettings: Record<string, AgentSettings>; // agentId → settings
+    setAgentSettings: (agentId: string, settings: Partial<AgentSettings>) => void;
+
+    // 입력 히스토리 (비영속, session-only)
+    inputHistory: Record<string, string[]>; // tabId → 최근 입력 50개
+    addInputHistory: (tabId: string, text: string) => void;
+
+    // 기존 actions
     addTab: (tab: TerminalTab) => void;
     removeTab: (id: string) => void;
     setActiveTab: (id: string | null) => void;
     updateTab: (id: string, patch: Partial<TerminalTab>) => void;
 }
 
-export const useTerminalStore = create<TerminalState>((set) => ({
-    tabs: [],
-    activeTabId: null,
-    addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id })),
-    removeTab: (id) => set((s) => {
-        const newTabs = s.tabs.filter(t => t.id !== id);
-        const newActive = s.activeTabId === id
-            ? (newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null)
-            : s.activeTabId;
-        return { tabs: newTabs, activeTabId: newActive };
-    }),
-    setActiveTab: (id) => set({ activeTabId: id }),
-    updateTab: (id, patch) => set((s) => ({
-        tabs: s.tabs.map(t => t.id === id ? { ...t, ...patch } : t),
-    })),
-}));
+export const useTerminalStore = create<TerminalState>()(
+    persist(
+        (set) => ({
+            tabs: [],
+            activeTabId: null,
+            viewMode: {},
+            parsedMessages: {},
+            characterDirMap: {},
+            dockAgents: ['raccoon'],
+            agentActivity: {},
+            agentSettings: {},
+            inputHistory: {},
+
+            setViewMode: (tabId, mode) => set((s) => ({
+                viewMode: { ...s.viewMode, [tabId]: mode },
+            })),
+
+            addParsedEvent: (tabId, event) => set((s) => ({
+                parsedMessages: {
+                    ...s.parsedMessages,
+                    [tabId]: [...(s.parsedMessages[tabId] || []), event],
+                },
+            })),
+
+            clearParsedMessages: (tabId) => set((s) => ({
+                parsedMessages: { ...s.parsedMessages, [tabId]: [] },
+            })),
+
+            setCharacterDir: (agentId, dir) => set((s) => ({
+                characterDirMap: { ...s.characterDirMap, [agentId]: dir },
+            })),
+
+            addDockAgent: (agentId) => set((s) => {
+                if (s.dockAgents.includes(agentId)) return s;
+                return { dockAgents: [...s.dockAgents, agentId] };
+            }),
+
+            removeDockAgent: (agentId) => set((s) => ({
+                dockAgents: s.dockAgents.filter(id => id !== agentId),
+            })),
+
+            setAgentActivity: (agentId, status) => set((s) => ({
+                agentActivity: { ...s.agentActivity, [agentId]: status },
+            })),
+
+            addInputHistory: (tabId, text) => set((s) => {
+                const prev = s.inputHistory[tabId] || [];
+                // 연속 중복 방지
+                if (prev.length > 0 && prev[prev.length - 1] === text) return s;
+                const next = [...prev, text].slice(-50);
+                return { inputHistory: { ...s.inputHistory, [tabId]: next } };
+            }),
+
+            setAgentSettings: (agentId, settings) => set((s) => ({
+                agentSettings: {
+                    ...s.agentSettings,
+                    [agentId]: { ...s.agentSettings[agentId], ...settings },
+                },
+            })),
+
+            addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id })),
+            removeTab: (id) => set((s) => {
+                const newTabs = s.tabs.filter(t => t.id !== id);
+                const newActive = s.activeTabId === id
+                    ? (newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null)
+                    : s.activeTabId;
+                return { tabs: newTabs, activeTabId: newActive };
+            }),
+            setActiveTab: (id) => set({ activeTabId: id }),
+            updateTab: (id, patch) => set((s) => ({
+                tabs: s.tabs.map(t => t.id === id ? { ...t, ...patch } : t),
+            })),
+        }),
+        {
+            name: 'terminal-store',
+            partialize: (state) => ({
+                characterDirMap: state.characterDirMap,
+                dockAgents: state.dockAgents,
+                agentSettings: state.agentSettings,
+            }),
+        }
+    )
+);

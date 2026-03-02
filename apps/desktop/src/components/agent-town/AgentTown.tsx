@@ -59,6 +59,21 @@ const ZOOM_MAX = 3.0;
 const ZOOM_STEP = 0.15;
 const ZOOM_LERP_FACTOR = 0.1;
 
+// ── Dokba(raccoon) 프로필 ──
+const DOKBA_PROFILE: AgentProfile = {
+    id: 'raccoon',
+    name: 'Dokba',
+    role: 'AI 어시스턴트',
+    sprite: '/assets/characters/raccoon_spritesheet.png',
+    state: 'IDLE',
+    currentJobId: null,
+    home: { x: 20, y: 14 },
+    pos: { x: 20, y: 14 },
+};
+
+// ── 단일화 모드: Dokba만 활성 표시, 나머지 숨김 ──
+const SOLO_MODE = true;
+
 // ── Per-agent isometric runtime state ──
 interface IsoAgent {
     id: string;
@@ -71,6 +86,7 @@ interface IsoAgent {
     path: { x: number; y: number }[]; // grid coords
     pauseTimer: number;
     stateAnimTimer: number;
+    visible: boolean; // SOLO_MODE에서 숨김 제어
 }
 
 export const AgentTown: React.FC = () => {
@@ -87,9 +103,6 @@ export const AgentTown: React.FC = () => {
         let pointerUpHandler: ((e: PointerEvent) => void) | null = null;
         let resizeObserver: ResizeObserver | null = null;
         let canvasElRef: HTMLCanvasElement | null = null;
-        let unsubStream: (() => void) | null = null;
-        let unsubStreamEnd: (() => void) | null = null;
-        let unsubToolUse: (() => void) | null = null;
         let unsubTerminal: (() => void) | null = null;
 
         const initPixi = async () => {
@@ -141,11 +154,7 @@ export const AgentTown: React.FC = () => {
                 let targetZoom = fitScale;
 
                 // Center the map in the viewport
-                // The iso map's visual center is roughly at the midpoint of the bounding box.
-                // gridToIso maps (0,0) to the "top" of the diamond.
-                // The center of a 40x25 grid in iso coords:
                 const mapCenterIso = gridToIso(20, 12);
-                // Position worldContainer so mapCenterIso lands at viewport center
                 worldContainer.x = viewW / 2 - mapCenterIso.x * currentZoom;
                 worldContainer.y = viewH / 2 - mapCenterIso.y * currentZoom;
                 worldContainer.scale.set(currentZoom);
@@ -204,7 +213,10 @@ export const AgentTown: React.FC = () => {
                 const isoAgents: IsoAgent[] = [];
                 const isoAgentMap = new Map<string, IsoAgent>();
 
-                for (const profile of DEFAULT_AGENTS) {
+                // Dokba를 먼저 생성
+                const allProfiles = [DOKBA_PROFILE, ...DEFAULT_AGENTS];
+
+                for (const profile of allProfiles) {
                     const spawnPos = getNearestWalkable(gridWorld, profile.home.x, profile.home.y);
                     const visual = createOtterVisual(otterTextures, profile.name, STATE_COLORS.IDLE);
 
@@ -228,6 +240,9 @@ export const AgentTown: React.FC = () => {
 
                     worldContainer.addChild(visual.container);
 
+                    // SOLO_MODE: Dokba만 보이게, 나머지 숨김
+                    const isVisible = !SOLO_MODE || profile.id === 'raccoon';
+
                     const agent: IsoAgent = {
                         id: profile.id,
                         name: profile.name,
@@ -239,7 +254,11 @@ export const AgentTown: React.FC = () => {
                         path: [],
                         pauseTimer: Math.floor(Math.random() * 120) + 60,
                         stateAnimTimer: 0,
+                        visible: isVisible,
                     };
+
+                    // 숨김 처리
+                    visual.container.visible = isVisible;
 
                     isoAgents.push(agent);
                     isoAgentMap.set(profile.id, agent);
@@ -271,13 +290,20 @@ export const AgentTown: React.FC = () => {
                     agent.path = path;
                 };
 
-                // Stagger initial pathfinding for agents
-                for (let i = 0; i < isoAgents.length; i++) {
-                    const agent = isoAgents[i];
+                // Stagger initial pathfinding for visible agents only
+                let staggerIndex = 0;
+                for (const agent of isoAgents) {
+                    if (!agent.visible) continue;
                     setTimeout(() => {
                         if (!isMounted) return;
-                        pickIsoWanderDest(agent);
-                    }, i * STAGGER_DELAY_MS);
+                        // Dokba starts at REST AREA
+                        if (agent.id === 'raccoon') {
+                            pickIsoZoneDest(agent, 'rest');
+                        } else {
+                            pickIsoWanderDest(agent);
+                        }
+                    }, staggerIndex * STAGGER_DELAY_MS);
+                    staggerIndex++;
                 }
 
                 // ══════════════════════════════════════════════════════
@@ -293,31 +319,18 @@ export const AgentTown: React.FC = () => {
 
                     if (newTarget === targetZoom) return;
 
-                    // Zoom toward cursor position (standard map zoom behavior)
-                    // The point under the cursor should stay fixed after zoom.
-                    //
-                    // Before zoom: worldPoint = (cursorScreen - worldContainer.position) / currentZoom
-                    // After zoom:  cursorScreen = worldPoint * newZoom + newPosition
-                    // => newPosition = cursorScreen - worldPoint * newZoom
-
                     const rect = app.canvas.getBoundingClientRect();
                     const cursorX = e.clientX - rect.left;
                     const cursorY = e.clientY - rect.top;
 
-                    // World-space point under cursor (using current actual zoom, not target)
                     const worldX = (cursorX - worldContainer.x) / currentZoom;
                     const worldY = (cursorY - worldContainer.y) / currentZoom;
 
-                    // Compute the position the container needs to be at when zoom reaches newTarget
-                    // so that the same world point remains under the cursor.
-                    // We'll apply this gradually in the ticker alongside the zoom lerp,
-                    // but we store the "target position" to lerp toward as well.
                     const targetPosX = cursorX - worldX * newTarget;
                     const targetPosY = cursorY - worldY * newTarget;
 
                     targetZoom = newTarget;
 
-                    // Store target position for the ticker to lerp toward
                     targetWorldX = targetPosX;
                     targetWorldY = targetPosY;
                 };
@@ -334,7 +347,6 @@ export const AgentTown: React.FC = () => {
                 // ══════════════════════════════════════════════════════
 
                 pointerDownHandler = (e: PointerEvent) => {
-                    // Allow pan on middle button, or left button
                     if (e.button === 0 || e.button === 1) {
                         isDragging = true;
                         lastPointerX = e.clientX;
@@ -354,7 +366,6 @@ export const AgentTown: React.FC = () => {
                     worldContainer.x += dx;
                     worldContainer.y += dy;
 
-                    // Keep target position in sync so zoom lerp does not fight the drag
                     targetWorldX = worldContainer.x;
                     targetWorldY = worldContainer.y;
                 };
@@ -381,14 +392,8 @@ export const AgentTown: React.FC = () => {
                         const { width: newW, height: newH } = entry.contentRect;
                         if (newW === 0 || newH === 0) continue;
 
-                        // Resize the renderer
                         app.renderer.resize(newW, newH);
 
-                        // Re-center: shift worldContainer so the map center stays at viewport center
-                        const currentWorldCenterX = (newW / 2 - worldContainer.x) / currentZoom;
-                        const currentWorldCenterY = (newH / 2 - worldContainer.y) / currentZoom;
-
-                        // We want mapCenterIso to stay at viewport center
                         worldContainer.x = newW / 2 - mapCenterIso.x * currentZoom;
                         worldContainer.y = newH / 2 - mapCenterIso.y * currentZoom;
 
@@ -400,99 +405,104 @@ export const AgentTown: React.FC = () => {
                 resizeObserver.observe(containerRef.current);
 
                 // ══════════════════════════════════════════════════════
-                // ── IPC Chat Events → Agent Movement ──
-                // ══════════════════════════════════════════════════════
-
-                const chatApi = window.dogbaApi?.chat;
-                if (chatApi) {
-                    // Track which agents are currently streaming (to avoid duplicate triggers)
-                    const streamingAgents = new Set<string>();
-
-                    unsubStream = chatApi.onStream((agentName, _chunk) => {
-                        const agent = isoAgentMap.get(agentName.toLowerCase());
-                        if (!agent || agent.id === 'cto') return;
-
-                        // Only trigger on first chunk (stream start)
-                        if (streamingAgents.has(agent.id)) return;
-                        streamingAgents.add(agent.id);
-
-                        // Move agent to WORK ZONE with THINKING state
-                        agent.state = 'THINKING';
-                        agent.visual.animState = 'think';
-                        agent.stateAnimTimer = 0;
-                        updateOtterStateDot(agent.visual, STATE_COLORS.THINKING);
-                        showOtterBubble(agent.visual, '작업 중...');
-                        pickIsoZoneDest(agent, 'work');
-                    });
-
-                    unsubStreamEnd = chatApi.onStreamEnd((agentName) => {
-                        const agent = isoAgentMap.get(agentName.toLowerCase());
-                        if (!agent || agent.id === 'cto') return;
-
-                        const wasStreaming = streamingAgents.has(agent.id);
-                        streamingAgents.delete(agent.id);
-
-                        if (!wasStreaming) {
-                            // Stream ended but agent was never in streaming set — likely an error
-                            agent.state = 'ERROR';
-                            agent.visual.animState = 'error';
-                            agent.stateAnimTimer = 0;
-                            updateOtterStateDot(agent.visual, STATE_COLORS.ERROR);
-                            showOtterBubble(agent.visual, '오류 발생');
-                            return;
-                        }
-
-                        // Transition to SUCCESS (auto-returns to IDLE after 72 frames)
-                        agent.state = 'SUCCESS';
-                        agent.visual.animState = 'success';
-                        agent.stateAnimTimer = 0;
-                        updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
-                        showOtterBubble(agent.visual, '완료!');
-                    });
-
-                    // ── Item 2: chat:tool-use subscription → visual feedback ──
-                    unsubToolUse = chatApi.onToolUse((agentName, _toolData) => {
-                        const agent = isoAgentMap.get(agentName.toLowerCase());
-                        if (!agent || agent.id === 'cto') return;
-                        showOtterBubble(agent.visual, '\uD83D\uDD27 도구 사용 중...');
-                    });
-                }
-
-                // ══════════════════════════════════════════════════════
                 // ── useTerminalStore ↔ AgentTown 연결 ──
                 // ══════════════════════════════════════════════════════
 
                 unsubTerminal = useTerminalStore.subscribe((state, prevState) => {
+                    // ── 탭 상태 변경 감지 ──
                     for (const tab of state.tabs) {
                         const prev = prevState.tabs.find(t => t.id === tab.id);
-                        // Only react to status changes (or new tabs)
                         if (prev && prev.status === tab.status) continue;
 
-                        // Find agent by agentId on the tab
                         if (!tab.agentId) continue;
                         const agent = isoAgentMap.get(tab.agentId);
                         if (!agent || agent.id === 'cto') continue;
 
                         if (tab.status === 'connecting') {
-                            // Walk to work zone
                             agent.state = 'WALK';
                             agent.visual.animState = 'walk';
                             updateOtterStateDot(agent.visual, STATE_COLORS.WALK);
                             pickIsoZoneDest(agent, 'work');
                         } else if (tab.status === 'connected') {
-                            // Working
                             agent.state = 'RUNNING';
                             agent.visual.animState = 'walk';
                             agent.stateAnimTimer = 0;
                             updateOtterStateDot(agent.visual, STATE_COLORS.RUNNING);
-                            showOtterBubble(agent.visual, '터미널 작업 중...');
+                            showOtterBubble(agent.visual, '터미널 연결됨');
                         } else if (tab.status === 'exited') {
-                            // Success then back to idle
                             agent.state = 'SUCCESS';
                             agent.visual.animState = 'success';
                             agent.stateAnimTimer = 0;
                             updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
-                            showOtterBubble(agent.visual, '완료!');
+                            showOtterBubble(agent.visual, '세션 종료');
+                        }
+                    }
+
+                    // ── 에이전트 활동 상태 변경 → 시각적 반응 + 게이미피케이션 ──
+                    for (const [agentId, activity] of Object.entries(state.agentActivity)) {
+                        const prevActivity = prevState.agentActivity[agentId];
+                        if (prevActivity === activity) continue;
+
+                        const agent = isoAgentMap.get(agentId);
+                        if (!agent || agent.id === 'cto') continue;
+
+                        switch (activity) {
+                            case 'thinking':
+                                agent.state = 'THINKING';
+                                agent.visual.animState = 'think';
+                                agent.stateAnimTimer = 0;
+                                updateOtterStateDot(agent.visual, STATE_COLORS.THINKING);
+                                showOtterBubble(agent.visual, '생각 중...');
+                                pickIsoZoneDest(agent, 'work');
+                                break;
+                            case 'working':
+                                agent.state = 'RUNNING';
+                                agent.visual.animState = 'walk';
+                                agent.stateAnimTimer = 0;
+                                updateOtterStateDot(agent.visual, STATE_COLORS.RUNNING);
+                                showOtterBubble(agent.visual, '도구 사용 중...');
+                                // 이미 WORK ZONE이 아니면 이동
+                                pickIsoZoneDest(agent, 'work');
+                                break;
+                            case 'success': {
+                                agent.state = 'SUCCESS';
+                                agent.visual.animState = 'success';
+                                agent.stateAnimTimer = 0;
+                                updateOtterStateDot(agent.visual, STATE_COLORS.SUCCESS);
+                                showOtterBubble(agent.visual, '완료!');
+                                // 게이미피케이션: XP + 코인 적립
+                                const appStore = useAppStore.getState();
+                                const hadError = prevActivity === 'error';
+                                appStore.addPoints(hadError ? 10 : 15);
+                                appStore.addCoins(5);
+                                // 레벨업 체크 및 토스트
+                                const newGam = useAppStore.getState().gamification;
+                                if (newGam.lastLevelUp && newGam.lastLevelUp > Date.now() - 1000) {
+                                    appStore.addToast({
+                                        type: 'success',
+                                        message: `레벨 업! Lv.${newGam.level} ${newGam.levelTitle}`,
+                                    });
+                                }
+                                break;
+                            }
+                            case 'error':
+                                agent.state = 'ERROR';
+                                agent.visual.animState = 'error';
+                                agent.stateAnimTimer = 0;
+                                updateOtterStateDot(agent.visual, STATE_COLORS.ERROR);
+                                showOtterBubble(agent.visual, '오류 발생');
+                                break;
+                            case 'idle':
+                                // SUCCESS/ERROR → IDLE 전환은 애니메이션 루프에서 처리
+                                if (agent.state === 'THINKING' || agent.state === 'RUNNING') {
+                                    agent.state = 'IDLE';
+                                    agent.visual.animState = 'idle';
+                                    agent.stateAnimTimer = 0;
+                                    updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
+                                    // idle → REST AREA로 복귀
+                                    pickIsoZoneDest(agent, 'rest');
+                                }
+                                break;
                         }
                     }
                 });
@@ -508,11 +518,9 @@ export const AgentTown: React.FC = () => {
                         currentZoom += (targetZoom - currentZoom) * ZOOM_LERP_FACTOR;
                         worldContainer.scale.set(currentZoom);
 
-                        // Lerp position toward target (for zoom-to-cursor)
                         worldContainer.x += (targetWorldX - worldContainer.x) * ZOOM_LERP_FACTOR;
                         worldContainer.y += (targetWorldY - worldContainer.y) * ZOOM_LERP_FACTOR;
                     } else if (currentZoom !== targetZoom) {
-                        // Snap to final value to avoid sub-pixel drift
                         currentZoom = targetZoom;
                         worldContainer.scale.set(currentZoom);
                         worldContainer.x = targetWorldX;
@@ -520,13 +528,15 @@ export const AgentTown: React.FC = () => {
                     }
 
                     for (const agent of isoAgents) {
+                        // 숨김 처리된 에이전트는 스킵
+                        if (!agent.visible) continue;
+
                         // Bubble tick
                         tickOtterBubble(agent.visual);
 
                         // ── THINKING: walk to destination first, then sway in place ──
                         if (agent.state === 'THINKING') {
                             if (agent.path.length > 0) {
-                                // Still walking to work zone — use walk animation
                                 const target = agent.path[0];
                                 const targetIso = gridToIso(target.x, target.y);
                                 const dx = targetIso.x - agent.visual.container.x;
@@ -549,14 +559,13 @@ export const AgentTown: React.FC = () => {
                                 }
                                 tickOtterAnimation(agent.visual, now, true);
                             } else {
-                                // Arrived — sway in place
                                 agent.visual.animState = 'think';
                                 tickOtterAnimation(agent.visual, now, false);
                             }
                             continue;
                         }
 
-                        // ── SUCCESS: celebratory bounce ──
+                        // ── SUCCESS: celebratory bounce, then return to REST AREA ──
                         if (agent.state === 'SUCCESS') {
                             agent.visual.animState = 'success';
                             agent.stateAnimTimer++;
@@ -566,12 +575,13 @@ export const AgentTown: React.FC = () => {
                                 agent.visual.animState = 'idle';
                                 agent.stateAnimTimer = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
-                                pickIsoWanderDest(agent);
+                                // 성공 후 REST AREA로 복귀
+                                pickIsoZoneDest(agent, 'rest');
                             }
                             continue;
                         }
 
-                        // ── ERROR: shake + red flash ──
+                        // ── ERROR: shake + red flash, then return to REST AREA ──
                         if (agent.state === 'ERROR') {
                             agent.visual.animState = 'error';
                             agent.stateAnimTimer++;
@@ -583,7 +593,8 @@ export const AgentTown: React.FC = () => {
                                 agent.visual.sprite.tint = 0xffffff;
                                 agent.visual.sprite.x = 0;
                                 updateOtterStateDot(agent.visual, STATE_COLORS.IDLE);
-                                pickIsoWanderDest(agent);
+                                // 에러 후 REST AREA로 복귀
+                                pickIsoZoneDest(agent, 'rest');
                             }
                             continue;
                         }
@@ -606,7 +617,6 @@ export const AgentTown: React.FC = () => {
                                 agent.visual.container.x += (dx / dist) * speed;
                                 agent.visual.container.y += (dy / dist) * speed;
 
-                                // Update otter direction based on grid-space movement
                                 const gridDx = target.x - agent.gridX;
                                 const gridDy = target.y - agent.gridY;
                                 const dir = getIsoDirection(gridDx, gridDy);
@@ -625,7 +635,12 @@ export const AgentTown: React.FC = () => {
                             if (agent.pauseTimer >= pauseFrames) {
                                 agent.pauseTimer = 0;
                                 if (agent.state === 'IDLE' || agent.state === 'WALK') {
-                                    pickIsoWanderDest(agent);
+                                    // IDLE 시 REST AREA 근처에서 배회
+                                    if (agent.id === 'raccoon') {
+                                        pickIsoZoneDest(agent, 'rest');
+                                    } else {
+                                        pickIsoWanderDest(agent);
+                                    }
                                 } else if (agent.state === 'RUNNING') {
                                     pickIsoZoneDest(agent, 'work');
                                 }
@@ -637,6 +652,7 @@ export const AgentTown: React.FC = () => {
 
                     // ── Depth sort: re-order children by iso depth (row+col) ──
                     for (const agent of isoAgents) {
+                        if (!agent.visible) continue;
                         agent.visual.container.zIndex = 100 + agent.gridX + agent.gridY;
                     }
                     worldContainer.sortChildren();
@@ -653,7 +669,6 @@ export const AgentTown: React.FC = () => {
         return () => {
             isMounted = false;
 
-            // Remove event listeners (use saved canvas ref — app.canvas may be undefined after destroy)
             if (canvasElRef) {
                 if (wheelHandler) {
                     canvasElRef.removeEventListener('wheel', wheelHandler);
@@ -674,16 +689,11 @@ export const AgentTown: React.FC = () => {
                 pointerUpHandler = null;
             }
 
-            // Disconnect resize observer
             if (resizeObserver) {
                 resizeObserver.disconnect();
                 resizeObserver = null;
             }
 
-            // Unsubscribe IPC chat listeners
-            if (unsubStream) { unsubStream(); unsubStream = null; }
-            if (unsubStreamEnd) { unsubStreamEnd(); unsubStreamEnd = null; }
-            if (unsubToolUse) { unsubToolUse(); unsubToolUse = null; }
             if (unsubTerminal) { unsubTerminal(); unsubTerminal = null; }
 
             if (appRef.current) {

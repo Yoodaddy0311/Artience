@@ -110,6 +110,12 @@ const DEFAULT_RUN_SETTINGS: RunSettings = {
 // ── Store Interface ──
 
 interface AppState {
+    // Auth Gate
+    isAuthenticated: boolean | null;  // null = checking, true/false = result
+    authChecking: boolean;
+    checkAuth: () => Promise<void>;
+    loginAuth: () => Promise<void>;
+
     // Agent Highlight (P2-9)
     highlightedAgentId: string | null;
     setHighlightedAgentId: (id: string | null) => void;
@@ -138,6 +144,8 @@ interface AppState {
     gamification: GamificationState;
     updateGamification: (patch: Partial<GamificationState>) => void;
     resetGamification: () => void;
+    addPoints: (points: number) => void;
+    addCoins: (coins: number) => void;
 
     // Assets
     assets: ProjectAsset[];
@@ -158,6 +166,47 @@ interface AppState {
 export const useAppStore = create<AppState>()(
     persist(
         (set, get) => ({
+            // ── Auth Gate ──
+            isAuthenticated: null,
+            authChecking: false,
+            checkAuth: async () => {
+                // Offline → skip auth gate
+                if (!navigator.onLine) {
+                    set({ isAuthenticated: true, authChecking: false });
+                    return;
+                }
+                set({ authChecking: true });
+                try {
+                    const api = window.dogbaApi?.cli;
+                    if (!api) {
+                        set({ isAuthenticated: false, authChecking: false });
+                        return;
+                    }
+                    // 3-second timeout
+                    const result = await Promise.race([
+                        api.authStatus(),
+                        new Promise<never>((_, reject) =>
+                            setTimeout(() => reject(new Error('timeout')), 3000),
+                        ),
+                    ]);
+                    set({ isAuthenticated: result.authenticated, authChecking: false });
+                } catch {
+                    // Timeout or error → treat as unauthenticated
+                    set({ isAuthenticated: false, authChecking: false });
+                }
+            },
+            loginAuth: async () => {
+                try {
+                    const api = window.dogbaApi?.cli;
+                    if (!api) return;
+                    await api.authLogin();
+                    // Re-check after login attempt
+                    get().checkAuth();
+                } catch {
+                    // ignore
+                }
+            },
+
             // ── Agent Highlight ──
             highlightedAgentId: null,
             setHighlightedAgentId: (id) => set({ highlightedAgentId: id }),
@@ -219,6 +268,50 @@ export const useAppStore = create<AppState>()(
 
             resetGamification: () =>
                 set({ gamification: { ...DEFAULT_GAMIFICATION } }),
+
+            addPoints: (points: number) =>
+                set((state) => {
+                    const g = state.gamification;
+                    const newTotal = g.totalPoints + points;
+                    let newProgress = g.levelProgress + points;
+                    let newLevel = g.level;
+                    let newPointsToNext = g.pointsToNextLevel;
+                    let newTitle = g.levelTitle;
+                    let lastLevelUp = g.lastLevelUp;
+
+                    // Level up check
+                    while (newProgress >= newPointsToNext && newLevel < 99) {
+                        newProgress -= newPointsToNext;
+                        newLevel++;
+                        newPointsToNext = Math.floor(newPointsToNext * 1.3);
+                        lastLevelUp = Date.now();
+                        const titles: Record<number, string> = {
+                            1: '입문자', 2: '학습자', 3: '수험생', 4: '우등생', 5: '전문가',
+                            6: '마스터', 7: '그랜드마스터', 8: '레전드', 9: '챔피언', 10: '엘리트',
+                        };
+                        newTitle = titles[newLevel] || `Lv.${newLevel}`;
+                    }
+
+                    return {
+                        gamification: {
+                            ...g,
+                            totalPoints: newTotal,
+                            levelProgress: newProgress,
+                            pointsToNextLevel: newPointsToNext,
+                            level: newLevel,
+                            levelTitle: newTitle,
+                            lastLevelUp,
+                        },
+                    };
+                }),
+
+            addCoins: (coins: number) =>
+                set((state) => ({
+                    gamification: {
+                        ...state.gamification,
+                        coins: state.gamification.coins + coins,
+                    },
+                })),
 
             // ── Assets ──
             assets: [],

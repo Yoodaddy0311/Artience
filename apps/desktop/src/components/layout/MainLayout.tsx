@@ -1,4 +1,4 @@
-import React, { Suspense, useState, useRef, useCallback, useEffect } from 'react';
+import React, { Suspense, useState, useRef, useEffect } from 'react';
 import { Wand2, Check, Undo2, Settings, Mail, Upload, Download, Sparkles, Home, Inbox, Bot, ClipboardList, Clock, Package, Gem } from 'lucide-react';
 const AgentTown = React.lazy(() =>
     import('../agent-town/AgentTown').then(m => ({ default: m.AgentTown }))
@@ -26,10 +26,11 @@ import { InspectorCard } from '../agent-town/InspectorCard';
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
 import { MailInbox } from '../mail/MailInbox';
+import { useTerminalStore } from '../../store/useTerminalStore';
 
 // ── Feature Flags ──
 
-const SHOW_GAMIFICATION = false;
+const SHOW_GAMIFICATION = true;
 
 // ── AgentTown Error Boundary ──
 
@@ -183,30 +184,8 @@ export const MainLayout: React.FC = () => {
         return () => { unsub?.(); };
     }, []);
 
-    // Terminal split drag-resize
-    const [terminalHeight, setTerminalHeight] = useState(300);
-    const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-
-    const handleDragStart = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        dragRef.current = { startY: e.clientY, startHeight: terminalHeight };
-
-        const handleMove = (ev: MouseEvent) => {
-            if (!dragRef.current) return;
-            const diff = dragRef.current.startY - ev.clientY;
-            const newHeight = Math.max(150, Math.min(window.innerHeight * 0.6, dragRef.current.startHeight + diff));
-            setTerminalHeight(newHeight);
-        };
-
-        const handleUp = () => {
-            dragRef.current = null;
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-        };
-
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-    }, [terminalHeight]);
+    // Terminal panel visibility (right side, like RunPanel)
+    const hasTerminalTabs = useTerminalStore((s) => s.tabs.length > 0);
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -240,10 +219,10 @@ export const MainLayout: React.FC = () => {
 
             {/* Background/Workspace Layer */}
             <div className="flex-1 relative bg-cream-100">
-                {/* flex-col split: top AgentTown + bottom Terminal */}
+                {/* Full height AgentTown / Studio */}
                 <div className="flex flex-col h-full">
-                    {/* Top: AgentTown / Studio */}
-                    <div className="relative" style={{ flex: '1 1 0', minHeight: '200px' }}>
+                    {/* AgentTown / Studio (full height) */}
+                    <div className="relative flex-1">
                         {/* Town view */}
                         <div
                             className="absolute inset-0"
@@ -448,24 +427,18 @@ export const MainLayout: React.FC = () => {
                     )}
 
                         </div>
-                    </div>{/* end Top: AgentTown / Studio */}
-
-                    {/* Drag Handle */}
-                    <div
-                        className="h-2 bg-gray-200 hover:bg-[#E8DAFF] cursor-row-resize border-y border-black flex items-center justify-center transition-colors"
-                        onMouseDown={handleDragStart}
-                    >
-                        <div className="w-12 h-1 bg-gray-400 rounded-full" />
-                    </div>
-
-                    {/* Bottom: TerminalPanel */}
-                    <div style={{ height: `${terminalHeight}px`, minHeight: '150px' }}>
-                        <Suspense fallback={<div className="w-full h-full bg-[#1e1e2e] flex items-center justify-center text-white text-sm">Loading Terminal...</div>}>
-                            <TerminalPanel />
-                        </Suspense>
-                    </div>
-                </div>{/* end flex-col split */}
+                    </div>{/* end AgentTown / Studio */}
+                </div>{/* end flex-col */}
             </div>
+
+            {/* Terminal/Chat Panel (Right side, like RunPanel) */}
+            {hasTerminalTabs && !showRunPanel && !isInboxOpen && (
+                <div className="w-full max-w-lg h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0">
+                    <Suspense fallback={<div className="w-full h-full bg-cream-50 flex items-center justify-center text-black text-sm font-bold">Loading...</div>}>
+                        <TerminalPanel />
+                    </Suspense>
+                </div>
+            )}
 
             {/* Run Panel (Right) */}
             {showRunPanel && !isInboxOpen && (
