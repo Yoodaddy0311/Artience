@@ -40,7 +40,13 @@ const NATIVE_COMMANDS: SlashCommand[] = [
     { id: '/terminal-setup', label: '/terminal-setup', description: '터미널 설정', source: 'native' },
     { id: '/login', label: '/login', description: '로그인', source: 'native' },
     { id: '/logout', label: '/logout', description: '로그아웃', source: 'native' },
+    { id: '/team', label: '/team', description: '팀 모드 (artibot:team)', source: 'native' },
 ];
+
+// Shortcut aliases: short command → full skill command
+const COMMAND_ALIASES: Record<string, string> = {
+    '/team': '/artibot:team',
+};
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 const TEXT_EXTS = new Set(['txt', 'md', 'ts', 'tsx', 'js', 'jsx', 'py', 'json', 'yaml', 'yml', 'toml', 'css', 'html', 'xml', 'sql', 'sh', 'bash', 'zsh', 'env', 'log', 'csv']);
@@ -326,8 +332,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ tabId, agentSprite, onSubm
             if (p) paths.push(p);
         }
 
+        // Resolve command aliases (e.g. /team → /artibot:team)
+        let resolved = trimmed;
+        for (const [alias, target] of Object.entries(COMMAND_ALIASES)) {
+            if (resolved === alias || resolved.startsWith(alias + ' ')) {
+                resolved = target + resolved.slice(alias.length);
+                break;
+            }
+        }
+
         // Build final message: text + attachment paths
-        let message = trimmed;
+        let message = resolved;
         if (paths.length > 0) {
             const pathList = paths.join('\n');
             message = message ? `${message}\n\n${pathList}` : pathList;

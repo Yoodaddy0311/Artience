@@ -13,5 +13,9 @@
       "Bash(python -m uvicorn:*)",
       "Bash(pnpm run dev:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "artience"
+  ]
 }

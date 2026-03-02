@@ -37,12 +37,19 @@ for (const a of DEFAULT_AGENTS) {
 const CTO_ID = 'raccoon'; // CTO는 항상 독 첫 번째, 제거 불가
 
 export const BottomDock: React.FC = () => {
-    const {
-        tabs, activeTabId, setActiveTab, addTab, removeTab,
-        setCharacterDir, characterDirMap,
-        dockAgents, addDockAgent, removeDockAgent,
-        agentSettings, setAgentSettings,
-    } = useTerminalStore();
+    // Selective subscriptions to avoid re-render from parsedMessages/agentActivity churn
+    const tabs = useTerminalStore((s) => s.tabs);
+    const activeTabId = useTerminalStore((s) => s.activeTabId);
+    const setActiveTab = useTerminalStore((s) => s.setActiveTab);
+    const addTab = useTerminalStore((s) => s.addTab);
+    const removeTab = useTerminalStore((s) => s.removeTab);
+    const setCharacterDir = useTerminalStore((s) => s.setCharacterDir);
+    const characterDirMap = useTerminalStore((s) => s.characterDirMap);
+    const dockAgents = useTerminalStore((s) => s.dockAgents);
+    const addDockAgent = useTerminalStore((s) => s.addDockAgent);
+    const removeDockAgent = useTerminalStore((s) => s.removeDockAgent);
+    const agentSettings = useTerminalStore((s) => s.agentSettings);
+    const setAgentSettings = useTerminalStore((s) => s.setAgentSettings);
 
     const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; agentId: string } | null>(null);
     const [addPopup, setAddPopup] = useState(false);

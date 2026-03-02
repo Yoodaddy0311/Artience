@@ -186,6 +186,7 @@ export const MainLayout: React.FC = () => {
 
     // Terminal panel visibility (right side, like RunPanel)
     const hasTerminalTabs = useTerminalStore((s) => s.tabs.length > 0);
+    const panelVisible = useTerminalStore((s) => s.panelVisible);
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -432,7 +433,7 @@ export const MainLayout: React.FC = () => {
             </div>
 
             {/* Terminal/Chat Panel (Right side, like RunPanel) */}
-            {hasTerminalTabs && !showRunPanel && !isInboxOpen && (
+            {hasTerminalTabs && panelVisible && !showRunPanel && !isInboxOpen && (
                 <div className="w-full max-w-lg h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0">
                     <Suspense fallback={<div className="w-full h-full bg-cream-50 flex items-center justify-center text-black text-sm font-bold">Loading...</div>}>
                         <TerminalPanel />

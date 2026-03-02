@@ -12,15 +12,20 @@ import * as path from 'path';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface HookEntry {
+    type: 'command';
+    command: string;
+}
+
+interface HookRule {
+    matcher: { tools?: string[] } | Record<string, never>;
+    hooks: HookEntry[];
+}
+
 interface ClaudeSettings {
     hooks?: {
-        PostToolUse?: Array<{
-            matcher: string;
-            command: string;
-        }>;
-        Stop?: Array<{
-            command: string;
-        }>;
+        PostToolUse?: HookRule[];
+        Stop?: HookRule[];
     };
     permissions?: {
         allow?: string[];
@@ -66,18 +71,25 @@ class HooksManager {
                 },
             };
 
-            // Detect prettier and add hook
+            // Detect prettier and add hook (new matcher format)
             if (this.hasDependency(projectDir, 'prettier')) {
                 settings.hooks!.PostToolUse!.push({
-                    matcher: 'Edit|Write|MultiEdit',
-                    command: 'npx prettier --write "$FILEPATH" 2>/dev/null || true',
+                    matcher: { tools: ['Edit', 'Write', 'MultiEdit'] },
+                    hooks: [{
+                        type: 'command',
+                        command: 'npx prettier --write "$FILEPATH" 2>/dev/null || true',
+                    }],
                 });
             }
 
-            // Activity logging hook (cross-platform: node -e instead of date -Iseconds)
+            // Activity logging hook (new matcher format)
             const logPath = path.join(claudeDir, 'activity.log').replace(/\\/g, '/');
             settings.hooks!.Stop!.push({
-                command: `node -e "require('fs').appendFileSync('${logPath}', new Date().toISOString() + ' STOP\\n')"`,
+                matcher: {},
+                hooks: [{
+                    type: 'command',
+                    command: `node -e "require('fs').appendFileSync('${logPath}', new Date().toISOString() + ' STOP\\n')"`,
+                }],
             });
 
             // Common safe permissions

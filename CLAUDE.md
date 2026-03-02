@@ -1,0 +1,23 @@
+# Project Instructions
+
+Project: dogba
+
+## Build & Test Commands
+
+- Build: `npm run build`
+- Dev: `npm run dev`
+- Lint: `npm run lint`
+- Type check: `npm run typecheck`
+- TypeScript check: `npx tsc --noEmit`
+
+## Git
+
+- Use conventional commits (feat:, fix:, refactor:, etc.)
+- Run tests before committing
+
+## General
+
+- Write clean, readable code
+- Follow existing code style and patterns
+- Add tests for new features
+- Keep changes focused and minimal

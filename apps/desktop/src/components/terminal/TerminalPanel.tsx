@@ -334,12 +334,21 @@ const ViewModeToggle: React.FC<{
 };
 
 
+// Stable empty array reference (avoids infinite re-render from [] !== [])
+const STABLE_EMPTY_MESSAGES: ParsedEvent[] = [];
+
 // ── TerminalPanel 메인 컴포넌트 ──
 export const TerminalPanel: React.FC = () => {
-    const {
-        tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab,
-        agentActivity, viewMode, setViewMode, parsedMessages,
-    } = useTerminalStore();
+    // Selective subscriptions to avoid infinite re-render from parsedMessages/agentActivity churn
+    const tabs = useTerminalStore((s) => s.tabs);
+    const activeTabId = useTerminalStore((s) => s.activeTabId);
+    const addTab = useTerminalStore((s) => s.addTab);
+    const removeTab = useTerminalStore((s) => s.removeTab);
+    const setActiveTab = useTerminalStore((s) => s.setActiveTab);
+    const updateTab = useTerminalStore((s) => s.updateTab);
+    const viewMode = useTerminalStore((s) => s.viewMode);
+    const setViewMode = useTerminalStore((s) => s.setViewMode);
+    const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
 
     const xtermMapRef = useRef<Map<string, { terminal: Terminal; fitAddon: FitAddon }>>(new Map());
     const containerRef = useRef<HTMLDivElement>(null);
@@ -352,17 +361,20 @@ export const TerminalPanel: React.FC = () => {
             : DEFAULT_AGENTS.find(a => a.id === activeTab.agentId))
         : null;
 
-    // 현재 에이전트 활동 상태
-    const currentActivity = activeTab?.agentId ? agentActivity[activeTab.agentId] : undefined;
+    // 현재 에이전트 활동 상태 (selective subscription)
+    const activeAgentId = activeTab?.agentId;
+    const currentActivity = useTerminalStore((s) => activeAgentId ? s.agentActivity[activeAgentId] : undefined);
 
     // 현재 탭의 뷰 모드 (기본: terminal)
     const currentViewMode: ViewMode = activeTabId ? (viewMode[activeTabId] || 'terminal') : 'terminal';
 
-    // 현재 탭의 채팅 메시지
-    const currentMessages = useMemo(() => {
-        if (!activeTabId) return [];
-        return parsedMessages[activeTabId] || [];
-    }, [activeTabId, parsedMessages]);
+    // 현재 탭의 채팅 메시지 (selective subscription — stable empty ref to avoid infinite re-render)
+    const currentMessages = useTerminalStore(
+        useCallback((s: { parsedMessages: Record<string, ParsedEvent[]> }) => {
+            if (!activeTabId) return STABLE_EMPTY_MESSAGES;
+            return s.parsedMessages[activeTabId] || STABLE_EMPTY_MESSAGES;
+        }, [activeTabId]),
+    );
 
     // ── ChatInput onSubmit 콜백: PTY write(50ms split) + parsedMessages 추가 ──
     const handleChatSubmit = useCallback((msg: string) => {
@@ -646,6 +658,14 @@ export const TerminalPanel: React.FC = () => {
                             {activeTab.cwd}
                         </span>
                     )}
+                    {/* 패널 닫기 버튼 */}
+                    <button
+                        onClick={() => setPanelVisible(false)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-black bg-white shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] active:bg-red-100 transition-all text-black font-black text-sm"
+                        title="패널 닫기"
+                    >
+                        ×
+                    </button>
                 </div>
             </div>
 

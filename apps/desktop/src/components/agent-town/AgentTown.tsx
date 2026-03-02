@@ -67,8 +67,8 @@ const DOKBA_PROFILE: AgentProfile = {
     sprite: '/assets/characters/raccoon_spritesheet.png',
     state: 'IDLE',
     currentJobId: null,
-    home: { x: 20, y: 14 },
-    pos: { x: 20, y: 14 },
+    home: { x: 10, y: 20 },
+    pos: { x: 10, y: 20 },
 };
 
 // ── 단일화 모드: Dokba만 활성 표시, 나머지 숨김 ──

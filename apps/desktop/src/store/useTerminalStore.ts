@@ -23,6 +23,10 @@ interface TerminalState {
     tabs: TerminalTab[];
     activeTabId: string | null;
 
+    // 패널 표시/숨기기
+    panelVisible: boolean;
+    setPanelVisible: (visible: boolean) => void;
+
     // 뷰 모드: 탭별 터미널/채팅 전환 (메모리 only)
     viewMode: Record<string, ViewMode>; // tabId → mode
     setViewMode: (tabId: string, mode: ViewMode) => void;
@@ -65,6 +69,8 @@ export const useTerminalStore = create<TerminalState>()(
         (set) => ({
             tabs: [],
             activeTabId: null,
+            panelVisible: true,
+            setPanelVisible: (visible) => set({ panelVisible: visible }),
             viewMode: {},
             parsedMessages: {},
             characterDirMap: {},
@@ -120,7 +126,7 @@ export const useTerminalStore = create<TerminalState>()(
                 },
             })),
 
-            addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id })),
+            addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id, panelVisible: true })),
             removeTab: (id) => set((s) => {
                 const newTabs = s.tabs.filter(t => t.id !== id);
                 const newActive = s.activeTabId === id
