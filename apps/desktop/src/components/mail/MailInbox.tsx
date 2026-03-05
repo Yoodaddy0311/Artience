@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { X, CheckCheck, Mail, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import {
+    X,
+    CheckCheck,
+    Mail,
+    ChevronDown,
+    ChevronUp,
+    Trash2,
+} from 'lucide-react';
 import { useMailStore, type MailMessage } from '../../store/useMailStore';
 
 // ── Type Badge ──

@@ -18,6 +18,10 @@ export const STATE_COLORS: Record<string, number> = {
     SUCCESS: 0x34d399,
     ERROR: 0xef4444,
     NEEDS_INPUT: 0xa855f7,
+    READING: 0x3b82f6,
+    TYPING: 0xf97316,
+    WRITING: 0x8b5cf6,
+    SLEEPING: 0x6b7280,
 };
 
 export const STATE_COLORS_CSS: Record<string, string> = {
@@ -28,6 +32,10 @@ export const STATE_COLORS_CSS: Record<string, string> = {
     SUCCESS: '#34d399',
     ERROR: '#ef4444',
     NEEDS_INPUT: '#a855f7',
+    READING: '#3b82f6',
+    TYPING: '#f97316',
+    WRITING: '#8b5cf6',
+    SLEEPING: '#6b7280',
 };
 
 export const STATE_LABELS: Record<AgentState, string> = {
@@ -38,6 +46,10 @@ export const STATE_LABELS: Record<AgentState, string> = {
     SUCCESS: '\uC131\uACF5',
     ERROR: '\uC624\uB958',
     NEEDS_INPUT: '\uC785\uB825 \uB300\uAE30',
+    READING: '\uC77D\uB294 \uC911',
+    TYPING: '\uBA85\uB839 \uC2E4\uD589',
+    WRITING: '\uCF54\uB4DC \uC791\uC131',
+    SLEEPING: '\uC218\uBA74 \uC911',
 };
 
 export const RACCOON_AGENT_ID = 'raccoon';
@@ -86,27 +98,138 @@ export interface BubbleConfig {
 
 /** Activity → bubble config mapping (texts[] for random selection) */
 export const BUBBLE_CONFIGS: Record<string, BubbleConfig> = {
-    idle:       { emoji: '\u{1F4A4}', texts: ['\uC26C\uB294 \uC911~', '\uCEE4\uD53C \uD0C0\uC784 \u2615', '\uB300\uAE30 \uC911\uC774\uC57C', '\uBD88\uB7EC\uC8FC\uBA74 \uB2EC\uB824\uAC08\uAC8C!'], displayFrames: 300, fadeFrames: 60 },
-    connecting: { emoji: '\u{1F4E1}', texts: ['\uC5F0\uACB0 \uC911...', '\uD130\uBBF8\uB110 \uC900\uBE44 \uC911...'], displayFrames: 210, fadeFrames: 60 },
-    thinking:  { emoji: '\u{1F914}', texts: ['\uC0DD\uAC01 \uC911...', '\uC74C... \uC774\uAC70 \uC5B4\uB5BB\uAC8C \uD558\uC9C0', '\uBD84\uC11D\uD558\uACE0 \uC788\uC5B4'], displayFrames: 0, fadeFrames: 60 },
-    working:   { emoji: '\u{1F527}', texts: ['\uC791\uC5C5 \uC911...'], displayFrames: 0, fadeFrames: 60 },
-    success:   { emoji: '\u{2705}', texts: ['\uC644\uB8CC!', '\uD574\uB0C8\uB2E4! \u{1F389}', '\uC798 \uB410\uC5B4! \u{1F44D}'], displayFrames: 210, fadeFrames: 60 },
-    error:     { emoji: '\u{274C}', texts: ['\uC624\uB958 \uBC1C\uC0DD...', '\uBB38\uC81C\uAC00 \uC0DD\uACBC\uC5B4 \u{1F630}', '\uC5D0\uB7EC\uB2E4!'], displayFrames: 300, fadeFrames: 60 },
-    connected: { emoji: '\u{1F50C}', texts: ['\uD130\uBBF8\uB110 \uC5F0\uACB0\uB428!', '\uC900\uBE44 \uC644\uB8CC!'], displayFrames: 210, fadeFrames: 60 },
-    exited:    { emoji: '\u{1F44B}', texts: ['\uC138\uC158 \uC885\uB8CC', '\uB2E4\uC74C\uC5D0 \uB610 \uB9CC\uB098!'], displayFrames: 210, fadeFrames: 60 },
+    idle: {
+        emoji: '\u{1F4A4}',
+        texts: [
+            '\uC26C\uB294 \uC911~',
+            '\uCEE4\uD53C \uD0C0\uC784 \u2615',
+            '\uB300\uAE30 \uC911\uC774\uC57C',
+            '\uBD88\uB7EC\uC8FC\uBA74 \uB2EC\uB824\uAC08\uAC8C!',
+        ],
+        displayFrames: 300,
+        fadeFrames: 60,
+    },
+    connecting: {
+        emoji: '\u{1F4E1}',
+        texts: [
+            '\uC5F0\uACB0 \uC911...',
+            '\uD130\uBBF8\uB110 \uC900\uBE44 \uC911...',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
+    thinking: {
+        emoji: '\u{1F914}',
+        texts: [
+            '\uC0DD\uAC01 \uC911...',
+            '\uC74C... \uC774\uAC70 \uC5B4\uB5BB\uAC8C \uD558\uC9C0',
+            '\uBD84\uC11D\uD558\uACE0 \uC788\uC5B4',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
+    working: {
+        emoji: '\u{1F527}',
+        texts: ['\uC791\uC5C5 \uC911...'],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
+    reading: {
+        emoji: '\u{1F50D}',
+        texts: [
+            '\uD30C\uC77C \uD655\uC778 \uC911...',
+            '\uBB38\uC11C \uC77D\uB294 \uC911...',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
+    typing: {
+        emoji: '\u{2328}\u{FE0F}',
+        texts: [
+            '\uBA85\uB839\uC5B4 \uC785\uB825 \uC911...',
+            '\uD130\uBBF8\uB110 \uC2E4\uD589 \uC911~',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
+    writing: {
+        emoji: '\u{270D}\u{FE0F}',
+        texts: [
+            '\uCF54\uB4DC \uC791\uC131 \uC911...',
+            '\uD30C\uC77C \uC4F0\uB294 \uC911...',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
+    sleeping: {
+        emoji: '\u{1F4A4}',
+        texts: ['Zzz...', 'zzZ... \uD734\uC2DD\uC774 \uD544\uC694\uD574'],
+        displayFrames: 300,
+        fadeFrames: 60,
+    },
+    success: {
+        emoji: '\u{2705}',
+        texts: [
+            '\uC644\uB8CC!',
+            '\uD574\uB0C8\uB2E4! \u{1F389}',
+            '\uC798 \uB410\uC5B4! \u{1F44D}',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
+    error: {
+        emoji: '\u{274C}',
+        texts: [
+            '\uC624\uB958 \uBC1C\uC0DD...',
+            '\uBB38\uC81C\uAC00 \uC0DD\uACBC\uC5B4 \u{1F630}',
+            '\uC5D0\uB7EC\uB2E4!',
+        ],
+        displayFrames: 300,
+        fadeFrames: 60,
+    },
+    connected: {
+        emoji: '\u{1F50C}',
+        texts: [
+            '\uD130\uBBF8\uB110 \uC5F0\uACB0\uB428!',
+            '\uC900\uBE44 \uC644\uB8CC!',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
+    exited: {
+        emoji: '\u{1F44B}',
+        texts: [
+            '\uC138\uC158 \uC885\uB8CC',
+            '\uB2E4\uC74C\uC5D0 \uB610 \uB9CC\uB098!',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
 };
 
 /** Tool-specific bubble text for working state */
 export const TOOL_BUBBLES: Record<string, { emoji: string; text: string }> = {
-    Edit:         { emoji: '\u{270F}\u{FE0F}', text: '\uCF54\uB4DC \uC218\uC815 \uC911...' },
-    Write:        { emoji: '\u{1F4DD}', text: '\uD30C\uC77C \uC791\uC131 \uC911...' },
-    Read:         { emoji: '\u{1F4D6}', text: '\uD30C\uC77C \uC77D\uB294 \uC911...' },
-    Bash:         { emoji: '\u{26A1}', text: '\uBA85\uB839\uC5B4 \uC2E4\uD589 \uC911...' },
-    Glob:         { emoji: '\u{1F50D}', text: '\uD30C\uC77C \uCC3E\uB294 \uC911...' },
-    Grep:         { emoji: '\u{1F50E}', text: '\uCF54\uB4DC \uAC80\uC0C9 \uC911...' },
-    WebFetch:     { emoji: '\u{1F310}', text: '\uC6F9 \uB370\uC774\uD130 \uAC00\uC838\uC624\uB294 \uC911...' },
-    WebSearch:    { emoji: '\u{1F50D}', text: '\uC6F9 \uAC80\uC0C9 \uC911...' },
-    TodoWrite:    { emoji: '\u{1F4CB}', text: '\uD560\uC77C \uC815\uB9AC \uC911...' },
+    Edit: {
+        emoji: '\u{270F}\u{FE0F}',
+        text: '\uCF54\uB4DC \uC218\uC815 \uC911...',
+    },
+    Write: { emoji: '\u{1F4DD}', text: '\uD30C\uC77C \uC791\uC131 \uC911...' },
+    Read: { emoji: '\u{1F4D6}', text: '\uD30C\uC77C \uC77D\uB294 \uC911...' },
+    Bash: {
+        emoji: '\u{26A1}',
+        text: '\uBA85\uB839\uC5B4 \uC2E4\uD589 \uC911...',
+    },
+    Glob: { emoji: '\u{1F50D}', text: '\uD30C\uC77C \uCC3E\uB294 \uC911...' },
+    Grep: { emoji: '\u{1F50E}', text: '\uCF54\uB4DC \uAC80\uC0C9 \uC911...' },
+    WebFetch: {
+        emoji: '\u{1F310}',
+        text: '\uC6F9 \uB370\uC774\uD130 \uAC00\uC838\uC624\uB294 \uC911...',
+    },
+    WebSearch: { emoji: '\u{1F50D}', text: '\uC6F9 \uAC80\uC0C9 \uC911...' },
+    TodoWrite: {
+        emoji: '\u{1F4CB}',
+        text: '\uD560\uC77C \uC815\uB9AC \uC911...',
+    },
 };
 
 // ── Interfaces ──
@@ -156,7 +279,10 @@ export interface AgentRuntime {
 // ── Agent helper functions ──
 
 /** Update the visual state dot on an agent runtime. */
-export function updateAgentStateDot(agent: AgentRuntime, state: AgentState): void {
+export function updateAgentStateDot(
+    agent: AgentRuntime,
+    state: AgentState,
+): void {
     agent.stateDot.clear();
     agent.stateDot.circle(0, 0, 3);
     agent.stateDot.fill(STATE_COLORS[state] || STATE_COLORS.IDLE);
@@ -321,9 +447,8 @@ export function tickAgentAnimation(
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         // Speed adjustment based on state
-        const speed = agent.state === 'RUNNING'
-            ? agentSpeedPx * 1.6
-            : agentSpeedPx;
+        const speed =
+            agent.state === 'RUNNING' ? agentSpeedPx * 1.6 : agentSpeedPx;
 
         if (dist > speed) {
             // Lerp towards target
@@ -350,7 +475,10 @@ export function tickAgentAnimation(
     } else {
         // ── Pause at destination, then pick new target ──
         agent.pauseTimer++;
-        const pauseFrames = (IDLE_PAUSE_MIN_MS + Math.random() * (IDLE_PAUSE_MAX_MS - IDLE_PAUSE_MIN_MS)) / (1000 / TARGET_FPS);
+        const pauseFrames =
+            (IDLE_PAUSE_MIN_MS +
+                Math.random() * (IDLE_PAUSE_MAX_MS - IDLE_PAUSE_MIN_MS)) /
+            (1000 / TARGET_FPS);
 
         if (agent.pauseTimer >= pauseFrames) {
             agent.pauseTimer = 0;
@@ -364,7 +492,8 @@ export function tickAgentAnimation(
     }
 
     // Shadow alpha
-    shadow.alpha = agent.path.length > 0 ? 0.12 : 0.08 + Math.sin(now * 0.003) * 0.02;
+    shadow.alpha =
+        agent.path.length > 0 ? 0.12 : 0.08 + Math.sin(now * 0.003) * 0.02;
 }
 
 /** Create a new AgentRuntime from a profile and PIXI texture. */
@@ -439,4 +568,3 @@ export function createAgentRuntime(
 
     return { runtime, container: agentContainer };
 }
-

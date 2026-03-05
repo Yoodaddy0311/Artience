@@ -11,20 +11,20 @@
  *   - Both modes send the same WS message types to the server.
  */
 
-import { type Connector } from "./connector.js";
-import { runClaude, type ClaudeRunnerOptions } from "./claude-runner.js";
+import { type Connector } from './connector.js';
+import { runClaude, type ClaudeRunnerOptions } from './claude-runner.js';
 import type {
-  TownWsMessage,
-  ChatCommand,
-  TaskAssign,
-  AgentStateChange,
-  TaskResult,
-  TaskAssigned,
-  TaskProgress,
-} from "@dokba/shared-types";
+    TownWsMessage,
+    ChatCommand,
+    TaskAssign,
+    AgentStateChange,
+    TaskResult,
+    TaskAssigned,
+    TaskProgress,
+} from '@dokba/shared-types';
 
 export interface TaskHandlerOptions {
-  claudeOptions?: ClaudeRunnerOptions;
+    claudeOptions?: ClaudeRunnerOptions;
 }
 
 /**
@@ -33,128 +33,138 @@ export interface TaskHandlerOptions {
  * and sends results back using the unified protocol.
  */
 export function registerTaskHandler(
-  connector: Connector,
-  options: TaskHandlerOptions = {},
+    connector: Connector,
+    options: TaskHandlerOptions = {},
 ): void {
-  connector.onMessage(async (msg: TownWsMessage) => {
-    if (msg.type === "CHAT_COMMAND") {
-      await handleChatCommand(connector, msg, options);
-    }
+    connector.onMessage(async (msg: TownWsMessage) => {
+        if (msg.type === 'CHAT_COMMAND') {
+            await handleChatCommand(connector, msg, options);
+        }
 
-    if (msg.type === "TASK_ASSIGN") {
-      await handleTaskAssign(connector, msg, options);
-    }
-  });
+        if (msg.type === 'TASK_ASSIGN') {
+            await handleTaskAssign(connector, msg, options);
+        }
+    });
 }
 
 async function handleChatCommand(
-  connector: Connector,
-  msg: ChatCommand,
-  options: TaskHandlerOptions,
+    connector: Connector,
+    msg: ChatCommand,
+    options: TaskHandlerOptions,
 ): Promise<void> {
-  const agent = msg.target_agent ?? "unknown";
-  const prompt = msg.text ?? "";
-  const taskId = msg.taskId;
+    const agent = msg.target_agent ?? 'unknown';
+    const prompt = msg.text ?? '';
+    const taskId = msg.taskId;
 
-  if (!prompt) {
-    console.warn("[dokba] Received empty CHAT_COMMAND, ignoring");
-    return;
-  }
+    if (!prompt) {
+        console.warn('[dokba] Received empty CHAT_COMMAND, ignoring');
+        return;
+    }
 
-  console.log(`[dokba] Task received for agent "${agent}": ${prompt.slice(0, 80)}...`);
+    console.log(
+        `[dokba] Task received for agent "${agent}": ${prompt.slice(0, 80)}...`,
+    );
 
-  // Notify server: thinking
-  connector.send({
-    type: "AGENT_STATE_CHANGE",
-    agentId: agent,
-    state: "THINKING",
-  } satisfies AgentStateChange);
-
-  const result = await runClaude(prompt, options.claudeOptions, (progress) => {
+    // Notify server: thinking
     connector.send({
-      type: "AGENT_STATE_CHANGE",
-      agentId: agent,
-      state: progress.state,
+        type: 'AGENT_STATE_CHANGE',
+        agentId: agent,
+        state: 'THINKING',
     } satisfies AgentStateChange);
-  });
 
-  // Send typed result
-  connector.send({
-    type: "TASK_RESULT",
-    agent,
-    taskId,
-    success: result.success,
-    output: result.output,
-  } satisfies TaskResult);
+    const result = await runClaude(
+        prompt,
+        options.claudeOptions,
+        (progress) => {
+            connector.send({
+                type: 'AGENT_STATE_CHANGE',
+                agentId: agent,
+                state: progress.state,
+            } satisfies AgentStateChange);
+        },
+    );
 
-  // Also send TASK_ASSIGNED for backward compatibility with existing frontend
-  connector.send({
-    type: "TASK_ASSIGNED",
-    agent,
-    taskContent: result.output,
-  } satisfies TaskAssigned);
-
-  // Transition: SUCCESS/ERROR → IDLE
-  connector.send({
-    type: "AGENT_STATE_CHANGE",
-    agentId: agent,
-    state: result.success ? "SUCCESS" : "ERROR",
-  } satisfies AgentStateChange);
-
-  setTimeout(() => {
+    // Send typed result
     connector.send({
-      type: "AGENT_STATE_CHANGE",
-      agentId: agent,
-      state: "IDLE",
-    } satisfies AgentStateChange);
-  }, 2000);
+        type: 'TASK_RESULT',
+        agent,
+        taskId,
+        success: result.success,
+        output: result.output,
+    } satisfies TaskResult);
 
-  console.log(
-    `[dokba] Task completed (success=${result.success}, exit=${result.exitCode})`,
-  );
+    // Also send TASK_ASSIGNED for backward compatibility with existing frontend
+    connector.send({
+        type: 'TASK_ASSIGNED',
+        agent,
+        taskContent: result.output,
+    } satisfies TaskAssigned);
+
+    // Transition: SUCCESS/ERROR → IDLE
+    connector.send({
+        type: 'AGENT_STATE_CHANGE',
+        agentId: agent,
+        state: result.success ? 'SUCCESS' : 'ERROR',
+    } satisfies AgentStateChange);
+
+    setTimeout(() => {
+        connector.send({
+            type: 'AGENT_STATE_CHANGE',
+            agentId: agent,
+            state: 'IDLE',
+        } satisfies AgentStateChange);
+    }, 2000);
+
+    console.log(
+        `[dokba] Task completed (success=${result.success}, exit=${result.exitCode})`,
+    );
 }
 
 async function handleTaskAssign(
-  connector: Connector,
-  msg: TaskAssign,
-  options: TaskHandlerOptions,
+    connector: Connector,
+    msg: TaskAssign,
+    options: TaskHandlerOptions,
 ): Promise<void> {
-  const { taskId, prompt, agentId } = msg;
+    const { taskId, prompt, agentId } = msg;
 
-  if (!prompt) {
-    console.warn("[dokba] Received empty TASK_ASSIGN, ignoring");
-    return;
-  }
+    if (!prompt) {
+        console.warn('[dokba] Received empty TASK_ASSIGN, ignoring');
+        return;
+    }
 
-  console.log(`[dokba] Task ${taskId} assigned: ${prompt.slice(0, 80)}...`);
+    console.log(`[dokba] Task ${taskId} assigned: ${prompt.slice(0, 80)}...`);
 
-  connector.send({
-    type: "AGENT_STATE_CHANGE",
-    agentId,
-    state: "THINKING",
-  } satisfies AgentStateChange);
-
-  const result = await runClaude(prompt, options.claudeOptions, (progress) => {
     connector.send({
-      type: "TASK_PROGRESS",
-      taskId,
-      agentId,
-      state: progress.state,
-      partial: progress.partial,
-    } satisfies TaskProgress);
-  });
+        type: 'AGENT_STATE_CHANGE',
+        agentId,
+        state: 'THINKING',
+    } satisfies AgentStateChange);
 
-  connector.send({
-    type: "TASK_RESULT",
-    taskId,
-    agentId,
-    success: result.success,
-    output: result.output,
-  } satisfies TaskResult);
+    const result = await runClaude(
+        prompt,
+        options.claudeOptions,
+        (progress) => {
+            connector.send({
+                type: 'TASK_PROGRESS',
+                taskId,
+                agentId,
+                state: progress.state,
+                partial: progress.partial,
+            } satisfies TaskProgress);
+        },
+    );
 
-  connector.send({
-    type: "AGENT_STATE_CHANGE",
-    agentId,
-    state: "IDLE",
-  } satisfies AgentStateChange);
+    connector.send({
+        type: 'TASK_RESULT',
+        taskId,
+        agentId,
+        success: result.success,
+        output: result.output,
+    } satisfies TaskResult);
+
+    connector.send({
+        type: 'AGENT_STATE_CHANGE',
+        agentId,
+        state: 'IDLE',
+    } satisfies AgentStateChange);
 }

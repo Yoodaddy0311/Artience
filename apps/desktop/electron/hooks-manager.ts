@@ -46,7 +46,11 @@ class HooksManager {
      * Setup hooks for a project directory.
      * Creates .claude/settings.json if it doesn't exist.
      */
-    setupHooks(projectDir: string): { success: boolean; created: boolean; error?: string } {
+    setupHooks(projectDir: string): {
+        success: boolean;
+        created: boolean;
+        error?: string;
+    } {
         try {
             const claudeDir = path.join(projectDir, '.claude');
             const settingsPath = path.join(claudeDir, 'settings.json');
@@ -75,21 +79,28 @@ class HooksManager {
             if (this.hasDependency(projectDir, 'prettier')) {
                 settings.hooks!.PostToolUse!.push({
                     matcher: { tools: ['Edit', 'Write', 'MultiEdit'] },
-                    hooks: [{
-                        type: 'command',
-                        command: 'npx prettier --write "$FILEPATH" 2>/dev/null || true',
-                    }],
+                    hooks: [
+                        {
+                            type: 'command',
+                            command:
+                                'npx prettier --write "$FILEPATH" 2>/dev/null || true',
+                        },
+                    ],
                 });
             }
 
             // Activity logging hook (new matcher format)
-            const logPath = path.join(claudeDir, 'activity.log').replace(/\\/g, '/');
+            const logPath = path
+                .join(claudeDir, 'activity.log')
+                .replace(/\\/g, '/');
             settings.hooks!.Stop!.push({
                 matcher: {},
-                hooks: [{
-                    type: 'command',
-                    command: `node -e "require('fs').appendFileSync('${logPath}', new Date().toISOString() + ' STOP\\n')"`,
-                }],
+                hooks: [
+                    {
+                        type: 'command',
+                        command: `node -e "require('fs').appendFileSync('${logPath}', new Date().toISOString() + ' STOP\\n')"`,
+                    },
+                ],
             });
 
             // Common safe permissions
@@ -102,8 +113,14 @@ class HooksManager {
                 'Bash(git log:*)',
             ];
 
-            fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-            console.log(`[HooksManager] Created settings.json at ${settingsPath}`);
+            fs.writeFileSync(
+                settingsPath,
+                JSON.stringify(settings, null, 2),
+                'utf-8',
+            );
+            console.log(
+                `[HooksManager] Created settings.json at ${settingsPath}`,
+            );
 
             return { success: true, created: true };
         } catch (err: any) {
@@ -116,7 +133,11 @@ class HooksManager {
      * Generate CLAUDE.md with project-specific instructions.
      * Only creates if the file doesn't already exist.
      */
-    generateClaudeMd(projectDir: string): { success: boolean; created: boolean; error?: string } {
+    generateClaudeMd(projectDir: string): {
+        success: boolean;
+        created: boolean;
+        error?: string;
+    } {
         try {
             const claudeMdPath = path.join(projectDir, 'CLAUDE.md');
 
@@ -133,7 +154,10 @@ class HooksManager {
 
             return { success: true, created: true };
         } catch (err: any) {
-            console.error('[HooksManager] Failed to generate CLAUDE.md:', err.message);
+            console.error(
+                '[HooksManager] Failed to generate CLAUDE.md:',
+                err.message,
+            );
             return { success: false, created: false, error: err.message };
         }
     }
@@ -169,11 +193,11 @@ class HooksManager {
         return !!(pkg.dependencies?.[dep] || pkg.devDependencies?.[dep]);
     }
 
-    private buildClaudeMdContent(pkg: PackageJson | null, projectDir: string): string {
-        const lines: string[] = [
-            '# Project Instructions',
-            '',
-        ];
+    private buildClaudeMdContent(
+        pkg: PackageJson | null,
+        projectDir: string,
+    ): string {
+        const lines: string[] = ['# Project Instructions', ''];
 
         // Project name
         if (pkg?.name) {
@@ -187,10 +211,13 @@ class HooksManager {
             if (pkg.scripts.build) lines.push(`- Build: \`npm run build\``);
             if (pkg.scripts.dev) lines.push(`- Dev: \`npm run dev\``);
             if (pkg.scripts.test) lines.push(`- Test: \`npm test\``);
-            if (pkg.scripts['test:watch']) lines.push(`- Test watch: \`npm run test:watch\``);
+            if (pkg.scripts['test:watch'])
+                lines.push(`- Test watch: \`npm run test:watch\``);
             if (pkg.scripts.lint) lines.push(`- Lint: \`npm run lint\``);
             if (pkg.scripts['type-check'] || pkg.scripts.typecheck) {
-                lines.push(`- Type check: \`npm run ${pkg.scripts['type-check'] ? 'type-check' : 'typecheck'}\``);
+                lines.push(
+                    `- Type check: \`npm run ${pkg.scripts['type-check'] ? 'type-check' : 'typecheck'}\``,
+                );
             }
         }
 
@@ -214,7 +241,8 @@ class HooksManager {
         if (allDeps['electron']) frameworks.push('Electron');
         if (allDeps['vitest']) frameworks.push('Vitest');
         if (allDeps['jest']) frameworks.push('Jest');
-        if (allDeps['tailwindcss'] || allDeps['@tailwindcss/vite']) frameworks.push('Tailwind CSS');
+        if (allDeps['tailwindcss'] || allDeps['@tailwindcss/vite'])
+            frameworks.push('Tailwind CSS');
 
         if (frameworks.length > 0) {
             lines.push('## Tech Stack', '');
@@ -225,7 +253,9 @@ class HooksManager {
         const gitDir = path.join(projectDir, '.git');
         if (fs.existsSync(gitDir)) {
             lines.push('## Git', '');
-            lines.push('- Use conventional commits (feat:, fix:, refactor:, etc.)');
+            lines.push(
+                '- Use conventional commits (feat:, fix:, refactor:, etc.)',
+            );
             lines.push('- Run tests before committing');
             lines.push('');
         }

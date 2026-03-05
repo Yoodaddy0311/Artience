@@ -4,8 +4,8 @@ import type { ParsedEvent, AgentActivity } from '../lib/pty-parser';
 import { resolveTeamMembers } from '../lib/team-character-map';
 
 export interface TerminalTab {
-    id: string;          // pty ID from main process
-    agentId?: string;    // 연결된 에이전트 ID
+    id: string; // pty ID from main process
+    agentId?: string; // 연결된 에이전트 ID
     agentName?: string;
     label: string;
     cwd: string;
@@ -56,7 +56,10 @@ interface TerminalState {
 
     // 캐릭터별 Claude 설정 (persist)
     agentSettings: Record<string, AgentSettings>; // agentId → settings
-    setAgentSettings: (agentId: string, settings: Partial<AgentSettings>) => void;
+    setAgentSettings: (
+        agentId: string,
+        settings: Partial<AgentSettings>,
+    ) => void;
 
     // 입력 히스토리 (비영속, session-only)
     inputHistory: Record<string, string[]>; // tabId → 최근 입력 50개
@@ -83,7 +86,8 @@ export const useTerminalStore = create<TerminalState>()(
             panelVisible: true,
             setPanelVisible: (visible) => set({ panelVisible: visible }),
             panelFullscreen: false,
-            togglePanelFullscreen: () => set((s) => ({ panelFullscreen: !s.panelFullscreen })),
+            togglePanelFullscreen: () =>
+                set((s) => ({ panelFullscreen: !s.panelFullscreen })),
             viewMode: {},
             parsedMessages: {},
             characterDirMap: {},
@@ -94,84 +98,116 @@ export const useTerminalStore = create<TerminalState>()(
             activeTeamMembers: {},
             teamAddedAgents: [],
 
-            setViewMode: (tabId, mode) => set((s) => ({
-                viewMode: { ...s.viewMode, [tabId]: mode },
-            })),
+            setViewMode: (tabId, mode) =>
+                set((s) => ({
+                    viewMode: { ...s.viewMode, [tabId]: mode },
+                })),
 
-            addParsedEvent: (tabId, event) => set((s) => ({
-                parsedMessages: {
-                    ...s.parsedMessages,
-                    [tabId]: [...(s.parsedMessages[tabId] || []), event],
-                },
-            })),
+            addParsedEvent: (tabId, event) =>
+                set((s) => ({
+                    parsedMessages: {
+                        ...s.parsedMessages,
+                        [tabId]: [...(s.parsedMessages[tabId] || []), event],
+                    },
+                })),
 
-            clearParsedMessages: (tabId) => set((s) => ({
-                parsedMessages: { ...s.parsedMessages, [tabId]: [] },
-            })),
+            clearParsedMessages: (tabId) =>
+                set((s) => ({
+                    parsedMessages: { ...s.parsedMessages, [tabId]: [] },
+                })),
 
-            setCharacterDir: (agentId, dir) => set((s) => ({
-                characterDirMap: { ...s.characterDirMap, [agentId]: dir },
-            })),
+            setCharacterDir: (agentId, dir) =>
+                set((s) => ({
+                    characterDirMap: { ...s.characterDirMap, [agentId]: dir },
+                })),
 
-            addDockAgent: (agentId) => set((s) => {
-                const agents = s.dockAgents ?? [];
-                if (agents.includes(agentId)) return s;
-                return { dockAgents: [...agents, agentId] };
-            }),
+            addDockAgent: (agentId) =>
+                set((s) => {
+                    const agents = s.dockAgents ?? [];
+                    if (agents.includes(agentId)) return s;
+                    return { dockAgents: [...agents, agentId] };
+                }),
 
-            removeDockAgent: (agentId) => set((s) => ({
-                dockAgents: (s.dockAgents ?? [] as string[]).filter((id: string) => id !== agentId),
-            })),
+            removeDockAgent: (agentId) =>
+                set((s) => ({
+                    dockAgents: (s.dockAgents ?? ([] as string[])).filter(
+                        (id: string) => id !== agentId,
+                    ),
+                })),
 
-            setAgentActivity: (agentId, status) => set((s) => ({
-                agentActivity: { ...s.agentActivity, [agentId]: status },
-            })),
+            setAgentActivity: (agentId, status) =>
+                set((s) => ({
+                    agentActivity: { ...s.agentActivity, [agentId]: status },
+                })),
 
-            addInputHistory: (tabId, text) => set((s) => {
-                const prev = s.inputHistory[tabId] || [];
-                // 연속 중복 방지
-                if (prev.length > 0 && prev[prev.length - 1] === text) return s;
-                const next = [...prev, text].slice(-50);
-                return { inputHistory: { ...s.inputHistory, [tabId]: next } };
-            }),
+            addInputHistory: (tabId, text) =>
+                set((s) => {
+                    const prev = s.inputHistory[tabId] || [];
+                    // 연속 중복 방지
+                    if (prev.length > 0 && prev[prev.length - 1] === text)
+                        return s;
+                    const next = [...prev, text].slice(-50);
+                    return {
+                        inputHistory: { ...s.inputHistory, [tabId]: next },
+                    };
+                }),
 
-            setActiveTeamMembers: (members) => set((s) => {
-                const agents = s.dockAgents ?? [];
-                const mapping = resolveTeamMembers(members, agents);
-                const newAgentIds = Object.values(mapping);
-                const toAdd = newAgentIds.filter(id => !agents.includes(id));
-                return {
-                    activeTeamMembers: mapping,
-                    teamAddedAgents: toAdd,
-                    dockAgents: [...agents, ...toAdd],
-                };
-            }),
+            setActiveTeamMembers: (members) =>
+                set((s) => {
+                    const agents = s.dockAgents ?? [];
+                    const mapping = resolveTeamMembers(members, agents);
+                    const newAgentIds = Object.values(mapping);
+                    const toAdd = newAgentIds.filter(
+                        (id) => !agents.includes(id),
+                    );
+                    return {
+                        activeTeamMembers: mapping,
+                        teamAddedAgents: toAdd,
+                        dockAgents: [...agents, ...toAdd],
+                    };
+                }),
 
-            clearActiveTeam: () => set((s) => ({
-                activeTeamMembers: {},
-                teamAddedAgents: [],
-                dockAgents: (s.dockAgents ?? [] as string[]).filter((id: string) => !(s.teamAddedAgents ?? []).includes(id)),
-            })),
+            clearActiveTeam: () =>
+                set((s) => ({
+                    activeTeamMembers: {},
+                    teamAddedAgents: [],
+                    dockAgents: (s.dockAgents ?? ([] as string[])).filter(
+                        (id: string) => !(s.teamAddedAgents ?? []).includes(id),
+                    ),
+                })),
 
-            setAgentSettings: (agentId, settings) => set((s) => ({
-                agentSettings: {
-                    ...s.agentSettings,
-                    [agentId]: { ...s.agentSettings[agentId], ...settings },
-                },
-            })),
+            setAgentSettings: (agentId, settings) =>
+                set((s) => ({
+                    agentSettings: {
+                        ...s.agentSettings,
+                        [agentId]: { ...s.agentSettings[agentId], ...settings },
+                    },
+                })),
 
-            addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id, panelVisible: true })),
-            removeTab: (id) => set((s) => {
-                const newTabs = s.tabs.filter(t => t.id !== id);
-                const newActive = s.activeTabId === id
-                    ? (newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null)
-                    : s.activeTabId;
-                return { tabs: newTabs, activeTabId: newActive };
-            }),
+            addTab: (tab) =>
+                set((s) => ({
+                    tabs: [...s.tabs, tab],
+                    activeTabId: tab.id,
+                    panelVisible: true,
+                })),
+            removeTab: (id) =>
+                set((s) => {
+                    const newTabs = s.tabs.filter((t) => t.id !== id);
+                    const newActive =
+                        s.activeTabId === id
+                            ? newTabs.length > 0
+                                ? newTabs[newTabs.length - 1].id
+                                : null
+                            : s.activeTabId;
+                    return { tabs: newTabs, activeTabId: newActive };
+                }),
             setActiveTab: (id) => set({ activeTabId: id }),
-            updateTab: (id, patch) => set((s) => ({
-                tabs: s.tabs.map(t => t.id === id ? { ...t, ...patch } : t),
-            })),
+            updateTab: (id, patch) =>
+                set((s) => ({
+                    tabs: s.tabs.map((t) =>
+                        t.id === id ? { ...t, ...patch } : t,
+                    ),
+                })),
         }),
         {
             name: 'terminal-store',
@@ -187,9 +223,12 @@ export const useTerminalStore = create<TerminalState>()(
                 dockAgents: Array.isArray((persisted as any)?.dockAgents)
                     ? (persisted as any).dockAgents
                     : current.dockAgents,
-                characterDirMap: (persisted as any)?.characterDirMap ?? current.characterDirMap,
-                agentSettings: (persisted as any)?.agentSettings ?? current.agentSettings,
+                characterDirMap:
+                    (persisted as any)?.characterDirMap ??
+                    current.characterDirMap,
+                agentSettings:
+                    (persisted as any)?.agentSettings ?? current.agentSettings,
             }),
-        }
-    )
+        },
+    ),
 );

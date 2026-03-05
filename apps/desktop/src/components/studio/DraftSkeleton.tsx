@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 
 // ── Skeleton Loader ──
 
-export const SkeletonPulse: React.FC<{ className?: string }> = ({ className }) => (
+export const SkeletonPulse: React.FC<{ className?: string }> = ({
+    className,
+}) => (
     <div className={`animate-pulse bg-gray-200 rounded ${className ?? ''}`} />
 );
 
@@ -47,7 +49,12 @@ interface RefineModalProps {
     loading: boolean;
 }
 
-export const RefineModal: React.FC<RefineModalProps> = ({ open, onClose, onSubmit, loading }) => {
+export const RefineModal: React.FC<RefineModalProps> = ({
+    open,
+    onClose,
+    onSubmit,
+    loading,
+}) => {
     const [text, setText] = useState('');
 
     const handleSubmit = () => {
@@ -71,13 +78,16 @@ export const RefineModal: React.FC<RefineModalProps> = ({ open, onClose, onSubmi
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-md bg-white border-2 border-black rounded-xl shadow-[4px_4px_0_0_#000] p-5">
-                <h3 className="font-black text-base text-black mb-3">Refine Draft</h3>
+                <h3 className="font-black text-base text-black mb-3">
+                    Refine Draft
+                </h3>
                 <p className="text-xs text-gray-500 mb-3">
-                    수정 사항을 자연어로 입력하세요. 기존 프롬프트에 추가되어 재생성됩니다.
+                    수정 사항을 자연어로 입력하세요. 기존 프롬프트에 추가되어
+                    재생성됩니다.
                 </p>
                 <textarea
                     value={text}
-                    onChange={e => setText(e.target.value)}
+                    onChange={(e) => setText(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="예: 회의실을 1개 더 추가하고, 휴게실을 넓혀줘"
                     rows={3}
@@ -107,14 +117,21 @@ export const RefineModal: React.FC<RefineModalProps> = ({ open, onClose, onSubmi
 
 // ── Color Swatch ──
 
-export const ColorSwatch: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+export const ColorSwatch: React.FC<{ color: string; label: string }> = ({
+    color,
+    label,
+}) => (
     <div className="flex items-center gap-1.5">
         <div
             className="w-4 h-4 rounded border-2 border-black shrink-0"
             style={{ backgroundColor: color }}
         />
-        <span className="text-[10px] font-bold text-gray-600 truncate">{label}</span>
-        <code className="text-[9px] font-mono text-gray-400 uppercase">{color}</code>
+        <span className="text-[10px] font-bold text-gray-600 truncate">
+            {label}
+        </span>
+        <code className="text-[9px] font-mono text-gray-400 uppercase">
+            {color}
+        </code>
     </div>
 );
 
@@ -132,9 +149,12 @@ export const MethodBadge: React.FC<{ method?: string }> = ({ method }) => {
                     : 'bg-[#FBBF24]/20 text-[#92400E]'
             }`}
         >
-            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{
-                backgroundColor: isLLM ? '#7C3AED' : '#92400E',
-            }} />
+            <span
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{
+                    backgroundColor: isLLM ? '#7C3AED' : '#92400E',
+                }}
+            />
             {isLLM ? 'Claude AI' : 'Rule-based'}
         </span>
     );
@@ -153,7 +173,9 @@ export const StatCard: React.FC<{
             className="w-3 h-3 rounded-full mx-auto mb-1 border border-black"
             style={{ backgroundColor: color }}
         />
-        <div className={`font-black ${isText ? 'text-xs' : 'text-xl'} text-black leading-tight`}>
+        <div
+            className={`font-black ${isText ? 'text-xs' : 'text-xl'} text-black leading-tight`}
+        >
             {value}
         </div>
         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">

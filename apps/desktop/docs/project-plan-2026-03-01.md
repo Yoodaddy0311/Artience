@@ -62,61 +62,61 @@
 
 ### 3.1 핵심 기능 (exe에서 작동)
 
-| 기능 | 파일 | 현재 상태 | exe 대응 | 필요 작업 |
-|------|------|----------|---------|----------|
-| 탭 전환 (town/studio/room/social) | MainLayout.tsx | OK | useState 기반 라우팅 | 없음 |
-| AgentTown 렌더링 (Pixi.js) | AgentTown.tsx | 에셋 경로 문제 | file:// 미대응 | 상대 경로 변환 (P0) |
-| 수달 캐릭터 이동/애니메이션 | otter-runtime.ts | 에셋 경로 문제 | `/sprites/iso/*.png` 절대 경로 | 상대 경로 변환 (P0) |
-| 아이소메트릭 맵 렌더링 | iso-renderer.ts | 에셋 경로 문제 | `/sprites/iso/room-*.png` 절대 경로 | 상대 경로 변환 (P0) |
-| 월드 생성/경로 탐색 | grid-world.ts, isometric.ts | OK | 순수 로직 | 없음 |
-| 캐릭터 채팅 (Claude CLI) | main.ts (chat:send IPC) | OK | Electron IPC → execFile('claude') | 없음 |
-| 터미널 패널 | TerminalPanel.tsx, main.ts | OK | child_process.spawn (node-pty 제거됨) | 없음 |
-| 설정 모달 | SettingsModal.tsx | OK | Electron IPC 우선 + localhost guard | 없음 |
-| 프로젝트 데이터 (Zustand) | useAppStore.ts | OK | persist middleware → localStorage | 없음 |
-| 에이전트 클릭/인스펙터 | InspectorCard.tsx | OK | 로컬 상태 기반 | 없음 |
-| 봇 독 (하단 에이전트 목록) | BottomDock.tsx | OK | 순수 UI | 없음 |
-| 에러 바운더리 | AppErrorBoundary.tsx | OK | 순수 React | 없음 |
-| 토스트 알림 | Toast.tsx | OK | 순수 UI | 없음 |
-| CLI 인증 상태/로그인 | main.ts (cli:auth-*) | OK | IPC → execFile('claude auth') | 없음 |
+| 기능                              | 파일                        | 현재 상태      | exe 대응                              | 필요 작업           |
+| --------------------------------- | --------------------------- | -------------- | ------------------------------------- | ------------------- |
+| 탭 전환 (town/studio/room/social) | MainLayout.tsx              | OK             | useState 기반 라우팅                  | 없음                |
+| AgentTown 렌더링 (Pixi.js)        | AgentTown.tsx               | 에셋 경로 문제 | file:// 미대응                        | 상대 경로 변환 (P0) |
+| 수달 캐릭터 이동/애니메이션       | otter-runtime.ts            | 에셋 경로 문제 | `/sprites/iso/*.png` 절대 경로        | 상대 경로 변환 (P0) |
+| 아이소메트릭 맵 렌더링            | iso-renderer.ts             | 에셋 경로 문제 | `/sprites/iso/room-*.png` 절대 경로   | 상대 경로 변환 (P0) |
+| 월드 생성/경로 탐색               | grid-world.ts, isometric.ts | OK             | 순수 로직                             | 없음                |
+| 캐릭터 채팅 (Claude CLI)          | main.ts (chat:send IPC)     | OK             | Electron IPC → execFile('claude')     | 없음                |
+| 터미널 패널                       | TerminalPanel.tsx, main.ts  | OK             | child_process.spawn (node-pty 제거됨) | 없음                |
+| 설정 모달                         | SettingsModal.tsx           | OK             | Electron IPC 우선 + localhost guard   | 없음                |
+| 프로젝트 데이터 (Zustand)         | useAppStore.ts              | OK             | persist middleware → localStorage     | 없음                |
+| 에이전트 클릭/인스펙터            | InspectorCard.tsx           | OK             | 로컬 상태 기반                        | 없음                |
+| 봇 독 (하단 에이전트 목록)        | BottomDock.tsx              | OK             | 순수 UI                               | 없음                |
+| 에러 바운더리                     | AppErrorBoundary.tsx        | OK             | 순수 React                            | 없음                |
+| 토스트 알림                       | Toast.tsx                   | OK             | 순수 UI                               | 없음                |
+| CLI 인증 상태/로그인              | main.ts (cli:auth-\*)       | OK             | IPC → execFile('claude auth')         | 없음                |
 
 ### 3.2 API 의존 기능 (서버 필요 — 선택적)
 
-| 기능 | 파일 | localhost guard | try/catch | exe 동작 |
-|------|------|:---:|:---:|------|
-| WS 에이전트 상태 (AgentTown) | AgentTown.tsx:480 | O | O | skip — 에이전트는 로컬 AI로 움직임 |
-| WS 타운 상태 (RightSidebar) | RightSidebar.tsx:136 | O | O | skip |
-| WS 타운 상태 (RunPanel) | RunPanel.tsx:155 | O | O | skip |
-| 프로젝트 로드 | useAppStore.ts:245 | O | O | skip — localStorage 사용 |
-| 스튜디오 에셋 목록 | StudioDecorator.tsx:12 | O | O | skip — 빈 목록 |
-| 리더보드 | Leaderboard.tsx:79 | O | O | skip — 빈 목록 |
-| 룸 목록 | useRoomStore.ts:183 | O | O | skip |
-| AI 빌더 (생성) | AIBuilder.tsx:71 | X | O | 실패 → 에러 토스트 |
-| 드래프트 프리뷰 | DraftPreview.tsx:45,64 | X | O | 실패 → fallback 데이터 |
-| 버전 히스토리 | VersionHistory.tsx:384,400 | X | O | 실패 → 에러 표시 |
-| 에셋 패널 | AssetsPanel.tsx:18 | X | O | 실패 → 에러 |
-| 에셋 인박스 (업로드) | AssetInbox.tsx:86 | X | O | 실패 → 에러 토스트 |
-| 유저 프로필 | UserProfile.tsx:86 | X | O | 실패 → 에러 |
-| 업적 패널 | AchievementPanel.tsx:114 | X | O | 실패 → 에러 |
-| 스튜디오 생성/적용/롤백 | MainLayout.tsx:94,109,122 | X | O | 실패 → 에러 토스트 |
-| 임포트/익스포트 | MainLayout.tsx:210,228 | X | O | 실패 → 에러 토스트 |
-| 스탯 조회 | RightSidebar.tsx:73 | X | O | 실패 → 기본값 |
-| 문서 업로드 | RightSidebar.tsx:103 | X | O | 실패 |
-| 잡 실행/중지 | RunPanel.tsx:227,233 | X | O | 실패 → 에러 |
-| 잡 아티팩트 | RunPanel.tsx:516 | X | O | 실패 |
-| 프로젝트 저장 | useAppStore.ts:267 | X | O | 실패 → 에러 메시지 |
-| 룸 WebSocket | roomSocket.ts:91 | X | X | 연결 실패 → 콘솔 에러 |
+| 기능                         | 파일                       | localhost guard | try/catch | exe 동작                           |
+| ---------------------------- | -------------------------- | :-------------: | :-------: | ---------------------------------- |
+| WS 에이전트 상태 (AgentTown) | AgentTown.tsx:480          |        O        |     O     | skip — 에이전트는 로컬 AI로 움직임 |
+| WS 타운 상태 (RightSidebar)  | RightSidebar.tsx:136       |        O        |     O     | skip                               |
+| WS 타운 상태 (RunPanel)      | RunPanel.tsx:155           |        O        |     O     | skip                               |
+| 프로젝트 로드                | useAppStore.ts:245         |        O        |     O     | skip — localStorage 사용           |
+| 스튜디오 에셋 목록           | StudioDecorator.tsx:12     |        O        |     O     | skip — 빈 목록                     |
+| 리더보드                     | Leaderboard.tsx:79         |        O        |     O     | skip — 빈 목록                     |
+| 룸 목록                      | useRoomStore.ts:183        |        O        |     O     | skip                               |
+| AI 빌더 (생성)               | AIBuilder.tsx:71           |        X        |     O     | 실패 → 에러 토스트                 |
+| 드래프트 프리뷰              | DraftPreview.tsx:45,64     |        X        |     O     | 실패 → fallback 데이터             |
+| 버전 히스토리                | VersionHistory.tsx:384,400 |        X        |     O     | 실패 → 에러 표시                   |
+| 에셋 패널                    | AssetsPanel.tsx:18         |        X        |     O     | 실패 → 에러                        |
+| 에셋 인박스 (업로드)         | AssetInbox.tsx:86          |        X        |     O     | 실패 → 에러 토스트                 |
+| 유저 프로필                  | UserProfile.tsx:86         |        X        |     O     | 실패 → 에러                        |
+| 업적 패널                    | AchievementPanel.tsx:114   |        X        |     O     | 실패 → 에러                        |
+| 스튜디오 생성/적용/롤백      | MainLayout.tsx:94,109,122  |        X        |     O     | 실패 → 에러 토스트                 |
+| 임포트/익스포트              | MainLayout.tsx:210,228     |        X        |     O     | 실패 → 에러 토스트                 |
+| 스탯 조회                    | RightSidebar.tsx:73        |        X        |     O     | 실패 → 기본값                      |
+| 문서 업로드                  | RightSidebar.tsx:103       |        X        |     O     | 실패                               |
+| 잡 실행/중지                 | RunPanel.tsx:227,233       |        X        |     O     | 실패 → 에러                        |
+| 잡 아티팩트                  | RunPanel.tsx:516           |        X        |     O     | 실패                               |
+| 프로젝트 저장                | useAppStore.ts:267         |        X        |     O     | 실패 → 에러 메시지                 |
+| 룸 WebSocket                 | roomSocket.ts:91           |        X        |     X     | 연결 실패 → 콘솔 에러              |
 
 ### 3.3 file:// 프로토콜 문제
 
-| 항목 | 파일 | 문제 | 심각도 |
-|------|------|------|:---:|
-| Service Worker 등록 | index.html:18-20 | file://에서 SW 등록 불가 → 에러 | P0 |
-| Pixi.js 수달 텍스처 | otter-runtime.ts:55-58 | `/sprites/iso/*.png` → file:/// 루트 = 404 | P0 |
-| Pixi.js 룸 스프라이트 | iso-renderer.ts:57-58 | `/sprites/iso/room-*.png` → 404 | P0 |
-| index.html favicon | index.html:7 | `href="/favicon.png"` → file:/// 루트 | P1 |
-| index.html manifest | index.html:8 | `href="/manifest.json"` → file:/// 루트 | P1 |
-| 드래프트 JSON fetch | DraftPreview.tsx:64 | `fetch('/generated/draft.json')` → 404 | P2 (fallback 있음) |
-| 게임 HUD 이미지 | MainLayout.tsx:474-507 | `/assets/ui/*.png` — SHOW_GAMIFICATION=false라 미사용 | 없음 |
+| 항목                  | 파일                   | 문제                                                  |       심각도       |
+| --------------------- | ---------------------- | ----------------------------------------------------- | :----------------: |
+| Service Worker 등록   | index.html:18-20       | file://에서 SW 등록 불가 → 에러                       |         P0         |
+| Pixi.js 수달 텍스처   | otter-runtime.ts:55-58 | `/sprites/iso/*.png` → file:/// 루트 = 404            |         P0         |
+| Pixi.js 룸 스프라이트 | iso-renderer.ts:57-58  | `/sprites/iso/room-*.png` → 404                       |         P0         |
+| index.html favicon    | index.html:7           | `href="/favicon.png"` → file:/// 루트                 |         P1         |
+| index.html manifest   | index.html:8           | `href="/manifest.json"` → file:/// 루트               |         P1         |
+| 드래프트 JSON fetch   | DraftPreview.tsx:64    | `fetch('/generated/draft.json')` → 404                | P2 (fallback 있음) |
+| 게임 HUD 이미지       | MainLayout.tsx:474-507 | `/assets/ui/*.png` — SHOW_GAMIFICATION=false라 미사용 |        없음        |
 
 ---
 
@@ -124,26 +124,26 @@
 
 ### 취소
 
-| 항목 | 이유 |
-|------|------|
-| Firebase Hosting 웹 배포 | exe 전용으로 전환 |
-| Service Worker (sw.js) | file:// 프로토콜에서 미지원 |
-| PWA 매니페스트 (manifest.json) | 웹앱 불필요 |
-| GCP Cloud Run API 필수 의존 | 로컬 퍼스트로 전환 |
-| node-pty 네이티브 모듈 | 빌드 문제로 child_process.spawn 대체 완료 |
+| 항목                           | 이유                                      |
+| ------------------------------ | ----------------------------------------- |
+| Firebase Hosting 웹 배포       | exe 전용으로 전환                         |
+| Service Worker (sw.js)         | file:// 프로토콜에서 미지원               |
+| PWA 매니페스트 (manifest.json) | 웹앱 불필요                               |
+| GCP Cloud Run API 필수 의존    | 로컬 퍼스트로 전환                        |
+| node-pty 네이티브 모듈         | 빌드 문제로 child_process.spawn 대체 완료 |
 
 ### 변경
 
-| 항목 | AS-IS | TO-BE |
-|------|-------|-------|
-| 캐릭터 채팅 | WS/API fallback | Claude CLI 전용 (Electron IPC) |
-| 터미널 | node-pty (PTY) | child_process.spawn (pipe 기반) |
-| 데이터 저장 | Cloud API (fetch) | 로컬 (Zustand persist → 향후 SQLite) |
-| 에셋 경로 | 절대 경로 (/sprites/...) | 상대 경로 (./sprites/...) |
-| Vite base | `/` (웹 서버) | `./` (file:// 호환) |
-| API 호출 | 항상 시도 | localhost이면 skip |
-| WebSocket | 항상 연결 | localhost이면 skip + exponential backoff |
-| 코드 서명 | 미설정 | forceCodeSigning: false, sign: null |
+| 항목        | AS-IS                    | TO-BE                                    |
+| ----------- | ------------------------ | ---------------------------------------- |
+| 캐릭터 채팅 | WS/API fallback          | Claude CLI 전용 (Electron IPC)           |
+| 터미널      | node-pty (PTY)           | child_process.spawn (pipe 기반)          |
+| 데이터 저장 | Cloud API (fetch)        | 로컬 (Zustand persist → 향후 SQLite)     |
+| 에셋 경로   | 절대 경로 (/sprites/...) | 상대 경로 (./sprites/...)                |
+| Vite base   | `/` (웹 서버)            | `./` (file:// 호환)                      |
+| API 호출    | 항상 시도                | localhost이면 skip                       |
+| WebSocket   | 항상 연결                | localhost이면 skip + exponential backoff |
+| 코드 서명   | 미설정                   | forceCodeSigning: false, sign: null      |
 
 ---
 
@@ -267,16 +267,16 @@ apps/desktop/
 
 ## 8. 기술 스택
 
-| 영역 | 기술 | 비고 |
-|------|------|------|
-| 프레임워크 | Electron 35 | 데스크탑 앱 |
-| 렌더러 | React 19 + Vite 6 | SPA |
-| 2D 렌더링 | Pixi.js 8 | AgentTown |
-| 상태 관리 | Zustand 4 (persist) | localStorage |
-| 스타일 | Tailwind CSS 4 | Neo-Brutalism |
-| 터미널 | xterm.js 6 + child_process | pipe 기반 |
-| AI | Claude CLI (execFile) | 로컬 실행 |
-| 빌드 | esbuild (Electron) + Vite (renderer) | |
-| 패키징 | electron-builder 26 | NSIS installer (Windows) |
-| 테스트 | Vitest + Testing Library | |
-| 타입 | TypeScript 5.3 | strict |
+| 영역       | 기술                                 | 비고                     |
+| ---------- | ------------------------------------ | ------------------------ |
+| 프레임워크 | Electron 35                          | 데스크탑 앱              |
+| 렌더러     | React 19 + Vite 6                    | SPA                      |
+| 2D 렌더링  | Pixi.js 8                            | AgentTown                |
+| 상태 관리  | Zustand 4 (persist)                  | localStorage             |
+| 스타일     | Tailwind CSS 4                       | Neo-Brutalism            |
+| 터미널     | xterm.js 6 + child_process           | pipe 기반                |
+| AI         | Claude CLI (execFile)                | 로컬 실행                |
+| 빌드       | esbuild (Electron) + Vite (renderer) |                          |
+| 패키징     | electron-builder 26                  | NSIS installer (Windows) |
+| 테스트     | Vitest + Testing Library             |                          |
+| 타입       | TypeScript 5.3                       | strict                   |

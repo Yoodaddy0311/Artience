@@ -37,14 +37,18 @@ export class AppErrorBoundary extends React.Component<
                             {/* Header */}
                             <div className="bg-[#FF6B6B] border-b-4 border-black p-6 flex items-center gap-4">
                                 <div className="w-14 h-14 bg-white border-4 border-black rounded-xl shadow-[4px_4px_0_0_rgba(0,0,0,0.2)] flex items-center justify-center">
-                                    <AlertTriangle className="w-8 h-8 text-[#FF6B6B]" strokeWidth={3} />
+                                    <AlertTriangle
+                                        className="w-8 h-8 text-[#FF6B6B]"
+                                        strokeWidth={3}
+                                    />
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-black text-white tracking-tight">
                                         오류가 발생했습니다
                                     </h1>
                                     <p className="text-sm font-bold text-white/80 mt-0.5">
-                                        애플리케이션에서 예기치 않은 오류가 발생했습니다.
+                                        애플리케이션에서 예기치 않은 오류가
+                                        발생했습니다.
                                     </p>
                                 </div>
                             </div>
@@ -69,7 +73,10 @@ export class AppErrorBoundary extends React.Component<
                                         onClick={this.handleReload}
                                         className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#FFD100] text-black font-black text-sm border-4 border-black rounded-xl shadow-[4px_4px_0_0_#000] hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all"
                                     >
-                                        <RefreshCw className="w-4 h-4" strokeWidth={3} />
+                                        <RefreshCw
+                                            className="w-4 h-4"
+                                            strokeWidth={3}
+                                        />
                                         새로고침
                                     </button>
                                     <button

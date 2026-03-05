@@ -1,7 +1,18 @@
 // Shared types for the DogBa Platform Run Mode
 // Based on .ref/Specs/State_machine.md and .ref/Specs/Data_model.md
 
-export type AgentState = 'IDLE' | 'WALK' | 'THINKING' | 'RUNNING' | 'SUCCESS' | 'ERROR' | 'NEEDS_INPUT';
+export type AgentState =
+    | 'IDLE'
+    | 'WALK'
+    | 'THINKING'
+    | 'RUNNING'
+    | 'SUCCESS'
+    | 'ERROR'
+    | 'NEEDS_INPUT'
+    | 'READING'
+    | 'TYPING'
+    | 'WRITING'
+    | 'SLEEPING';
 export type JobState = 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'ERROR' | 'CANCELED';
 
 export interface AgentProfile {
@@ -49,11 +60,36 @@ export interface LogEntry {
 }
 
 // IPC Event types based on .ref/Specs/IPC_event_contract.md
-export interface IpcJobRun { type: 'job:run'; recipeId: string; args?: string[]; cwd?: string; }
-export interface IpcJobStop { type: 'job:stop'; jobId: string; }
-export interface IpcJobStarted { type: 'job:started'; jobId: string; recipeId: string; startedAt: number; }
-export interface IpcJobLog { type: 'job:log'; jobId: string; stream: 'stdout' | 'stderr'; text: string; ts: number; agentId?: string; }
-export interface IpcJobEnded { type: 'job:ended'; jobId: string; exitCode: number; endedAt: number; }
+export interface IpcJobRun {
+    type: 'job:run';
+    recipeId: string;
+    args?: string[];
+    cwd?: string;
+}
+export interface IpcJobStop {
+    type: 'job:stop';
+    jobId: string;
+}
+export interface IpcJobStarted {
+    type: 'job:started';
+    jobId: string;
+    recipeId: string;
+    startedAt: number;
+}
+export interface IpcJobLog {
+    type: 'job:log';
+    jobId: string;
+    stream: 'stdout' | 'stderr';
+    text: string;
+    ts: number;
+    agentId?: string;
+}
+export interface IpcJobEnded {
+    type: 'job:ended';
+    jobId: string;
+    exitCode: number;
+    endedAt: number;
+}
 
 export type WsMessage =
     | { type: 'TASK_ASSIGNED'; agent: string; taskContent: string }
@@ -62,61 +98,121 @@ export type WsMessage =
     | { type: 'JOB_LOG'; log: LogEntry }
     | { type: 'CHAT_COMMAND'; text: string; target_agent: string };
 
-// Available character sprites (13 unique, excluding raccoon_spritesheet.png)
-// Paths are absolute — use assetPath() when rendering in <img> or PIXI to support file:// protocol
+// Character profile images — 5 canonical characters (ch0–ch4 from .ref/image)
 const SPRITES = {
-    S01: '/assets/characters/media__1771899019764.png',
-    S02: '/assets/characters/media__1771899416589.png',
-    S03: '/assets/characters/media__1771899539293.png',
-    S04: '/assets/characters/media__1771900148918.png',
-    S05: '/assets/characters/media__1771900148957.png',
-    S06: '/assets/characters/media__1771900149052.png',
-    S07: '/assets/characters/media__1771900149065.png',
-    S08: '/assets/characters/media__1771900177640.png',
-    S09: '/assets/characters/media__1771900352853.png',
-    S10: '/assets/characters/media__1771900361390.png',
-    S11: '/assets/characters/media__1771900366767.png',
-    S12: '/assets/characters/media__1771900374992.png',
-    S13: '/assets/characters/media__1771900428230.png',
+    OTTER: '/assets/characters/dokba_profile.png',    // ch0 — Dokba
+    CAT: '/assets/characters/cat_profile.png',         // ch1 — Marketer
+    HAMSTER: '/assets/characters/hamster_profile.png', // ch2 — Intern
+    DOG: '/assets/characters/dog_profile.png',         // ch3 — PM
+    RABBIT: '/assets/characters/rabbit_profile.png',   // ch4 — Designer
 } as const;
 
-// Default agents based on .ref spec
-// CTO (player character) + 25 agents
-// 13 sprites distributed across agents: first 13 unique, then cycle with offset
+// Agent ID → AnimalType mapping (used by AgentTown to pick correct map sprite)
+export const AGENT_ANIMAL_MAP: Record<string, string> = {
+    raccoon: 'otter',   // ch0 — Dokba
+    a01: 'cat',         // ch1 — Cat Marketer (Sera)
+    a02: 'hamster',     // ch2 — Hamster Intern (Rio)
+    a03: 'dog',         // ch3 — Dog PM (Luna)
+    a04: 'rabbit',      // ch4 — Rabbit Designer (Alex)
+};
+
+// Default agents — 4 team members matching ch1-ch4
+// Dokba (raccoon/ch0) is defined separately in AgentTown.tsx & BottomDock.tsx
 export const DEFAULT_AGENTS: AgentProfile[] = [
-    { id: 'cto', name: 'You', role: 'CTO', sprite: SPRITES.S13, state: 'IDLE', currentJobId: null, home: { x: 20, y: 14 }, pos: { x: 20, y: 14 } },
-    { id: 'a01', name: 'Sera', role: 'PM / 총괄', sprite: SPRITES.S01, state: 'IDLE', currentJobId: null, home: { x: 5, y: 3 }, pos: { x: 5, y: 3 } },
-    { id: 'a02', name: 'Rio', role: '백엔드 개발', sprite: SPRITES.S02, state: 'IDLE', currentJobId: null, home: { x: 8, y: 3 }, pos: { x: 8, y: 3 } },
-    { id: 'a03', name: 'Luna', role: '프론트엔드 개발', sprite: SPRITES.S03, state: 'IDLE', currentJobId: null, home: { x: 11, y: 3 }, pos: { x: 11, y: 3 } },
-    { id: 'a04', name: 'Alex', role: '데이터 분석', sprite: SPRITES.S04, state: 'IDLE', currentJobId: null, home: { x: 14, y: 3 }, pos: { x: 14, y: 3 } },
-    { id: 'a05', name: 'Ara', role: 'QA 테스트', sprite: SPRITES.S05, state: 'IDLE', currentJobId: null, home: { x: 17, y: 3 }, pos: { x: 17, y: 3 } },
-    { id: 'a06', name: 'Miso', role: 'DevOps', sprite: SPRITES.S06, state: 'IDLE', currentJobId: null, home: { x: 5, y: 7 }, pos: { x: 5, y: 7 } },
-    { id: 'a07', name: 'Hana', role: 'UX 디자인', sprite: SPRITES.S07, state: 'IDLE', currentJobId: null, home: { x: 8, y: 7 }, pos: { x: 8, y: 7 } },
-    { id: 'a08', name: 'Duri', role: '보안 감사', sprite: SPRITES.S08, state: 'IDLE', currentJobId: null, home: { x: 11, y: 7 }, pos: { x: 11, y: 7 } },
-    { id: 'a09', name: 'Bomi', role: '기술 문서화', sprite: SPRITES.S09, state: 'IDLE', currentJobId: null, home: { x: 14, y: 7 }, pos: { x: 14, y: 7 } },
-    { id: 'a10', name: 'Toto', role: 'DB 관리', sprite: SPRITES.S10, state: 'IDLE', currentJobId: null, home: { x: 17, y: 7 }, pos: { x: 17, y: 7 } },
-    { id: 'a11', name: 'Nari', role: 'API 설계', sprite: SPRITES.S11, state: 'IDLE', currentJobId: null, home: { x: 5, y: 11 }, pos: { x: 5, y: 11 } },
-    { id: 'a12', name: 'Ruru', role: '인프라 관리', sprite: SPRITES.S12, state: 'IDLE', currentJobId: null, home: { x: 8, y: 11 }, pos: { x: 8, y: 11 } },
-    { id: 'a13', name: 'Somi', role: '성능 최적화', sprite: SPRITES.S13, state: 'IDLE', currentJobId: null, home: { x: 11, y: 11 }, pos: { x: 11, y: 11 } },
-    { id: 'a14', name: 'Choco', role: 'CI/CD', sprite: SPRITES.S01, state: 'IDLE', currentJobId: null, home: { x: 14, y: 11 }, pos: { x: 14, y: 11 } },
-    { id: 'a15', name: 'Maru', role: '모니터링', sprite: SPRITES.S02, state: 'IDLE', currentJobId: null, home: { x: 17, y: 11 }, pos: { x: 17, y: 11 } },
-    { id: 'a16', name: 'Podo', role: '코드 리뷰', sprite: SPRITES.S03, state: 'IDLE', currentJobId: null, home: { x: 5, y: 15 }, pos: { x: 5, y: 15 } },
-    { id: 'a17', name: 'Jelly', role: '로그 분석', sprite: SPRITES.S04, state: 'IDLE', currentJobId: null, home: { x: 8, y: 15 }, pos: { x: 8, y: 15 } },
-    { id: 'a18', name: 'Namu', role: '아키텍처', sprite: SPRITES.S05, state: 'IDLE', currentJobId: null, home: { x: 11, y: 15 }, pos: { x: 11, y: 15 } },
-    { id: 'a19', name: 'Gomi', role: '빌드 관리', sprite: SPRITES.S06, state: 'IDLE', currentJobId: null, home: { x: 14, y: 15 }, pos: { x: 14, y: 15 } },
-    { id: 'a20', name: 'Ppuri', role: '배포 자동화', sprite: SPRITES.S07, state: 'IDLE', currentJobId: null, home: { x: 17, y: 15 }, pos: { x: 17, y: 15 } },
-    { id: 'a21', name: 'Dari', role: '이슈 트래킹', sprite: SPRITES.S08, state: 'IDLE', currentJobId: null, home: { x: 20, y: 3 }, pos: { x: 20, y: 3 } },
-    { id: 'a22', name: 'Kongbi', role: '의존성 관리', sprite: SPRITES.S09, state: 'IDLE', currentJobId: null, home: { x: 20, y: 7 }, pos: { x: 20, y: 7 } },
-    { id: 'a23', name: 'Baduk', role: '마이그레이션', sprite: SPRITES.S10, state: 'IDLE', currentJobId: null, home: { x: 20, y: 11 }, pos: { x: 20, y: 11 } },
-    { id: 'a24', name: 'Tangi', role: '캐싱 전략', sprite: SPRITES.S11, state: 'IDLE', currentJobId: null, home: { x: 20, y: 15 }, pos: { x: 20, y: 15 } },
-    { id: 'a25', name: 'Moong', role: '에러 핸들링', sprite: SPRITES.S12, state: 'IDLE', currentJobId: null, home: { x: 23, y: 9 }, pos: { x: 23, y: 9 } },
+    {
+        id: 'a01',
+        name: 'Sera',
+        role: '콘텐츠 마케터',
+        sprite: SPRITES.CAT,
+        state: 'IDLE',
+        currentJobId: null,
+        home: { x: 5, y: 3 },
+        pos: { x: 5, y: 3 },
+    },
+    {
+        id: 'a02',
+        name: 'Rio',
+        role: '인턴',
+        sprite: SPRITES.HAMSTER,
+        state: 'IDLE',
+        currentJobId: null,
+        home: { x: 8, y: 3 },
+        pos: { x: 8, y: 3 },
+    },
+    {
+        id: 'a03',
+        name: 'Luna',
+        role: 'PM',
+        sprite: SPRITES.DOG,
+        state: 'IDLE',
+        currentJobId: null,
+        home: { x: 11, y: 3 },
+        pos: { x: 11, y: 3 },
+    },
+    {
+        id: 'a04',
+        name: 'Alex',
+        role: '디자이너',
+        sprite: SPRITES.RABBIT,
+        state: 'IDLE',
+        currentJobId: null,
+        home: { x: 14, y: 3 },
+        pos: { x: 14, y: 3 },
+    },
 ];
 
 // Default recipes based on .ref spec
 export const DEFAULT_RECIPES: Recipe[] = [
-    { id: 'r01', name: 'Node 버전 확인', description: 'node -v 를 실행합니다 (데모)', command: 'node', args: ['-v'], cwd: '', env: {}, parserRules: { keywordToState: {} } },
-    { id: 'r02', name: '디렉토리 목록', description: '현재 디렉토리 파일 목록을 확인합니다', command: 'cmd', args: ['/c', 'dir'], cwd: '', env: {}, parserRules: { keywordToState: { build: 'RUNNING', test: 'RUNNING' } } },
-    { id: 'r03', name: 'Git 상태 확인', description: 'git status를 실행합니다', command: 'git', args: ['status'], cwd: '', env: {}, parserRules: { keywordToState: { think: 'THINKING', plan: 'THINKING' } } },
-    { id: 'r04', name: 'Python 버전', description: 'python --version 확인', command: 'python', args: ['--version'], cwd: '', env: {}, parserRules: { keywordToState: {} } },
-    { id: 'r05', name: 'NPM 의존성 확인', description: 'npm ls --depth=0', command: 'npm', args: ['ls', '--depth=0'], cwd: '', env: {}, parserRules: { keywordToState: { build: 'RUNNING', exec: 'RUNNING' } } },
+    {
+        id: 'r01',
+        name: 'Node 버전 확인',
+        description: 'node -v 를 실행합니다 (데모)',
+        command: 'node',
+        args: ['-v'],
+        cwd: '',
+        env: {},
+        parserRules: { keywordToState: {} },
+    },
+    {
+        id: 'r02',
+        name: '디렉토리 목록',
+        description: '현재 디렉토리 파일 목록을 확인합니다',
+        command: 'cmd',
+        args: ['/c', 'dir'],
+        cwd: '',
+        env: {},
+        parserRules: { keywordToState: { build: 'RUNNING', test: 'RUNNING' } },
+    },
+    {
+        id: 'r03',
+        name: 'Git 상태 확인',
+        description: 'git status를 실행합니다',
+        command: 'git',
+        args: ['status'],
+        cwd: '',
+        env: {},
+        parserRules: {
+            keywordToState: { think: 'THINKING', plan: 'THINKING' },
+        },
+    },
+    {
+        id: 'r04',
+        name: 'Python 버전',
+        description: 'python --version 확인',
+        command: 'python',
+        args: ['--version'],
+        cwd: '',
+        env: {},
+        parserRules: { keywordToState: {} },
+    },
+    {
+        id: 'r05',
+        name: 'NPM 의존성 확인',
+        description: 'npm ls --depth=0',
+        command: 'npm',
+        args: ['ls', '--depth=0'],
+        cwd: '',
+        env: {},
+        parserRules: { keywordToState: { build: 'RUNNING', exec: 'RUNNING' } },
+    },
 ];

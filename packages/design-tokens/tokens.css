@@ -1,32 +1,32 @@
 :root {
     /* Primary — Warm Cream */
-    --color-cream-50: #FFF9F0;
-    --color-cream-100: #FFF3E0;
-    --color-cream-200: #FFE8CC;
-    --color-cream-300: #FFD9A8;
+    --color-cream-50: #fff9f0;
+    --color-cream-100: #fff3e0;
+    --color-cream-200: #ffe8cc;
+    --color-cream-300: #ffd9a8;
 
     /* Secondary — Soft Brown */
-    --color-brown-400: #D4A574;
-    --color-brown-500: #B8886E;
-    --color-brown-600: #8B6F5E;
-    --color-brown-700: #5D4E42;
-    --color-brown-800: #3E342D;
-    --color-brown-900: #2A231E;
+    --color-brown-400: #d4a574;
+    --color-brown-500: #b8886e;
+    --color-brown-600: #8b6f5e;
+    --color-brown-700: #5d4e42;
+    --color-brown-800: #3e342d;
+    --color-brown-900: #2a231e;
 
     /* Accents */
-    --color-pink: #FFB5B5;
-    --color-gray: #A0AEC0;
-    --color-amber: #F6C67C;
-    --color-lavender: #D6BCFA;
-    --color-blue: #90CDF4;
-    --color-peach: #FEB2B2;
+    --color-pink: #ffb5b5;
+    --color-gray: #a0aec0;
+    --color-amber: #f6c67c;
+    --color-lavender: #d6bcfa;
+    --color-blue: #90cdf4;
+    --color-peach: #feb2b2;
 
     /* Status */
-    --color-success: #9AE6B4;
-    --color-error: #FEB2B2;
-    --color-warning: #FEFCBF;
-    --color-info: #BEE3F8;
-    --color-running: #C4B5FD;
+    --color-success: #9ae6b4;
+    --color-error: #feb2b2;
+    --color-warning: #fefcbf;
+    --color-info: #bee3f8;
+    --color-running: #c4b5fd;
 
     /* Spacing */
     --space-1: 4px;
@@ -57,10 +57,10 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --color-cream-50: #1A1612;
-        --color-cream-100: #2D2520;
-        --color-cream-200: #4A3F36;
-        --color-brown-700: #E8DDD4;
-        --color-brown-800: #FFF9F0;
+        --color-cream-50: #1a1612;
+        --color-cream-100: #2d2520;
+        --color-cream-200: #4a3f36;
+        --color-brown-700: #e8ddd4;
+        --color-brown-800: #fff9f0;
     }
 }

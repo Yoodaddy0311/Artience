@@ -16,7 +16,8 @@ export const Badge: React.FC<BadgeProps> = ({
     size = 'md',
     className = '',
 }) => {
-    const baseStyles = 'inline-flex items-center font-bold border-2 border-black rounded-lg';
+    const baseStyles =
+        'inline-flex items-center font-bold border-2 border-black rounded-lg';
 
     const variants: Record<BadgeVariant, string> = {
         default: 'bg-gray-100 text-black',

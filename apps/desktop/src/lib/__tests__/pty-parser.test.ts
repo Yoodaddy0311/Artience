@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { stripAnsi, parsePtyChunk, detectActivity, summarizeEvents, isNoiseLine, type ParsedEvent } from '../pty-parser';
+import {
+    stripAnsi,
+    parsePtyChunk,
+    detectActivity,
+    summarizeEvents,
+    isNoiseLine,
+    type ParsedEvent,
+} from '../pty-parser';
 
 describe('stripAnsi', () => {
     it('removes CSI color codes', () => {
@@ -204,7 +211,7 @@ describe('parsePtyChunk', () => {
     it('filters out box-drawing decoration', () => {
         const events = parsePtyChunk('╔═══╗\n│ content │\n╚═══╝');
         // "│ content │" is not a noise line because it contains "content"
-        expect(events.some(e => e.content.includes('content'))).toBe(true);
+        expect(events.some((e) => e.content.includes('content'))).toBe(true);
     });
 
     it('filters progress bars', () => {
@@ -229,21 +236,21 @@ describe('parsePtyChunk', () => {
         const raw = 'line1\r\nline2\nline3\r\nline4';
         const events = parsePtyChunk(raw);
         expect(events).toHaveLength(4);
-        expect(events.every(e => e.type === 'text')).toBe(true);
+        expect(events.every((e) => e.type === 'text')).toBe(true);
     });
 
     // ── New: noise mixed with real content ──
 
     it('extracts only real content from noisy output', () => {
         const raw = [
-            '⠋',                          // spinner noise
-            '⠙',                          // spinner noise
-            '───────────',                // separator noise
-            '⏺ Analyzing the code...',    // thinking
-            '  Edit src/main.ts',         // tool_use
-            '─────',                      // separator noise
-            '  ✓',                        // tool_result
-            '❯',                          // prompt
+            '⠋', // spinner noise
+            '⠙', // spinner noise
+            '───────────', // separator noise
+            '⏺ Analyzing the code...', // thinking
+            '  Edit src/main.ts', // tool_use
+            '─────', // separator noise
+            '  ✓', // tool_result
+            '❯', // prompt
         ].join('\n');
 
         const events = parsePtyChunk(raw);
@@ -257,10 +264,16 @@ describe('parsePtyChunk', () => {
 
 describe('parsePtyChunk — team detection', () => {
     it('detects single-line team status bar with 2+ @names', () => {
-        const events = parsePtyChunk('@main @frontend-dev @planner · ↓ to expand');
+        const events = parsePtyChunk(
+            '@main @frontend-dev @planner · ↓ to expand',
+        );
         expect(events).toHaveLength(1);
         expect(events[0].type).toBe('team_update');
-        expect(events[0].teamMembers).toEqual(['main', 'frontend-dev', 'planner']);
+        expect(events[0].teamMembers).toEqual([
+            'main',
+            'frontend-dev',
+            'planner',
+        ]);
     });
 
     it('detects multi-line "N agents launched" format', () => {
@@ -272,7 +285,7 @@ describe('parsePtyChunk — team detection', () => {
             '        └ Renderer state flow investigation',
         ].join('\n');
         const events = parsePtyChunk(raw);
-        const teamEvents = events.filter(e => e.type === 'team_update');
+        const teamEvents = events.filter((e) => e.type === 'team_update');
         expect(teamEvents).toHaveLength(1);
         expect(teamEvents[0].teamMembers).toEqual([
             'backend-investigator',
@@ -287,7 +300,7 @@ describe('parsePtyChunk — team detection', () => {
             '        └ Review the PR',
         ].join('\n');
         const events = parsePtyChunk(raw);
-        const teamEvents = events.filter(e => e.type === 'team_update');
+        const teamEvents = events.filter((e) => e.type === 'team_update');
         expect(teamEvents).toHaveLength(1);
         expect(teamEvents[0].teamMembers).toEqual(['code-reviewer']);
     });
@@ -303,10 +316,12 @@ describe('parsePtyChunk — team detection', () => {
             '        └ Build API endpoints',
         ].join('\n');
         const events = parsePtyChunk(raw);
-        const teamEvents = events.filter(e => e.type === 'team_update');
+        const teamEvents = events.filter((e) => e.type === 'team_update');
         expect(teamEvents).toHaveLength(1);
         expect(teamEvents[0].teamMembers).toEqual([
-            'planner', 'frontend-dev', 'backend-dev',
+            'planner',
+            'frontend-dev',
+            'backend-dev',
         ]);
     });
 
@@ -329,7 +344,7 @@ describe('parsePtyChunk — team detection', () => {
             'Some unrelated text follows',
         ].join('\n');
         const events = parsePtyChunk(raw);
-        const teamEvents = events.filter(e => e.type === 'team_update');
+        const teamEvents = events.filter((e) => e.type === 'team_update');
         expect(teamEvents).toHaveLength(0);
     });
 
@@ -345,13 +360,19 @@ describe('parsePtyChunk — team detection', () => {
         const events = parsePtyChunk(raw);
         expect(events).toHaveLength(2);
         expect(events[0].type).toBe('team_update');
-        expect(events[0].teamMembers).toEqual(['investigator-a', 'investigator-b']);
+        expect(events[0].teamMembers).toEqual([
+            'investigator-a',
+            'investigator-b',
+        ]);
         expect(events[1].type).toBe('thinking');
     });
 });
 
 describe('detectActivity', () => {
-    const makeEvent = (type: ParsedEvent['type'], toolName?: string): ParsedEvent => ({
+    const makeEvent = (
+        type: ParsedEvent['type'],
+        toolName?: string,
+    ): ParsedEvent => ({
         type,
         content: 'test',
         toolName,
@@ -371,7 +392,9 @@ describe('detectActivity', () => {
     });
 
     it('returns error when error events present', () => {
-        expect(detectActivity([makeEvent('text'), makeEvent('error')])).toBe('error');
+        expect(detectActivity([makeEvent('text'), makeEvent('error')])).toBe(
+            'error',
+        );
     });
 
     it('returns success when prompt follows work', () => {
@@ -389,16 +412,17 @@ describe('detectActivity', () => {
     });
 
     it('error takes priority over working', () => {
-        const events = [
-            makeEvent('tool_use', 'Edit'),
-            makeEvent('error'),
-        ];
+        const events = [makeEvent('tool_use', 'Edit'), makeEvent('error')];
         expect(detectActivity(events)).toBe('error');
     });
 });
 
 describe('summarizeEvents', () => {
-    const makeEvent = (type: ParsedEvent['type'], content: string, toolName?: string): ParsedEvent => ({
+    const makeEvent = (
+        type: ParsedEvent['type'],
+        content: string,
+        toolName?: string,
+    ): ParsedEvent => ({
         type,
         content,
         toolName,

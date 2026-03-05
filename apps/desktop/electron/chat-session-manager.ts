@@ -25,9 +25,9 @@ export interface ChatSession {
     agentId: string;
     agentName: string;
     proc: ChildProcess;
-    sessionId?: string;         // Claude session ID for --resume
+    sessionId?: string; // Claude session ID for --resume
     status: 'idle' | 'busy' | 'closed';
-    promptFilePath: string;     // temp file for system prompt
+    promptFilePath: string; // temp file for system prompt
     cwd: string;
     mode: 'stream-json' | 'fallback';
 }
@@ -38,7 +38,7 @@ export interface StreamEvent {
     toolName?: string;
     toolUseId?: string;
     sessionId?: string;
-    partial?: boolean;          // token-by-token partial
+    partial?: boolean; // token-by-token partial
 }
 
 // ── Session store for --resume persistence ─────────────────────────────────
@@ -60,7 +60,12 @@ export class ChatSessionManager extends EventEmitter {
      * Attempts --input-format stream-json first; if spawn fails,
      * the session remains available for fallback per-message spawns.
      */
-    async createSession(agentId: string, agentName: string, cwd: string, extraArgs?: string[]): Promise<string> {
+    async createSession(
+        agentId: string,
+        agentName: string,
+        cwd: string,
+        extraArgs?: string[],
+    ): Promise<string> {
         // Reuse existing live session
         const existing = this.sessions.get(agentId);
         if (existing && existing.status !== 'closed') {
@@ -72,10 +77,14 @@ export class ChatSessionManager extends EventEmitter {
         // -p is REQUIRED for --output-format/--input-format/--include-partial-messages to work.
         // We send a short init prompt; subsequent messages go via stdin (stream-json).
         const args = [
-            '-p', '안녕',
-            '--output-format', 'stream-json',
-            '--input-format', 'stream-json',
-            '--system-prompt-file', promptPath,
+            '-p',
+            '안녕',
+            '--output-format',
+            'stream-json',
+            '--input-format',
+            'stream-json',
+            '--system-prompt-file',
+            promptPath,
             '--include-partial-messages',
             '--verbose',
         ];
@@ -89,7 +98,9 @@ export class ChatSessionManager extends EventEmitter {
         const savedSessionId = this.getSavedSessionId(agentId);
         if (savedSessionId) {
             args.push('--resume', savedSessionId);
-            console.log(`[ChatSessionManager] Resuming session ${savedSessionId} for ${agentId}`);
+            console.log(
+                `[ChatSessionManager] Resuming session ${savedSessionId} for ${agentId}`,
+            );
         }
 
         const env = { ...process.env } as Record<string, string>;
@@ -98,7 +109,10 @@ export class ChatSessionManager extends EventEmitter {
         env.FORCE_COLOR = '0';
 
         try {
-            console.log(`[ChatSessionManager] Spawning claude for ${agentId} with args:`, args.filter(a => !a.startsWith('{')).join(' '));
+            console.log(
+                `[ChatSessionManager] Spawning claude for ${agentId} with args:`,
+                args.filter((a) => !a.startsWith('{')).join(' '),
+            );
             const proc = spawn('claude', args, {
                 cwd,
                 env,
@@ -119,7 +133,10 @@ export class ChatSessionManager extends EventEmitter {
             // Handle spawn error (e.g. --input-format not supported)
             const spawnError = await this.waitForSpawnOrError(proc);
             if (spawnError) {
-                console.warn(`[ChatSessionManager] stream-json spawn failed for ${agentId}:`, spawnError);
+                console.warn(
+                    `[ChatSessionManager] stream-json spawn failed for ${agentId}:`,
+                    spawnError,
+                );
                 // Create a fallback session placeholder (keep promptPath for fallback use)
                 const fallbackSession: ChatSession = {
                     agentId,
@@ -131,17 +148,24 @@ export class ChatSessionManager extends EventEmitter {
                     mode: 'fallback',
                 };
                 this.sessions.set(agentId, fallbackSession);
-                console.log(`[ChatSessionManager] Fallback mode for ${agentId}`);
+                console.log(
+                    `[ChatSessionManager] Fallback mode for ${agentId}`,
+                );
                 return agentId;
             }
 
             this.sessions.set(agentId, session);
             this.setupOutputParser(session);
 
-            console.log(`[ChatSessionManager] Session created for ${agentId} (stream-json mode)`);
+            console.log(
+                `[ChatSessionManager] Session created for ${agentId} (stream-json mode)`,
+            );
             return agentId;
         } catch (err: any) {
-            console.warn(`[ChatSessionManager] Failed to create session for ${agentId}:`, err.message);
+            console.warn(
+                `[ChatSessionManager] Failed to create session for ${agentId}:`,
+                err.message,
+            );
             // Register fallback session
             const fallbackSession: ChatSession = {
                 agentId,
@@ -191,7 +215,11 @@ export class ChatSessionManager extends EventEmitter {
         session.status = 'closed';
 
         if (session.proc && typeof session.proc.kill === 'function') {
-            try { session.proc.kill(); } catch { /* ignore */ }
+            try {
+                session.proc.kill();
+            } catch {
+                /* ignore */
+            }
         }
 
         this.cleanupPromptFile(session.promptFilePath);
@@ -246,8 +274,10 @@ export class ChatSessionManager extends EventEmitter {
         env.FORCE_COLOR = '0';
 
         const args = [
-            '-p', message,
-            '--output-format', 'stream-json',
+            '-p',
+            message,
+            '--output-format',
+            'stream-json',
             '--verbose',
         ];
 
@@ -277,11 +307,15 @@ export class ChatSessionManager extends EventEmitter {
                 try {
                     const msg = JSON.parse(line);
                     this.handleMessage(session, msg);
-                } catch { /* skip non-JSON */ }
+                } catch {
+                    /* skip non-JSON */
+                }
             }
         });
 
-        proc.stderr?.on('data', () => { /* ignore progress indicators */ });
+        proc.stderr?.on('data', () => {
+            /* ignore progress indicators */
+        });
 
         proc.on('error', (err) => {
             this.emit('stream', session.agentId, {
@@ -298,14 +332,18 @@ export class ChatSessionManager extends EventEmitter {
                 try {
                     const msg = JSON.parse(buffer.trim());
                     this.handleMessage(session, msg);
-                } catch { /* skip */ }
+                } catch {
+                    /* skip */
+                }
             }
 
             session.status = 'idle';
             this.emit('response:end', session.agentId);
 
             if (code !== 0 && code !== null) {
-                console.warn(`[ChatSessionManager] Fallback process exited with code ${code} for ${session.agentId}`);
+                console.warn(
+                    `[ChatSessionManager] Fallback process exited with code ${code} for ${session.agentId}`,
+                );
             }
         });
     }
@@ -325,19 +363,27 @@ export class ChatSessionManager extends EventEmitter {
                 try {
                     const msg = JSON.parse(line);
                     this.handleMessage(session, msg);
-                } catch { /* skip non-JSON lines */ }
+                } catch {
+                    /* skip non-JSON lines */
+                }
             }
         });
 
         session.proc.stderr?.on('data', (data: Buffer) => {
             const text = data.toString().trim();
             if (text) {
-                console.log(`[ChatSessionManager] stderr(${session.agentId}):`, text.slice(0, 500));
+                console.log(
+                    `[ChatSessionManager] stderr(${session.agentId}):`,
+                    text.slice(0, 500),
+                );
             }
         });
 
         session.proc.on('error', (err) => {
-            console.error(`[ChatSessionManager] Process error for ${session.agentId}:`, err.message);
+            console.error(
+                `[ChatSessionManager] Process error for ${session.agentId}:`,
+                err.message,
+            );
             session.status = 'closed';
             this.emit('stream', session.agentId, {
                 type: 'error',
@@ -353,7 +399,9 @@ export class ChatSessionManager extends EventEmitter {
                 try {
                     const msg = JSON.parse(buffer.trim());
                     this.handleMessage(session, msg);
-                } catch { /* skip */ }
+                } catch {
+                    /* skip */
+                }
             }
 
             // Downgrade to fallback mode instead of closing entirely
@@ -362,7 +410,9 @@ export class ChatSessionManager extends EventEmitter {
             session.proc = null as any;
             this.emit('response:end', session.agentId);
 
-            console.log(`[ChatSessionManager] Process exited for ${session.agentId} (code ${code}), switched to fallback mode`);
+            console.log(
+                `[ChatSessionManager] Process exited for ${session.agentId} (code ${code}), switched to fallback mode`,
+            );
         });
     }
 
@@ -427,7 +477,10 @@ export class ChatSessionManager extends EventEmitter {
         if (msg.type === 'tool_result') {
             this.emit('stream', session.agentId, {
                 type: 'tool_result',
-                content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || ''),
+                content:
+                    typeof msg.content === 'string'
+                        ? msg.content
+                        : JSON.stringify(msg.content || ''),
                 sessionId: session.sessionId,
             } as StreamEvent);
             return;
@@ -454,7 +507,10 @@ export class ChatSessionManager extends EventEmitter {
         if (!fs.existsSync(tmpDir)) {
             fs.mkdirSync(tmpDir, { recursive: true });
         }
-        const filePath = path.join(tmpDir, `${agentName.toLowerCase()}-${Date.now()}.txt`);
+        const filePath = path.join(
+            tmpDir,
+            `${agentName.toLowerCase()}-${Date.now()}.txt`,
+        );
         fs.writeFileSync(filePath, promptText, 'utf-8');
         return filePath;
     }
@@ -464,7 +520,9 @@ export class ChatSessionManager extends EventEmitter {
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
             }
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }
 
     // ── Helper: session ID persistence ─────────────────────────────────────

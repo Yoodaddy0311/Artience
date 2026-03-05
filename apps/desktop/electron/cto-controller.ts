@@ -67,7 +67,9 @@ class CTOController {
 
             agents[key] = {
                 description: `${persona.role} ${key.charAt(0).toUpperCase() + key.slice(1)}. ${persona.personality}`,
-                prompt: buildSystemPrompt(key.charAt(0).toUpperCase() + key.slice(1)),
+                prompt: buildSystemPrompt(
+                    key.charAt(0).toUpperCase() + key.slice(1),
+                ),
                 model: 'sonnet',
             };
         }
@@ -79,12 +81,20 @@ class CTOController {
      * Create a CTO team session with --agents flag.
      * Uses ChatSessionManager.createSession with extraArgs.
      */
-    async createTeamSession(cwd: string): Promise<{ success: boolean; error?: string }> {
+    async createTeamSession(
+        cwd: string,
+    ): Promise<{ success: boolean; error?: string }> {
         if (!this.chatSessionManager) {
-            return { success: false, error: 'ChatSessionManager not initialized. Call init() first.' };
+            return {
+                success: false,
+                error: 'ChatSessionManager not initialized. Call init() first.',
+            };
         }
 
-        if (this.teamSessionActive && this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID)) {
+        if (
+            this.teamSessionActive &&
+            this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID)
+        ) {
             return { success: true };
         }
 
@@ -103,10 +113,15 @@ class CTOController {
             );
 
             this.teamSessionActive = true;
-            console.log(`[CTOController] Team session created with ${Object.keys(agentsConfig).length} agents`);
+            console.log(
+                `[CTOController] Team session created with ${Object.keys(agentsConfig).length} agents`,
+            );
             return { success: true };
         } catch (err: any) {
-            console.error('[CTOController] Failed to create team session:', err.message);
+            console.error(
+                '[CTOController] Failed to create team session:',
+                err.message,
+            );
             return { success: false, error: err.message };
         }
     }
@@ -115,9 +130,15 @@ class CTOController {
      * Delegate a task to a specific agent via the CTO session.
      * The CTO's Claude instance will route to the appropriate sub-agent.
      */
-    async delegateTask(agentName: string, task: string): Promise<{ success: boolean; error?: string }> {
+    async delegateTask(
+        agentName: string,
+        task: string,
+    ): Promise<{ success: boolean; error?: string }> {
         if (!this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID)) {
-            return { success: false, error: 'CTO team session is not active. Create a team session first.' };
+            return {
+                success: false,
+                error: 'CTO team session is not active. Create a team session first.',
+            };
         }
 
         // Build a delegation prompt that the CTO Claude will understand
@@ -151,7 +172,10 @@ class CTOController {
      * Check if team session is active.
      */
     isTeamActive(): boolean {
-        return this.teamSessionActive && (this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID) ?? false);
+        return (
+            this.teamSessionActive &&
+            (this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID) ?? false)
+        );
     }
 
     /**

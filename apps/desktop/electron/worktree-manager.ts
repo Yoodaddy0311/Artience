@@ -35,10 +35,16 @@ class WorktreeManager {
      * Create a git worktree for an agent.
      * Branch: `agent/{agentId}`, Path: `.claude/worktrees/{agentId}`
      */
-    async createWorktree(agentId: string, projectDir: string): Promise<{ success: boolean; path?: string; error?: string }> {
+    async createWorktree(
+        agentId: string,
+        projectDir: string,
+    ): Promise<{ success: boolean; path?: string; error?: string }> {
         try {
             if (!this.validateAgentId(agentId)) {
-                return { success: false, error: 'Invalid agentId: must be alphanumeric, hyphens, or underscores only' };
+                return {
+                    success: false,
+                    error: 'Invalid agentId: must be alphanumeric, hyphens, or underscores only',
+                };
             }
 
             // Verify git repo
@@ -66,30 +72,48 @@ class WorktreeManager {
             }
 
             // Create worktree with new branch based on HEAD
-            await execFileAsync('git', ['worktree', 'add', '-b', branch, worktreePath, 'HEAD'], {
-                cwd: projectDir,
-                timeout: 30000,
-            });
+            await execFileAsync(
+                'git',
+                ['worktree', 'add', '-b', branch, worktreePath, 'HEAD'],
+                {
+                    cwd: projectDir,
+                    timeout: 30000,
+                },
+            );
 
-            console.log(`[WorktreeManager] Created worktree for ${agentId} at ${worktreePath}`);
+            console.log(
+                `[WorktreeManager] Created worktree for ${agentId} at ${worktreePath}`,
+            );
             return { success: true, path: worktreePath };
         } catch (err: any) {
             // Branch already exists — try without -b
             if (err.message?.includes('already exists')) {
                 try {
-                    const worktreePath = this.getWorktreePath(agentId, projectDir);
+                    const worktreePath = this.getWorktreePath(
+                        agentId,
+                        projectDir,
+                    );
                     const branch = `agent/${agentId}`;
-                    await execFileAsync('git', ['worktree', 'add', worktreePath, branch], {
-                        cwd: projectDir,
-                        timeout: 30000,
-                    });
-                    console.log(`[WorktreeManager] Attached existing branch for ${agentId}`);
+                    await execFileAsync(
+                        'git',
+                        ['worktree', 'add', worktreePath, branch],
+                        {
+                            cwd: projectDir,
+                            timeout: 30000,
+                        },
+                    );
+                    console.log(
+                        `[WorktreeManager] Attached existing branch for ${agentId}`,
+                    );
                     return { success: true, path: worktreePath };
                 } catch (innerErr: any) {
                     return { success: false, error: innerErr.message };
                 }
             }
-            console.error(`[WorktreeManager] Failed to create worktree for ${agentId}:`, err.message);
+            console.error(
+                `[WorktreeManager] Failed to create worktree for ${agentId}:`,
+                err.message,
+            );
             return { success: false, error: err.message };
         }
     }
@@ -97,7 +121,10 @@ class WorktreeManager {
     /**
      * Remove a worktree for an agent.
      */
-    async removeWorktree(agentId: string, projectDir: string): Promise<{ success: boolean; error?: string }> {
+    async removeWorktree(
+        agentId: string,
+        projectDir: string,
+    ): Promise<{ success: boolean; error?: string }> {
         try {
             const worktreePath = this.getWorktreePath(agentId, projectDir);
 
@@ -105,15 +132,22 @@ class WorktreeManager {
                 return { success: true }; // Already gone
             }
 
-            await execFileAsync('git', ['worktree', 'remove', worktreePath, '--force'], {
-                cwd: projectDir,
-                timeout: 15000,
-            });
+            await execFileAsync(
+                'git',
+                ['worktree', 'remove', worktreePath, '--force'],
+                {
+                    cwd: projectDir,
+                    timeout: 15000,
+                },
+            );
 
             console.log(`[WorktreeManager] Removed worktree for ${agentId}`);
             return { success: true };
         } catch (err: any) {
-            console.error(`[WorktreeManager] Failed to remove worktree for ${agentId}:`, err.message);
+            console.error(
+                `[WorktreeManager] Failed to remove worktree for ${agentId}:`,
+                err.message,
+            );
             return { success: false, error: err.message };
         }
     }
@@ -125,10 +159,14 @@ class WorktreeManager {
         try {
             if (!this.isGitRepo(projectDir)) return [];
 
-            const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
-                cwd: projectDir,
-                timeout: 10000,
-            });
+            const { stdout } = await execFileAsync(
+                'git',
+                ['worktree', 'list', '--porcelain'],
+                {
+                    cwd: projectDir,
+                    timeout: 10000,
+                },
+            );
 
             const worktrees: WorktreeInfo[] = [];
             const entries = stdout.split('\n\n').filter(Boolean);
@@ -158,7 +196,10 @@ class WorktreeManager {
 
             return worktrees;
         } catch (err: any) {
-            console.error('[WorktreeManager] Failed to list worktrees:', err.message);
+            console.error(
+                '[WorktreeManager] Failed to list worktrees:',
+                err.message,
+            );
             return [];
         }
     }

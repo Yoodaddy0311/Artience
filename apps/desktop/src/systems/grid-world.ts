@@ -41,7 +41,9 @@ class BinaryHeap<T> {
     private items: T[] = [];
     constructor(private compare: (a: T, b: T) => number) {}
 
-    get size() { return this.items.length; }
+    get size() {
+        return this.items.length;
+    }
 
     push(item: T) {
         this.items.push(item);
@@ -81,7 +83,10 @@ class BinaryHeap<T> {
         while (i > 0) {
             const parent = (i - 1) >> 1;
             if (this.compare(this.items[i], this.items[parent]) >= 0) break;
-            [this.items[i], this.items[parent]] = [this.items[parent], this.items[i]];
+            [this.items[i], this.items[parent]] = [
+                this.items[parent],
+                this.items[i],
+            ];
             i = parent;
         }
     }
@@ -92,10 +97,21 @@ class BinaryHeap<T> {
             let smallest = i;
             const left = 2 * i + 1;
             const right = 2 * i + 2;
-            if (left < n && this.compare(this.items[left], this.items[smallest]) < 0) smallest = left;
-            if (right < n && this.compare(this.items[right], this.items[smallest]) < 0) smallest = right;
+            if (
+                left < n &&
+                this.compare(this.items[left], this.items[smallest]) < 0
+            )
+                smallest = left;
+            if (
+                right < n &&
+                this.compare(this.items[right], this.items[smallest]) < 0
+            )
+                smallest = right;
             if (smallest === i) break;
-            [this.items[i], this.items[smallest]] = [this.items[smallest], this.items[i]];
+            [this.items[i], this.items[smallest]] = [
+                this.items[smallest],
+                this.items[i],
+            ];
             i = smallest;
         }
     }
@@ -105,9 +121,9 @@ class BinaryHeap<T> {
 interface AStarNode {
     x: number;
     y: number;
-    g: number;        // cost from start
-    h: number;        // heuristic to end
-    f: number;        // g + h
+    g: number; // cost from start
+    h: number; // heuristic to end
+    f: number; // g + h
     parent: AStarNode | null;
 }
 
@@ -121,21 +137,36 @@ function heuristic(ax: number, ay: number, bx: number, by: number): number {
  */
 export function findPath(
     world: GridWorld,
-    startX: number, startY: number,
-    endX: number, endY: number
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
 ): { x: number; y: number }[] {
     // Bounds check
-    if (startX < 0 || startX >= world.cols || startY < 0 || startY >= world.rows) return [];
-    if (endX < 0 || endX >= world.cols || endY < 0 || endY >= world.rows) return [];
-    if (world.cells[startY]?.[startX]?.collision || world.cells[endY]?.[endX]?.collision) return [];
+    if (
+        startX < 0 ||
+        startX >= world.cols ||
+        startY < 0 ||
+        startY >= world.rows
+    )
+        return [];
+    if (endX < 0 || endX >= world.cols || endY < 0 || endY >= world.rows)
+        return [];
+    if (
+        world.cells[startY]?.[startX]?.collision ||
+        world.cells[endY]?.[endX]?.collision
+    )
+        return [];
 
     const openSet = new BinaryHeap<AStarNode>((a, b) => a.f - b.f);
     const closedSet = new Set<string>();
     const key = (x: number, y: number) => `${x},${y}`;
 
     const startNode: AStarNode = {
-        x: startX, y: startY,
-        g: 0, h: heuristic(startX, startY, endX, endY),
+        x: startX,
+        y: startY,
+        g: 0,
+        h: heuristic(startX, startY, endX, endY),
         f: heuristic(startX, startY, endX, endY),
         parent: null,
     };
@@ -167,7 +198,8 @@ export function findPath(
         ];
 
         for (const n of neighbors) {
-            if (n.x < 0 || n.x >= world.cols || n.y < 0 || n.y >= world.rows) continue;
+            if (n.x < 0 || n.x >= world.cols || n.y < 0 || n.y >= world.rows)
+                continue;
             if (closedSet.has(key(n.x, n.y))) continue;
             if (world.cells[n.y]?.[n.x]?.collision) continue;
 
@@ -176,12 +208,22 @@ export function findPath(
             const f = g + h;
 
             // Check if already in openSet with better score
-            const existing = openSet.find(o => o.x === n.x && o.y === n.y);
+            const existing = openSet.find((o) => o.x === n.x && o.y === n.y);
             if (existing && existing.g <= g) continue;
 
-            const newNode: AStarNode = { x: n.x, y: n.y, g, h, f, parent: current };
+            const newNode: AStarNode = {
+                x: n.x,
+                y: n.y,
+                g,
+                h,
+                f,
+                parent: current,
+            };
             if (existing) {
-                openSet.updateOrPush(newNode, (a, b) => a.x === b.x && a.y === b.y);
+                openSet.updateOrPush(
+                    newNode,
+                    (a, b) => a.x === b.x && a.y === b.y,
+                );
             } else {
                 openSet.push(newNode);
             }
@@ -213,11 +255,19 @@ export function createDefaultWorld(): GridWorld {
     // ── Outer walls ──
     for (let x = 0; x < GRID_COLS; x++) {
         cells[0][x] = { floor: TileType.WALL, wall: true, collision: true };
-        cells[GRID_ROWS - 1][x] = { floor: TileType.WALL, wall: true, collision: true };
+        cells[GRID_ROWS - 1][x] = {
+            floor: TileType.WALL,
+            wall: true,
+            collision: true,
+        };
     }
     for (let y = 0; y < GRID_ROWS; y++) {
         cells[y][0] = { floor: TileType.WALL, wall: true, collision: true };
-        cells[y][GRID_COLS - 1] = { floor: TileType.WALL, wall: true, collision: true };
+        cells[y][GRID_COLS - 1] = {
+            floor: TileType.WALL,
+            wall: true,
+            collision: true,
+        };
     }
 
     // ── Work Zone (top-left room: cols 1-18, rows 1-11) ──
@@ -270,7 +320,12 @@ export function createDefaultWorld(): GridWorld {
     }
     for (let x = 1; x <= 18; x++) {
         if (x === 8 || x === 9) continue;
-        cells[17][x] = { floor: TileType.WALL, wall: true, collision: true, zone: undefined };
+        cells[17][x] = {
+            floor: TileType.WALL,
+            wall: true,
+            collision: true,
+            zone: undefined,
+        };
     }
 
     // ── Entrance Zone (bottom-right: cols 20-38, rows 17-23) ──
@@ -281,14 +336,28 @@ export function createDefaultWorld(): GridWorld {
     }
     for (let x = 20; x <= 38; x++) {
         if (x === 28 || x === 29) continue;
-        cells[17][x] = { floor: TileType.WALL, wall: true, collision: true, zone: undefined };
+        cells[17][x] = {
+            floor: TileType.WALL,
+            wall: true,
+            collision: true,
+            zone: undefined,
+        };
     }
 
     // ── Desks (collision objects in work zone) ──
     const deskPositions = [
-        [3, 3], [3, 5], [3, 7], [3, 9],
-        [8, 3], [8, 5], [8, 7], [8, 9],
-        [13, 3], [13, 5], [13, 7], [13, 9],
+        [3, 3],
+        [3, 5],
+        [3, 7],
+        [3, 9],
+        [8, 3],
+        [8, 5],
+        [8, 7],
+        [8, 9],
+        [13, 3],
+        [13, 5],
+        [13, 7],
+        [13, 9],
     ];
     for (const [x, y] of deskPositions) {
         cells[y][x].collision = true;
@@ -310,13 +379,22 @@ export function createDefaultWorld(): GridWorld {
  * Validate that all zones are reachable from the entrance.
  * Returns {valid, unreachable} — unreachable lists zones that can't be reached.
  */
-export function validateWorld(world: GridWorld): { valid: boolean; unreachable: ZoneType[] } {
+export function validateWorld(world: GridWorld): {
+    valid: boolean;
+    unreachable: ZoneType[];
+} {
     // Find entrance spawn point
-    let startX = 29, startY = 20; // Default entrance position
+    let startX = 29,
+        startY = 20; // Default entrance position
     for (let y = 0; y < world.rows; y++) {
         for (let x = 0; x < world.cols; x++) {
-            if (world.cells[y][x].zone === 'entrance' && !world.cells[y][x].collision) {
-                startX = x; startY = y; break;
+            if (
+                world.cells[y][x].zone === 'entrance' &&
+                !world.cells[y][x].collision
+            ) {
+                startX = x;
+                startY = y;
+                break;
             }
         }
     }
@@ -336,11 +414,22 @@ export function validateWorld(world: GridWorld): { valid: boolean; unreachable: 
         if (!cell || cell.collision) continue;
         if (cell.zone) reachedZones.add(cell.zone);
 
-        queue.push({ x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }, { x, y: y + 1 });
+        queue.push(
+            { x: x - 1, y },
+            { x: x + 1, y },
+            { x, y: y - 1 },
+            { x, y: y + 1 },
+        );
     }
 
-    const allZones: ZoneType[] = ['work', 'meeting', 'rest', 'entrance', 'hallway'];
-    const unreachable = allZones.filter(z => !reachedZones.has(z));
+    const allZones: ZoneType[] = [
+        'work',
+        'meeting',
+        'rest',
+        'entrance',
+        'hallway',
+    ];
+    const unreachable = allZones.filter((z) => !reachedZones.has(z));
 
     return { valid: unreachable.length === 0, unreachable };
 }
@@ -360,7 +449,10 @@ export function getWalkableCells(world: GridWorld): { x: number; y: number }[] {
 }
 
 // ── Helper: collect walkable cells within a specific zone ──
-export function getZoneCells(world: GridWorld, zone: ZoneType): { x: number; y: number }[] {
+export function getZoneCells(
+    world: GridWorld,
+    zone: ZoneType,
+): { x: number; y: number }[] {
     const result: { x: number; y: number }[] = [];
     for (let y = 0; y < world.rows; y++) {
         for (let x = 0; x < world.cols; x++) {
@@ -374,11 +466,19 @@ export function getZoneCells(world: GridWorld, zone: ZoneType): { x: number; y: 
 }
 
 // ── Helper: find nearest walkable cell to a given position ──
-export function getNearestWalkable(world: GridWorld, px: number, py: number): { x: number; y: number } {
+export function getNearestWalkable(
+    world: GridWorld,
+    px: number,
+    py: number,
+): { x: number; y: number } {
     // If the given cell is already walkable, return it
     if (
-        px >= 0 && px < world.cols && py >= 0 && py < world.rows &&
-        !world.cells[py][px].collision && !world.cells[py][px].wall
+        px >= 0 &&
+        px < world.cols &&
+        py >= 0 &&
+        py < world.rows &&
+        !world.cells[py][px].collision &&
+        !world.cells[py][px].wall
     ) {
         return { x: px, y: py };
     }
@@ -390,7 +490,13 @@ export function getNearestWalkable(world: GridWorld, px: number, py: number): { 
         const k = `${cur.x},${cur.y}`;
         if (visited.has(k)) continue;
         visited.add(k);
-        if (cur.x < 0 || cur.x >= world.cols || cur.y < 0 || cur.y >= world.rows) continue;
+        if (
+            cur.x < 0 ||
+            cur.x >= world.cols ||
+            cur.y < 0 ||
+            cur.y >= world.rows
+        )
+            continue;
         const cell = world.cells[cur.y][cur.x];
         if (!cell.collision && !cell.wall) return { x: cur.x, y: cur.y };
         queue.push(

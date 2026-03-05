@@ -16,7 +16,12 @@ interface ToastItemProps {
     duration?: number;
 }
 
-const ToastItem: React.FC<ToastItemProps> = ({ id, type, message, duration }) => {
+const ToastItem: React.FC<ToastItemProps> = ({
+    id,
+    type,
+    message,
+    duration,
+}) => {
     const removeToast = useAppStore((s) => s.removeToast);
     const style = TOAST_STYLES[type];
 
@@ -35,7 +40,9 @@ const ToastItem: React.FC<ToastItemProps> = ({ id, type, message, duration }) =>
             <span className="w-6 h-6 flex items-center justify-center border-2 border-black rounded-md bg-white text-xs font-black flex-shrink-0">
                 {style.icon}
             </span>
-            <span className="text-sm font-bold text-black flex-1">{message}</span>
+            <span className="text-sm font-bold text-black flex-1">
+                {message}
+            </span>
             <button
                 onClick={() => removeToast(id)}
                 className="w-6 h-6 flex items-center justify-center border-2 border-black rounded-md bg-white text-xs font-black flex-shrink-0 hover:bg-gray-100 transition-colors"
@@ -52,7 +59,11 @@ export const ToastContainer: React.FC = () => {
     if (toasts.length === 0) return null;
 
     return (
-        <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2" role="status" aria-live="polite">
+        <div
+            className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2"
+            role="status"
+            aria-live="polite"
+        >
             {toasts.map((toast) => (
                 <ToastItem
                     key={toast.id}

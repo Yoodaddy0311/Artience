@@ -8,7 +8,9 @@ import { ShieldAlert, LogIn, RefreshCw, Loader2 } from 'lucide-react';
  *
  * Neo-brutalism 스타일 (border-4, shadow-[4px_4px_0_0_#000], bold colors).
  */
-export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthGate: React.FC<{ children: React.ReactNode }> = ({
+    children,
+}) => {
     const isAuthenticated = useAppStore((s) => s.isAuthenticated);
     const authChecking = useAppStore((s) => s.authChecking);
     const checkAuth = useAppStore((s) => s.checkAuth);
@@ -30,8 +32,13 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
         return (
             <div className="flex flex-col items-center justify-center w-full h-screen bg-yellow-100">
                 <div className="bg-white border-4 border-black shadow-[8px_8px_0_0_#000] rounded-2xl p-12 flex flex-col items-center gap-6 max-w-md">
-                    <Loader2 className="w-12 h-12 animate-spin text-black" strokeWidth={2.5} />
-                    <p className="font-bold text-lg text-black">인증 상태 확인 중...</p>
+                    <Loader2
+                        className="w-12 h-12 animate-spin text-black"
+                        strokeWidth={2.5}
+                    />
+                    <p className="font-bold text-lg text-black">
+                        인증 상태 확인 중...
+                    </p>
                 </div>
             </div>
         );
@@ -53,7 +60,10 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
             <div className="bg-white border-4 border-black shadow-[8px_8px_0_0_#000] rounded-2xl p-10 flex flex-col items-center gap-6 max-w-lg w-full">
                 {/* Icon */}
                 <div className="w-20 h-20 bg-red-100 border-4 border-black rounded-2xl flex items-center justify-center shadow-[4px_4px_0_0_#000]">
-                    <ShieldAlert className="w-10 h-10 text-red-600" strokeWidth={2.5} />
+                    <ShieldAlert
+                        className="w-10 h-10 text-red-600"
+                        strokeWidth={2.5}
+                    />
                 </div>
 
                 {/* Title */}
@@ -63,8 +73,8 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
                 {/* Description */}
                 <p className="text-center text-gray-700 font-medium text-sm leading-relaxed max-w-sm">
-                    Dokba Studio를 사용하려면 Claude Code CLI에 로그인해야 합니다.
-                    아래 버튼을 눌러 인증을 진행하세요.
+                    Dokba Studio를 사용하려면 Claude Code CLI에 로그인해야
+                    합니다. 아래 버튼을 눌러 인증을 진행하세요.
                 </p>
 
                 {/* Actions */}
@@ -94,7 +104,11 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
                 {/* Hint */}
                 <p className="text-xs text-gray-400 text-center mt-2">
-                    터미널에서 <code className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[11px]">claude auth login</code> 으로도 인증할 수 있습니다.
+                    터미널에서{' '}
+                    <code className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[11px]">
+                        claude auth login
+                    </code>{' '}
+                    으로도 인증할 수 있습니다.
                 </p>
             </div>
         </div>

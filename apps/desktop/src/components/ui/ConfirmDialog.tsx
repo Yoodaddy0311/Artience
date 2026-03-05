@@ -52,9 +52,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 return;
             }
             if (e.key === 'Tab' && dialogRef.current) {
-                const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-                );
+                const focusable =
+                    dialogRef.current.querySelectorAll<HTMLElement>(
+                        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+                    );
                 if (focusable.length === 0) return;
                 const first = focusable[0];
                 const last = focusable[focusable.length - 1];
@@ -91,16 +92,27 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 className="w-full max-w-sm bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] overflow-hidden"
             >
                 {/* Header */}
-                <div className={`${style.headerBg} border-b-4 border-black p-4 flex items-center gap-3`}>
-                    <AlertTriangle className={`w-6 h-6 ${style.iconColor}`} strokeWidth={2.5} />
-                    <h3 id="confirm-dialog-title" className="font-black text-base text-black">
+                <div
+                    className={`${style.headerBg} border-b-4 border-black p-4 flex items-center gap-3`}
+                >
+                    <AlertTriangle
+                        className={`w-6 h-6 ${style.iconColor}`}
+                        strokeWidth={2.5}
+                    />
+                    <h3
+                        id="confirm-dialog-title"
+                        className="font-black text-base text-black"
+                    >
                         {title}
                     </h3>
                 </div>
 
                 {/* Body */}
                 <div className="p-5">
-                    <p id="confirm-dialog-desc" className="text-sm font-medium text-gray-700 leading-relaxed">
+                    <p
+                        id="confirm-dialog-desc"
+                        className="text-sm font-medium text-gray-700 leading-relaxed"
+                    >
                         {message}
                     </p>
                 </div>

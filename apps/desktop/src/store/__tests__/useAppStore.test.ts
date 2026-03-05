@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '../useAppStore';
-import type { AiBuilderMessage, ProjectAsset } from '../useAppStore';
+import type { ProjectAsset } from '../useAppStore';
 import { DEFAULT_PROJECT } from '../../types/project';
 import type { ProjectData } from '../../types/project';
 
@@ -13,7 +13,6 @@ function resetStore() {
     getState().resetAppSettings();
     getState().resetRunSettings();
     getState().resetGamification();
-    getState().clearAiBuilderMessages();
     getState().resetProjectConfig();
     // Manually clear non-resettable slices
     useAppStore.setState({
@@ -118,7 +117,8 @@ describe('useAppStore', () => {
         });
 
         it('should reset settings to defaults', () => {
-            const { updateAppSettings, resetAppSettings } = useAppStore.getState();
+            const { updateAppSettings, resetAppSettings } =
+                useAppStore.getState();
             updateAppSettings({ language: 'ja', autoSaveInterval: 60 });
             resetAppSettings();
 
@@ -149,8 +149,12 @@ describe('useAppStore', () => {
         });
 
         it('should reset run settings to defaults', () => {
-            const { updateRunSettings, resetRunSettings } = useAppStore.getState();
-            updateRunSettings({ maxConcurrentAgents: 10, logAutoScroll: false });
+            const { updateRunSettings, resetRunSettings } =
+                useAppStore.getState();
+            updateRunSettings({
+                maxConcurrentAgents: 10,
+                logAutoScroll: false,
+            });
             resetRunSettings();
 
             const { runSettings } = useAppStore.getState();
@@ -159,65 +163,6 @@ describe('useAppStore', () => {
         });
     });
 
-    // ── AI Builder Messages ──
-
-    describe('addAiBuilderMessage / clearAiBuilderMessages', () => {
-        it('should start with an empty messages array', () => {
-            const { aiBuilderMessages } = useAppStore.getState();
-            expect(aiBuilderMessages).toEqual([]);
-        });
-
-        it('should add a message', () => {
-            const msg: AiBuilderMessage = {
-                id: 'msg-1',
-                role: 'user',
-                content: 'Hello',
-                timestamp: Date.now(),
-            };
-            useAppStore.getState().addAiBuilderMessage(msg);
-
-            const { aiBuilderMessages } = useAppStore.getState();
-            expect(aiBuilderMessages).toHaveLength(1);
-            expect(aiBuilderMessages[0]).toEqual(msg);
-        });
-
-        it('should add multiple messages in order', () => {
-            const msg1: AiBuilderMessage = {
-                id: 'msg-1',
-                role: 'user',
-                content: 'Hi',
-                timestamp: 1000,
-            };
-            const msg2: AiBuilderMessage = {
-                id: 'msg-2',
-                role: 'assistant',
-                content: 'Hello!',
-                timestamp: 2000,
-            };
-            const { addAiBuilderMessage } = useAppStore.getState();
-            addAiBuilderMessage(msg1);
-            addAiBuilderMessage(msg2);
-
-            const { aiBuilderMessages } = useAppStore.getState();
-            expect(aiBuilderMessages).toHaveLength(2);
-            expect(aiBuilderMessages[0].id).toBe('msg-1');
-            expect(aiBuilderMessages[1].id).toBe('msg-2');
-        });
-
-        it('should clear all messages', () => {
-            const msg: AiBuilderMessage = {
-                id: 'msg-1',
-                role: 'system',
-                content: 'Init',
-                timestamp: 1000,
-            };
-            useAppStore.getState().addAiBuilderMessage(msg);
-            useAppStore.getState().clearAiBuilderMessages();
-
-            const { aiBuilderMessages } = useAppStore.getState();
-            expect(aiBuilderMessages).toEqual([]);
-        });
-    });
 
     // ── Highlighted Agent ──
 
@@ -301,7 +246,9 @@ describe('useAppStore', () => {
 
         it('should not throw when removing a non-existent asset id', () => {
             useAppStore.getState().addAsset(asset1);
-            expect(() => useAppStore.getState().removeAsset('non-existent')).not.toThrow();
+            expect(() =>
+                useAppStore.getState().removeAsset('non-existent'),
+            ).not.toThrow();
             expect(useAppStore.getState().assets).toHaveLength(1);
         });
 
@@ -406,7 +353,9 @@ describe('useAppStore', () => {
             await useAppStore.getState().loadProject();
 
             expect(useAppStore.getState().projectLoading).toBe(false);
-            expect(useAppStore.getState().projectConfig.meta.id).toBe('default-project');
+            expect(useAppStore.getState().projectConfig.meta.id).toBe(
+                'default-project',
+            );
         });
 
         it('should load project from IPC when available', async () => {
@@ -418,7 +367,12 @@ describe('useAppStore', () => {
 
             (window as any).dogbaApi = {
                 project: {
-                    load: vi.fn().mockResolvedValueOnce({ success: true, data: mockProject }),
+                    load: vi
+                        .fn()
+                        .mockResolvedValueOnce({
+                            success: true,
+                            data: mockProject,
+                        }),
                     save: vi.fn(),
                     getDir: vi.fn(),
                     setDir: vi.fn(),
@@ -428,7 +382,9 @@ describe('useAppStore', () => {
             await useAppStore.getState().loadProject();
 
             expect(useAppStore.getState().projectLoading).toBe(false);
-            expect(useAppStore.getState().projectConfig.meta.name).toBe('Loaded Project');
+            expect(useAppStore.getState().projectConfig.meta.name).toBe(
+                'Loaded Project',
+            );
             expect(useAppStore.getState().projectError).toBeNull();
 
             delete (window as any).dogbaApi;
@@ -470,7 +426,9 @@ describe('useAppStore', () => {
             (window as any).dogbaApi = {
                 project: {
                     load: vi.fn(),
-                    save: vi.fn().mockRejectedValueOnce(new Error('Save failed')),
+                    save: vi
+                        .fn()
+                        .mockRejectedValueOnce(new Error('Save failed')),
                     getDir: vi.fn(),
                     setDir: vi.fn(),
                 },

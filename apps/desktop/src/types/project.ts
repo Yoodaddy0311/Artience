@@ -5,13 +5,13 @@
  */
 
 export interface ProjectData {
-    version: string;                  // Schema version, e.g. "1.0.0"
+    version: string; // Schema version, e.g. "1.0.0"
     meta: ProjectMeta;
     theme: ProjectTheme;
     world: WorldData;
     agents: AgentDefinition[];
     recipes: RecipeDefinition[];
-    history: SnapshotMeta[];         // S-4: Version history references
+    history: SnapshotMeta[]; // S-4: Version history references
 }
 
 // ── Meta ──
@@ -19,7 +19,7 @@ export interface ProjectMeta {
     id: string;
     name: string;
     description: string;
-    createdAt: string;               // ISO 8601
+    createdAt: string; // ISO 8601
     updatedAt: string;
     author: string;
 }
@@ -43,32 +43,40 @@ export interface ProjectTheme {
 
 // ── World (Grid + Layout) ──
 export interface WorldData {
-    gridCols: number;               // default 40
-    gridRows: number;               // default 25
-    tileSize: number;               // default 32
+    gridCols: number; // default 40
+    gridRows: number; // default 25
+    tileSize: number; // default 32
     layers: {
-        floor: number[][];          // 0=empty, 1+=tile type
-        wall: number[][];           // 0=no wall, 1=wall
-        collision: number[][];      // 0=walkable, 1=blocked
-        objects: WorldObject[];     // Furniture, decorations
-        spawn: SpawnPoint[];        // Agent spawn positions
+        floor: number[][]; // 0=empty, 1+=tile type
+        wall: number[][]; // 0=no wall, 1=wall
+        collision: number[][]; // 0=walkable, 1=blocked
+        objects: WorldObject[]; // Furniture, decorations
+        spawn: SpawnPoint[]; // Agent spawn positions
     };
 }
 
 export interface WorldObject {
     id: string;
-    type: string;                   // "desk" | "chair" | "plant" | "whiteboard" | ...
-    x: number;                      // Grid position
+    type: string; // "desk" | "chair" | "plant" | "whiteboard" | ...
+    x: number; // Grid position
     y: number;
     width: number;
     height: number;
     rotation?: number;
-    properties?: Record<string, unknown>;
+    properties?: {
+        asset?: string;
+        offsetX?: number;
+        offsetY?: number;
+        rotation?: number;
+        scale?: number;
+        isWalkable?: boolean;
+        corners?: { x: number; y: number }[]; // 4-Point distort offsets
+    } & Record<string, unknown>;
 }
 
 export interface SpawnPoint {
     id: string;
-    agentId: string;                // Links to agent definition
+    agentId: string; // Links to agent definition
     x: number;
     y: number;
     zone: 'work' | 'meeting' | 'rest' | 'entrance';
@@ -80,11 +88,11 @@ export interface AgentDefinition {
     name: string;
     role: string;
     personality: string;
-    sprite: string;                 // Path to sprite image or spritesheet
+    sprite: string; // Path to sprite image or spritesheet
     spritesheetConfig?: {
         cols: number;
         rows: number;
-        rowMapping: Record<string, number>;  // e.g. { idle: 0, walk: 1, run: 2 }
+        rowMapping: Record<string, number>; // e.g. { idle: 0, walk: 1, run: 2 }
     };
     skills: string[];
     systemPrompt?: string;
@@ -100,10 +108,10 @@ export interface RecipeDefinition {
     cwd?: string;
     env?: Record<string, string>;
     parserRules?: {
-        thinkKeywords: string[];     // Triggers THINKING state
-        runKeywords: string[];       // Triggers RUNNING state
+        thinkKeywords: string[]; // Triggers THINKING state
+        runKeywords: string[]; // Triggers RUNNING state
     };
-    timeout?: number;                // Max execution time in ms
+    timeout?: number; // Max execution time in ms
     tags: string[];
 }
 
@@ -112,7 +120,7 @@ export interface SnapshotMeta {
     id: string;
     createdAt: string;
     label: string;
-    filePath: string;                // Path to history/{id}.json
+    filePath: string; // Path to history/{id}.json
 }
 
 // ── Default project ──
@@ -146,7 +154,26 @@ export const DEFAULT_PROJECT: ProjectData = {
             floor: [],
             wall: [],
             collision: [],
-            objects: [],
+            objects: [
+                {
+                    id: 'room-meeting-1',
+                    type: 'room',
+                    x: 27,
+                    y: 5,
+                    width: 6,
+                    height: 6,
+                    properties: { asset: '/sprites/iso/room-meeting.png', scale: 0.55 }
+                },
+                {
+                    id: 'room-server-1',
+                    type: 'room',
+                    x: 28,
+                    y: 19,
+                    width: 6,
+                    height: 6,
+                    properties: { asset: '/sprites/iso/room-server.png', scale: 0.45 }
+                }
+            ],
             spawn: [],
         },
     },

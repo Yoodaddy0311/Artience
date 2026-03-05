@@ -7,22 +7,33 @@ import { assetPath } from '../../lib/assetPath';
 export type IsoDirection = 'NW' | 'NE' | 'SW' | 'SE';
 
 /** Character visual state */
-export type CharacterAnimState = 'idle' | 'walk' | 'think' | 'success' | 'error';
+export type CharacterAnimState =
+    | 'idle'
+    | 'walk'
+    | 'think'
+    | 'success'
+    | 'error'
+    | 'read'
+    | 'type'
+    | 'write'
+    | 'sleep';
 
-// ── Otter texture bundle ──
+// ── Animal texture bundle ──
 
-/** Otter sprite textures loaded per direction */
-export interface OtterTextures {
+export type AnimalType = 'otter' | 'cat' | 'hamster' | 'dog' | 'rabbit' | 'raccoon';
+
+/** Animal sprite textures loaded per direction */
+export interface AnimalTextures {
     nw: PIXI.Texture;
     ne: PIXI.Texture;
     sw: PIXI.Texture;
     se: PIXI.Texture;
 }
 
-// ── Per-agent otter visual handle ──
+// ── Per-agent animal visual handle ──
 
-/** Per-agent otter visual runtime */
-export interface OtterVisual {
+/** Per-agent animal visual runtime */
+export interface AnimalVisual {
     container: PIXI.Container;
     sprite: PIXI.Sprite;
     shadow: PIXI.Graphics;
@@ -32,15 +43,16 @@ export interface OtterVisual {
     animState: CharacterAnimState;
     animTimer: number;
     baseScale: number;
+    animalType: AnimalType;
     /** Normalized walk cycle position (0-1), incremented by time delta */
     stepPhase: number;
     // Bubble
     bubbleContainer: PIXI.Container | null;
     bubbleFadeTimer: number;
     bubbleFading: boolean;
-    bubblePopTimer: number;   // pop-in animation frame counter (0 = start, POP_FRAMES = done)
-    bubblePopping: boolean;   // true while pop-in is active
-    bubbleMinTimer: number;   // frames since current bubble was shown (anti-flicker)
+    bubblePopTimer: number; // pop-in animation frame counter (0 = start, POP_FRAMES = done)
+    bubblePopping: boolean; // true while pop-in is active
+    bubbleMinTimer: number; // frames since current bubble was shown (anti-flicker)
     bubblePendingText: string | null; // queued text while min display timer is active
     // Internal animation state
     _lastTickTime: number;
@@ -54,51 +66,77 @@ export interface OtterVisual {
 
 // ── Constants ──
 
-const OTTER_SPRITE_HEIGHT = 72; // Larger for better visibility in iso view
+const ANIMAL_SPRITE_HEIGHT = 72; // Larger for better visibility in iso view
 
-const OTTER_PATHS = {
-    nw: '/sprites/iso/otter-nw.png',
-    ne: '/sprites/iso/otter-ne.png',
-    sw: '/sprites/iso/otter-sw.png',
-    se: '/sprites/iso/otter-se.png',
-} as const;
+const ANIMAL_PATHS: Record<Exclude<AnimalType, 'raccoon'>, { nw: string; ne: string; sw: string; se: string }> = {
+    otter: {
+        nw: '/sprites/iso/otter-nw.png',
+        ne: '/sprites/iso/otter-ne.png',
+        sw: '/sprites/iso/otter-sw.png',
+        se: '/sprites/iso/otter-se.png',
+    },
+    cat: {
+        nw: '/sprites/iso/cat-nw.png',
+        ne: '/sprites/iso/cat-ne.png',
+        sw: '/sprites/iso/cat-sw.png',
+        se: '/sprites/iso/cat-se.png',
+    },
+    hamster: {
+        nw: '/sprites/iso/hamster-nw.png',
+        ne: '/sprites/iso/hamster-ne.png',
+        sw: '/sprites/iso/hamster-sw.png',
+        se: '/sprites/iso/hamster-se.png',
+    },
+    dog: {
+        nw: '/sprites/iso/dog-nw.png',
+        ne: '/sprites/iso/dog-ne.png',
+        sw: '/sprites/iso/dog-sw.png',
+        se: '/sprites/iso/dog-se.png',
+    },
+    rabbit: {
+        nw: '/sprites/iso/rabbit-nw.png',
+        ne: '/sprites/iso/rabbit-ne.png',
+        sw: '/sprites/iso/rabbit-sw.png',
+        se: '/sprites/iso/rabbit-se.png',
+    },
+};
 
 const BUBBLE_DISPLAY_FRAMES = 210; // ~3.5s at 60fps
-const BUBBLE_FADE_FRAMES = 60;     // ~1s fade
-const BUBBLE_POP_FRAMES = 12;      // ~0.2s pop-in animation
+const BUBBLE_FADE_FRAMES = 60; // ~1s fade
+const BUBBLE_POP_FRAMES = 12; // ~0.2s pop-in animation
 const MIN_BUBBLE_DISPLAY_FRAMES = 60; // ~1s minimum display before replacing (anti-flicker)
 const BUBBLE_POP_OVERSHOOT = 1.15; // scale overshoots to 115% then settles
 
 // Walk animation tuning
-const WALK_HOP_HEIGHT = 1.5;        // Minimal hop — feet stay near the tile surface
-const WALK_STEP_DURATION = 0.35;    // Seconds per full step cycle
-const WALK_TILT_DEGREES = 2.5;      // Forward lean in degrees
+const WALK_HOP_HEIGHT = 1.5; // Minimal hop — feet stay near the tile surface
+const WALK_STEP_DURATION = 0.35; // Seconds per full step cycle
+const WALK_TILT_DEGREES = 2.5; // Forward lean in degrees
 const WALK_TILT_RAD = WALK_TILT_DEGREES * (Math.PI / 180);
-const WALK_SQUASH_Y = 0.92;         // Landing squash scaleY multiplier
-const WALK_STRETCH_X = 1.06;        // Landing squash scaleX multiplier
-const WALK_ARM_SWING = 0.05;        // Rotation oscillation in radians
+const WALK_SQUASH_Y = 0.92; // Landing squash scaleY multiplier
+const WALK_STRETCH_X = 1.06; // Landing squash scaleX multiplier
+const WALK_ARM_SWING = 0.05; // Rotation oscillation in radians
 
 // Idle animation tuning
-const IDLE_BREATH_SPEED = 0.0015;   // Breathing cycle speed
-const IDLE_BREATH_RANGE = 0.02;     // ScaleY oscillation range
-const IDLE_MICRO_INTERVAL = 3500;   // Micro-movement interval in ms
-const IDLE_MICRO_RANGE = 0.5;       // Micro-movement pixel range
-const IDLE_BLINK_MIN = 3000;        // Min time between blinks in ms
-const IDLE_BLINK_MAX = 5000;        // Max time between blinks in ms
-const IDLE_BLINK_DURATION = 100;    // Blink duration in ms
+const IDLE_BREATH_SPEED = 0.0015; // Breathing cycle speed
+const IDLE_BREATH_RANGE = 0.02; // ScaleY oscillation range
+const IDLE_MICRO_INTERVAL = 3500; // Micro-movement interval in ms
+const IDLE_MICRO_RANGE = 0.5; // Micro-movement pixel range
+const IDLE_BLINK_MIN = 3000; // Min time between blinks in ms
+const IDLE_BLINK_MAX = 5000; // Max time between blinks in ms
+const IDLE_BLINK_DURATION = 100; // Blink duration in ms
 
 // Think animation tuning
-const THINK_FLOAT_HEIGHT = 1.5;     // Float amplitude in pixels (keep grounded)
-const THINK_FLOAT_SPEED = 0.002;    // Float cycle speed
-const THINK_PULSE_INTERVAL = 2000;  // Pulse every 2 seconds
+const THINK_FLOAT_HEIGHT = 1.5; // Float amplitude in pixels (keep grounded)
+const THINK_FLOAT_SPEED = 0.002; // Float cycle speed
+const THINK_PULSE_INTERVAL = 2000; // Pulse every 2 seconds
 
 // Success animation tuning
 const SUCCESS_BOUNCE_HEIGHTS = [12, 8, 4]; // Decreasing bounce heights
-const SUCCESS_BOUNCE_DURATION = 300;        // Duration per bounce in ms
+const SUCCESS_BOUNCE_DURATION = 300; // Duration per bounce in ms
 
 // Error animation tuning
-const ERROR_SHAKE_AMPLITUDE = 5;    // Horizontal shake in pixels
-const ERROR_SHAKE_DURATION = 500;   // Total shake duration in ms
+const ERROR_SHAKE_AMPLITUDE = 5; // Horizontal shake in pixels
+const ERROR_SHAKE_DURATION = 500; // Total shake duration in ms
 const ERROR_SHAKE_FREQUENCY = 0.04; // Shake speed
 
 // ── Easing helpers ──
@@ -108,9 +146,7 @@ const ERROR_SHAKE_FREQUENCY = 0.04; // Shake speed
  * Maps t in [0,1] to a smooth curve that accelerates then decelerates.
  */
 export function easeInOutQuad(t: number): number {
-    return t < 0.5
-        ? 2 * t * t
-        : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
 /**
@@ -130,15 +166,16 @@ function easeInQuad(t: number): number {
 // ── Texture loading ──
 
 /**
- * Load all otter directional textures.
+ * Load all animal directional textures for a specific animal type.
  * Call once on mount, reuse across all agents.
  */
-export async function loadOtterTextures(): Promise<OtterTextures> {
+export async function loadAnimalTextures(type: Exclude<AnimalType, 'raccoon'>): Promise<AnimalTextures> {
+    const paths = ANIMAL_PATHS[type];
     const [nw, ne, sw, se] = await Promise.all([
-        PIXI.Assets.load(assetPath(OTTER_PATHS.nw)),
-        PIXI.Assets.load(assetPath(OTTER_PATHS.ne)),
-        PIXI.Assets.load(assetPath(OTTER_PATHS.sw)),
-        PIXI.Assets.load(assetPath(OTTER_PATHS.se)),
+        PIXI.Assets.load(assetPath(paths.nw)),
+        PIXI.Assets.load(assetPath(paths.ne)),
+        PIXI.Assets.load(assetPath(paths.sw)),
+        PIXI.Assets.load(assetPath(paths.se)),
     ]);
     return { nw, ne, sw, se };
 }
@@ -146,16 +183,17 @@ export async function loadOtterTextures(): Promise<OtterTextures> {
 // ── Visual creation ──
 
 /**
- * Create an otter visual for one agent.
- * Returns the OtterVisual handle whose `container` should be added to the stage.
+ * Create an animal visual for one agent.
+ * Returns the AnimalVisual handle whose `container` should be added to the stage.
  *
- * Default direction is SW (front-facing, shows the otter's face).
+ * Default direction is SW (front-facing).
  */
-export function createOtterVisual(
-    textures: OtterTextures,
+export function createAnimalVisual(
+    textures: AnimalTextures,
     agentName: string,
     stateColor: number,
-): OtterVisual {
+    animalType: AnimalType = 'otter',
+): AnimalVisual {
     const container = new PIXI.Container();
     container.sortableChildren = true;
 
@@ -167,12 +205,23 @@ export function createOtterVisual(
     shadow.zIndex = 0;
     container.addChild(shadow);
 
-    // Sprite (default: SW direction = use SE view sprite, otter faces left-down showing face)
-    // anchor.y = 0.92 compensates for transparent padding below the otter's feet in the PNG,
+    // Sprite (default: SW direction = use SE view sprite, animal faces left-down showing face)
+    // anchor.y = 0.92 compensates for transparent padding below the animal's feet in the PNG,
     // pushing the visual sprite down so feet actually touch the iso tile surface.
     const sprite = new PIXI.Sprite(textures.se);
     sprite.anchor.set(0.5, 0.78);
-    const baseScale = OTTER_SPRITE_HEIGHT / textures.se.height;
+    // Per-animal scale correction: normalizes visible character size
+    // despite different art proportions within each sprite canvas.
+    // Otter (1.0) is the reference size — adjust others to visually match.
+    const SCALE_CORRECTION: Record<string, number> = {
+        otter: 1.0,       // 500x500 — reference
+        cat: 1.0,         // 268x269 — smaller canvas
+        hamster: 1.0,     // 500x500 — same as otter
+        dog: 0.72,        // 500x500 — art fills more canvas
+        rabbit: 1.0,      // 314x314 — smaller canvas, boost to match otter
+    };
+    const correction = SCALE_CORRECTION[animalType] ?? 1.0;
+    const baseScale = (ANIMAL_SPRITE_HEIGHT / textures.se.height) * correction;
     sprite.scale.set(baseScale);
     sprite.zIndex = 1;
     container.addChild(sprite);
@@ -221,10 +270,14 @@ export function createOtterVisual(
         bubblePopping: false,
         bubbleMinTimer: 0,
         bubblePendingText: null,
+        animalType,
         _lastTickTime: now,
         _prevAnimState: 'idle',
         _idleMicroTimer: now + IDLE_MICRO_INTERVAL + Math.random() * 2000,
-        _idleBlinkTimer: now + IDLE_BLINK_MIN + Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN),
+        _idleBlinkTimer:
+            now +
+            IDLE_BLINK_MIN +
+            Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN),
         _successBounceIndex: 0,
         _successBounceTime: 0,
         _errorStartTime: 0,
@@ -234,23 +287,23 @@ export function createOtterVisual(
 // ── Direction handling ──
 
 /**
- * Update otter sprite direction based on movement.
+ * Update animal sprite direction based on movement.
  * Swaps texture and adjusts scale.x. SE now uses its own dedicated texture.
  */
-export function setOtterDirection(
-    visual: OtterVisual,
-    textures: OtterTextures,
+export function setAnimalDirection(
+    visual: AnimalVisual,
+    textures: AnimalTextures,
     direction: IsoDirection,
 ): void {
     if (visual.direction === direction) return;
     visual.direction = direction;
 
-    // Sprite file names use CAMERA viewpoint (e.g. "SE View" = camera at SE = otter faces NW on screen).
+    // Sprite file names use CAMERA viewpoint (e.g. "SE View" = camera at SE = animal faces NW on screen).
     // So movement direction → sprite mapping is opposite:
-    //   Moving SW (screen left-down)  → otter-se.png (otter faces left-down, shows face)
-    //   Moving SE (screen right-down) → otter-sw.png (otter faces right-down, shows face)
-    //   Moving NE (screen right-up)   → otter-nw.png (otter faces right-up, shows back)
-    //   Moving NW (screen left-up)    → otter-ne.png (otter faces left-up, shows back)
+    //   Moving SW (screen left-down)  → se.png (animal faces left-down, shows face)
+    //   Moving SE (screen right-down) → sw.png (animal faces right-down, shows face)
+    //   Moving NE (screen right-up)   → nw.png (animal faces right-up, shows back)
+    //   Moving NW (screen left-up)    → ne.png (animal faces left-up, shows back)
     switch (direction) {
         case 'NW':
             visual.sprite.texture = textures.nw;
@@ -323,16 +376,16 @@ function computeWalkSquash(phase: number): { scaleX: number; scaleY: number } {
 }
 
 /**
- * Per-frame animation tick for an otter character.
+ * Per-frame animation tick for an animal character.
  * Handles walk bobbing, think swaying, success bounce, error shake.
  *
- * Since otter sprites are static PNGs (not spritesheets), walk animation
+ * Since animal sprites are static PNGs (not spritesheets), walk animation
  * is simulated through bobbing, squash-stretch, and rotation effects.
  *
  * Also auto-transitions between idle/walk based on movement state.
  */
-export function tickOtterAnimation(
-    visual: OtterVisual,
+export function tickAnimalAnimation(
+    visual: AnimalVisual,
     now: number,
     isMoving: boolean,
 ): void {
@@ -366,8 +419,12 @@ export function tickOtterAnimation(
             visual._errorStartTime = 0;
         }
         if (visual.animState === 'idle') {
-            visual._idleMicroTimer = now + IDLE_MICRO_INTERVAL + Math.random() * 2000;
-            visual._idleBlinkTimer = now + IDLE_BLINK_MIN + Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN);
+            visual._idleMicroTimer =
+                now + IDLE_MICRO_INTERVAL + Math.random() * 2000;
+            visual._idleBlinkTimer =
+                now +
+                IDLE_BLINK_MIN +
+                Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN);
         }
     }
 
@@ -383,7 +440,8 @@ export function tickOtterAnimation(
             if (now >= visual._idleMicroTimer) {
                 sprite.x = (Math.random() - 0.5) * 2 * IDLE_MICRO_RANGE;
                 sprite.y = (Math.random() - 0.5) * IDLE_MICRO_RANGE;
-                visual._idleMicroTimer = now + IDLE_MICRO_INTERVAL + Math.random() * 2000;
+                visual._idleMicroTimer =
+                    now + IDLE_MICRO_INTERVAL + Math.random() * 2000;
             }
 
             // ── Blink simulation: brief scaleY squeeze ──
@@ -393,10 +451,14 @@ export function tickOtterAnimation(
                     // Quick squeeze down then back
                     const blinkT = blinkElapsed / IDLE_BLINK_DURATION;
                     const blinkCurve = Math.sin(blinkT * Math.PI); // 0 -> 1 -> 0
-                    sprite.scale.y = visual.baseScale * (breathScale - 0.05 * blinkCurve);
+                    sprite.scale.y =
+                        visual.baseScale * (breathScale - 0.05 * blinkCurve);
                 } else {
                     // Schedule next blink
-                    visual._idleBlinkTimer = now + IDLE_BLINK_MIN + Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN);
+                    visual._idleBlinkTimer =
+                        now +
+                        IDLE_BLINK_MIN +
+                        Math.random() * (IDLE_BLINK_MAX - IDLE_BLINK_MIN);
                 }
             }
 
@@ -411,7 +473,7 @@ export function tickOtterAnimation(
 
         case 'walk': {
             // ── Step phase tracking: frame-rate independent ──
-            const stepIncrement = (dt / 1000) / WALK_STEP_DURATION;
+            const stepIncrement = dt / 1000 / WALK_STEP_DURATION;
             visual.stepPhase = (visual.stepPhase + stepIncrement) % 1;
             const phase = visual.stepPhase;
 
@@ -421,7 +483,8 @@ export function tickOtterAnimation(
 
             // ── Body tilt: lean forward in movement direction ──
             // Determine tilt direction from facing
-            const tiltSign = (visual.direction === 'SW' || visual.direction === 'SE') ? 1 : -1;
+            const tiltSign =
+                visual.direction === 'SW' || visual.direction === 'SE' ? 1 : -1;
             sprite.rotation = tiltSign * WALK_TILT_RAD;
 
             // ── Arm swing simulation: rotation oscillation synced to step ──
@@ -449,12 +512,14 @@ export function tickOtterAnimation(
             sprite.y = floatCycle * THINK_FLOAT_HEIGHT;
 
             // ── Thought "pulse": slight scale increase every 2 seconds ──
-            const pulseCycle = (now % THINK_PULSE_INTERVAL) / THINK_PULSE_INTERVAL;
-            const pulseAmount = pulseCycle < 0.15
-                ? easeInOutQuad(pulseCycle / 0.15) * 0.05
-                : pulseCycle < 0.3
-                    ? easeInOutQuad(1 - (pulseCycle - 0.15) / 0.15) * 0.05
-                    : 0;
+            const pulseCycle =
+                (now % THINK_PULSE_INTERVAL) / THINK_PULSE_INTERVAL;
+            const pulseAmount =
+                pulseCycle < 0.15
+                    ? easeInOutQuad(pulseCycle / 0.15) * 0.05
+                    : pulseCycle < 0.3
+                        ? easeInOutQuad(1 - (pulseCycle - 0.15) / 0.15) * 0.05
+                        : 0;
 
             sprite.scale.y = visual.baseScale * (1 + pulseAmount);
             sprite.scale.x = visual.baseScale * (1 + pulseAmount);
@@ -471,7 +536,10 @@ export function tickOtterAnimation(
 
         case 'success': {
             // ── Happy bounce: 3 quick bounces decreasing in height ──
-            if (visual._successBounceIndex === 0 && visual._successBounceTime === 0) {
+            if (
+                visual._successBounceIndex === 0 &&
+                visual._successBounceTime === 0
+            ) {
                 // Initialize success animation
                 visual._successBounceIndex = 0;
                 visual._successBounceTime = now;
@@ -527,8 +595,11 @@ export function tickOtterAnimation(
 
             if (errorElapsed < ERROR_SHAKE_DURATION) {
                 // Decaying shake: amplitude decreases over time
-                const decay = 1 - (errorElapsed / ERROR_SHAKE_DURATION);
-                const shakeX = Math.sin(errorElapsed * ERROR_SHAKE_FREQUENCY) * ERROR_SHAKE_AMPLITUDE * decay;
+                const decay = 1 - errorElapsed / ERROR_SHAKE_DURATION;
+                const shakeX =
+                    Math.sin(errorElapsed * ERROR_SHAKE_FREQUENCY) *
+                    ERROR_SHAKE_AMPLITUDE *
+                    decay;
                 sprite.x = shakeX;
                 sprite.rotation = shakeX * 0.01; // Slight rotation with shake
 
@@ -549,10 +620,44 @@ export function tickOtterAnimation(
             shadow.alpha = 0.12;
             break;
         }
+
+        case 'read':
+        case 'type':
+        case 'write': {
+            // Task animations: subtle variations based on task type
+            if (visual.animState === 'read') {
+                // Slow bobbing like reading lines
+                sprite.y = Math.sin(now * 0.003) * 2;
+                sprite.x = 0;
+                sprite.rotation = Math.sin(now * 0.001) * 0.02;
+            } else {
+                // Typing/Writing: rapid small shakes to simulate typing/writing
+                sprite.y = Math.sin(now * 0.02) * 1.5;
+                sprite.x = Math.sin(now * 0.04) * 0.5;
+                sprite.rotation = Math.sin(now * 0.01) * 0.01;
+            }
+            shadow.alpha = 0.12;
+            shadow.scale.set(1, 1);
+            break;
+        }
+
+        case 'sleep': {
+            // Heavy, slow breathing
+            const breathCycle = Math.sin(now * (IDLE_BREATH_SPEED * 0.6));
+            const breathScale = 1 + breathCycle * (IDLE_BREATH_RANGE * 1.5);
+            sprite.scale.y = visual.baseScale * breathScale;
+            sprite.scale.x = visual.baseScale * (1 - breathCycle * 0.01);
+            sprite.rotation = 0;
+            sprite.y = 0;
+            sprite.x = 0;
+            shadow.alpha =
+                0.12 + Math.sin(now * (IDLE_BREATH_SPEED * 0.6)) * 0.02;
+            break;
+        }
     }
 
     // Auto-detect walk state from movement
-    if (isMoving && visual.animState === 'idle') {
+    if (isMoving && visual.animState !== 'walk') {
         visual.animState = 'walk';
         visual.stepPhase = 0; // Start fresh walk cycle
     } else if (!isMoving && visual.animState === 'walk') {
@@ -573,7 +678,7 @@ export function tickOtterAnimation(
 /**
  * Update the state dot color.
  */
-export function updateOtterStateDot(visual: OtterVisual, color: number): void {
+export function updateAnimalStateDot(visual: AnimalVisual, color: number): void {
     visual.stateDot.clear();
     visual.stateDot.circle(0, 0, 3);
     visual.stateDot.fill(color);
@@ -585,14 +690,17 @@ export function updateOtterStateDot(visual: OtterVisual, color: number): void {
 const EMOJI_ONLY_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u;
 
 /**
- * Show a speech bubble above the otter.
+ * Show a speech bubble above the animal.
  * Replaces any existing bubble. Text is truncated to 30 characters.
  * Emoji-only messages get a larger font size for visual impact.
  * Starts with a pop-in scale animation.
  */
-export function showOtterBubble(visual: OtterVisual, text: string): void {
+export function showAnimalBubble(visual: AnimalVisual, text: string): void {
     // Anti-flicker: if a bubble is showing and hasn't reached minimum display time, queue the new text
-    if (visual.bubbleContainer && visual.bubbleMinTimer < MIN_BUBBLE_DISPLAY_FRAMES) {
+    if (
+        visual.bubbleContainer &&
+        visual.bubbleMinTimer < MIN_BUBBLE_DISPLAY_FRAMES
+    ) {
         visual.bubblePendingText = text;
         return;
     }
@@ -662,13 +770,13 @@ export function showOtterBubble(visual: OtterVisual, text: string): void {
  * Tick bubble animation. Call every frame.
  * Manages three phases: pop-in -> display -> fade-out.
  */
-export function tickOtterBubble(visual: OtterVisual): void {
+export function tickAnimalBubble(visual: AnimalVisual): void {
     // Anti-flicker: process pending text when no bubble is showing
     if (!visual.bubbleContainer) {
         if (visual.bubblePendingText) {
             const pending = visual.bubblePendingText;
             visual.bubblePendingText = null;
-            showOtterBubble(visual, pending);
+            showAnimalBubble(visual, pending);
         }
         return;
     }
@@ -681,9 +789,11 @@ export function tickOtterBubble(visual: OtterVisual): void {
         visual.bubblePopTimer++;
         const t = Math.min(visual.bubblePopTimer / BUBBLE_POP_FRAMES, 1);
         // Elastic overshoot: rises to OVERSHOOT then settles to 1.0
-        const eased = t < 0.6
-            ? easeInOutQuad(t / 0.6) * BUBBLE_POP_OVERSHOOT
-            : BUBBLE_POP_OVERSHOOT - (BUBBLE_POP_OVERSHOOT - 1) * easeOutQuad((t - 0.6) / 0.4);
+        const eased =
+            t < 0.6
+                ? easeInOutQuad(t / 0.6) * BUBBLE_POP_OVERSHOOT
+                : BUBBLE_POP_OVERSHOOT -
+                (BUBBLE_POP_OVERSHOOT - 1) * easeOutQuad((t - 0.6) / 0.4);
         visual.bubbleContainer.scale.set(eased);
         if (t >= 1) {
             visual.bubbleContainer.scale.set(1);
@@ -695,7 +805,10 @@ export function tickOtterBubble(visual: OtterVisual): void {
     // Phase 2: Display hold
     visual.bubbleFadeTimer++;
 
-    if (!visual.bubbleFading && visual.bubbleFadeTimer >= BUBBLE_DISPLAY_FRAMES) {
+    if (
+        !visual.bubbleFading &&
+        visual.bubbleFadeTimer >= BUBBLE_DISPLAY_FRAMES
+    ) {
         visual.bubbleFading = true;
         visual.bubbleFadeTimer = 0;
     }

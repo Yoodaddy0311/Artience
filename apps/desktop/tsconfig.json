@@ -3,12 +3,21 @@
     "compilerOptions": {
         "jsx": "react-jsx",
         "baseUrl": ".",
+        "typeRoots": ["./node_modules/@types"],
+        "types": ["react", "react-dom", "node"],
         "paths": {
             "@/*": ["./src/*"]
         },
         "noUnusedLocals": false,
         "noUnusedParameters": false
     },
-    "include": ["src", "electron"],
+    "include": [
+        "src",
+        "electron",
+        "*.config.mts",
+        "*.config.ts",
+        "*.config.js",
+        "*.config.mjs"
+    ],
     "exclude": ["node_modules", "dist", "dist-electron"]
 }

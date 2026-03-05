@@ -38,7 +38,8 @@ const DEFAULT_SKILLS: DefaultSkillDef[] = [
     {
         id: 'code-review',
         name: 'Code Review',
-        description: 'Podo 에이전트용 코드 리뷰 스킬. 코드 품질, 버그, 보안 취약점을 검토합니다.',
+        description:
+            'Podo 에이전트용 코드 리뷰 스킬. 코드 품질, 버그, 보안 취약점을 검토합니다.',
         agent: 'podo',
         content: `# Code Review Skill
 
@@ -78,7 +79,8 @@ const DEFAULT_SKILLS: DefaultSkillDef[] = [
     {
         id: 'run-tests',
         name: 'Run Tests',
-        description: 'Ara 에이전트용 테스트 실행 스킬. 테스트를 실행하고 결과를 분석합니다.',
+        description:
+            'Ara 에이전트용 테스트 실행 스킬. 테스트를 실행하고 결과를 분석합니다.',
         agent: 'ara',
         content: `# Run Tests Skill
 
@@ -120,7 +122,8 @@ const DEFAULT_SKILLS: DefaultSkillDef[] = [
     {
         id: 'security-audit',
         name: 'Security Audit',
-        description: 'Duri 에이전트용 보안 감사 스킬. OWASP Top 10 기준으로 보안 취약점을 점검합니다.',
+        description:
+            'Duri 에이전트용 보안 감사 스킬. OWASP Top 10 기준으로 보안 취약점을 점검합니다.',
         agent: 'duri',
         content: `# Security Audit Skill
 
@@ -214,7 +217,10 @@ export function loadSkills(projectDir: string): SkillInfo[] {
  * Install default skills to .claude/skills/.
  * Only writes skills that don't already exist.
  */
-export function installDefaultSkills(projectDir: string): { installed: string[]; skipped: string[] } {
+export function installDefaultSkills(projectDir: string): {
+    installed: string[];
+    skipped: string[];
+} {
     const skillsDir = path.join(projectDir, '.claude', 'skills');
     const installed: string[] = [];
     const skipped: string[] = [];
@@ -240,7 +246,10 @@ export function installDefaultSkills(projectDir: string): { installed: string[];
             fs.writeFileSync(skillMdPath, skill.content, 'utf-8');
             installed.push(skill.id);
         } catch (err: any) {
-            console.warn(`[SkillManager] Failed to install skill ${skill.id}:`, err.message);
+            console.warn(
+                `[SkillManager] Failed to install skill ${skill.id}:`,
+                err.message,
+            );
             skipped.push(skill.id);
         }
     }
@@ -251,15 +260,20 @@ export function installDefaultSkills(projectDir: string): { installed: string[];
 /**
  * Get skills available for a specific agent based on CHARACTER_SKILLS mapping.
  */
-export function getAgentSkills(agentName: string, projectDir: string): SkillInfo[] {
+export function getAgentSkills(
+    agentName: string,
+    projectDir: string,
+): SkillInfo[] {
     const allSkills = loadSkills(projectDir);
     const profile = CHARACTER_SKILLS[agentName.toLowerCase()];
 
     if (!profile) return allSkills;
 
     // Map skill IDs from CHARACTER_SKILLS to installed skills
-    const agentSkillIds = new Set(profile.skills.map(s => s.id));
-    return allSkills.filter(s => agentSkillIds.has(s.id) || s.agent === agentName.toLowerCase());
+    const agentSkillIds = new Set(profile.skills.map((s) => s.id));
+    return allSkills.filter(
+        (s) => agentSkillIds.has(s.id) || s.agent === agentName.toLowerCase(),
+    );
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -275,12 +289,12 @@ function extractMarkdownDescription(content: string): string | null {
 }
 
 function findAgentForSkill(skillId: string): string | undefined {
-    const def = DEFAULT_SKILLS.find(s => s.id === skillId);
+    const def = DEFAULT_SKILLS.find((s) => s.id === skillId);
     if (def) return def.agent;
 
     // Search CHARACTER_SKILLS for matching skill
     for (const [agent, profile] of Object.entries(CHARACTER_SKILLS)) {
-        if (profile.skills.some(s => s.id === skillId)) {
+        if (profile.skills.some((s) => s.id === skillId)) {
             return agent;
         }
     }

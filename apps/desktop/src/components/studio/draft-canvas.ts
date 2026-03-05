@@ -1,5 +1,11 @@
 import type { ZoneType } from '../../systems/grid-world';
-import type { DraftSummary, DraftData, DraftThemeRaw, DraftAgent, DraftRoom } from './draft-types';
+import type {
+    DraftSummary,
+    DraftData,
+    DraftThemeRaw,
+    DraftAgent,
+    DraftRoom,
+} from './draft-types';
 
 // ── Theme color extraction helpers ──
 
@@ -9,23 +15,29 @@ export function extractThemeColors(theme?: DraftThemeRaw): {
     background: string;
 } {
     if (!theme) {
-        return { primary: '#FFD100', secondary: '#9DE5DC', background: '#FFF8E7' };
+        return {
+            primary: '#FFD100',
+            secondary: '#9DE5DC',
+            background: '#FFF8E7',
+        };
     }
     // Handle both raw server format and ProjectTheme palette format
     const primary = theme.primary_color ?? theme.palette?.primary ?? '#FFD100';
-    const secondary = theme.secondary_color ?? theme.palette?.secondary ?? '#9DE5DC';
-    const background = theme.background ?? theme.palette?.background ?? '#FFF8E7';
+    const secondary =
+        theme.secondary_color ?? theme.palette?.secondary ?? '#9DE5DC';
+    const background =
+        theme.background ?? theme.palette?.background ?? '#FFF8E7';
     return { primary, secondary, background };
 }
 
 // ── Zone Color Map ──
 
 export const ZONE_COLORS: Record<ZoneType, string> = {
-    work: '#FBBF24',     // yellow
-    meeting: '#34D399',  // green
-    rest: '#60A5FA',     // blue
+    work: '#FBBF24', // yellow
+    meeting: '#34D399', // green
+    rest: '#60A5FA', // blue
     entrance: '#A78BFA', // purple
-    hallway: '#D1D5DB',  // gray
+    hallway: '#D1D5DB', // gray
 };
 
 export const ZONE_LABELS: Record<ZoneType, string> = {
@@ -53,7 +65,10 @@ function getRoleColor(role?: string): string {
 
 // ── Room color assignment based on theme ──
 
-export function getRoomColor(index: number, themeColors: { primary: string; secondary: string }): string {
+export function getRoomColor(
+    index: number,
+    themeColors: { primary: string; secondary: string },
+): string {
     const palette = [
         themeColors.primary,
         themeColors.secondary,
@@ -130,9 +145,14 @@ export function computeAgentPositions(
         const roomIndex = idx % rooms.length;
         const room = rooms[roomIndex];
         const margin = 1;
-        const slotsPerRow = Math.max(Math.floor((room.width - margin * 2) / 1.5), 1);
+        const slotsPerRow = Math.max(
+            Math.floor((room.width - margin * 2) / 1.5),
+            1,
+        );
         const col = idx % slotsPerRow;
-        const row = Math.floor(idx / slotsPerRow) % Math.max(Math.floor((room.height - margin * 2) / 1.5), 1);
+        const row =
+            Math.floor(idx / slotsPerRow) %
+            Math.max(Math.floor((room.height - margin * 2) / 1.5), 1);
 
         const cx = (room.x + margin + col * 1.5 + 0.5) * cellW;
         const cy = (room.y + margin + row * 1.5 + 0.5) * cellH;
@@ -238,7 +258,12 @@ export function renderWorldPreview(
             ctx.fillRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH);
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 1;
-            ctx.strokeRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH);
+            ctx.strokeRect(
+                labelX - pillW / 2,
+                labelY - pillH / 2,
+                pillW,
+                pillH,
+            );
 
             ctx.fillStyle = '#000000';
             ctx.fillText(label, labelX, labelY);
@@ -249,7 +274,11 @@ export function renderWorldPreview(
         ctx.font = 'bold 12px Pretendard, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('No room layout data available', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        ctx.fillText(
+            'No room layout data available',
+            CANVAS_WIDTH / 2,
+            CANVAS_HEIGHT / 2,
+        );
     }
 
     // ── Draw zone labels at top ──
@@ -286,11 +315,17 @@ export function renderWorldPreview(
     }
 
     // ── Draw agent spawn points (enhanced) ──
-    const agentPositions = computeAgentPositions(agents, rooms, layout, themeColors);
+    const agentPositions = computeAgentPositions(
+        agents,
+        rooms,
+        layout,
+        themeColors,
+    );
 
     for (const pos of agentPositions) {
         const { agent, cx, cy, radius, color } = pos;
-        const isHighlighted = highlightAgentId != null && agent.id === highlightAgentId;
+        const isHighlighted =
+            highlightAgentId != null && agent.id === highlightAgentId;
 
         // Highlight ring for selected agent
         if (isHighlighted) {
@@ -341,7 +376,7 @@ export function renderWorldPreview(
 
     // ── Draw highlighted agent tooltip ──
     if (highlightAgentId) {
-        const hit = agentPositions.find(a => a.agent.id === highlightAgentId);
+        const hit = agentPositions.find((a) => a.agent.id === highlightAgentId);
         if (hit) {
             drawAgentTooltip(ctx, hit);
         }
@@ -357,7 +392,10 @@ export function renderWorldPreview(
             });
         });
         if (rooms.length > 5) {
-            legendEntries.push({ color: '#9CA3AF', label: `+${rooms.length - 5} more` });
+            legendEntries.push({
+                color: '#9CA3AF',
+                label: `+${rooms.length - 5} more`,
+            });
         }
     }
 
@@ -410,7 +448,10 @@ export function renderWorldPreview(
 
 // ── Agent Tooltip (drawn on canvas near agent) ──
 
-function drawAgentTooltip(ctx: CanvasRenderingContext2D, hit: AgentHitArea): void {
+function drawAgentTooltip(
+    ctx: CanvasRenderingContext2D,
+    hit: AgentHitArea,
+): void {
     const { agent, cx, cy, radius, color } = hit;
     const name = agent.name;
     const role = agent.role || 'General';

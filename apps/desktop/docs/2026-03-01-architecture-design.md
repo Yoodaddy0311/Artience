@@ -18,40 +18,40 @@
 
 ### AS-IS (Current State)
 
-| Component | Description |
-|-----------|-------------|
-| BottomDock | 10 character icons (static, no state changes) |
-| Terminal | Single global terminal inside RunPanel (auto-launches claude) |
-| AgentTown | Otter wanders + moves to work zone on `onStream` |
-| Mail | None (button exists but non-functional) |
-| User Role | None (observer only) |
+| Component  | Description                                                   |
+| ---------- | ------------------------------------------------------------- |
+| BottomDock | 10 character icons (static, no state changes)                 |
+| Terminal   | Single global terminal inside RunPanel (auto-launches claude) |
+| AgentTown  | Otter wanders + moves to work zone on `onStream`              |
+| Mail       | None (button exists but non-functional)                       |
+| User Role  | None (observer only)                                          |
 
 ### TO-BE (Target State)
 
-| Component | Description |
-|-----------|-------------|
+| Component  | Description                                                           |
+| ---------- | --------------------------------------------------------------------- |
 | BottomDock | Per-agent terminal tabs -- click to open/focus corresponding terminal |
-| Terminal | One per agent, each with independent directory + Claude Code session |
-| AgentTown | Real-time reflection of terminal state |
-| Mail | Agent completion report inbox |
-| User Role | CTO character |
+| Terminal   | One per agent, each with independent directory + Claude Code session  |
+| AgentTown  | Real-time reflection of terminal state                                |
+| Mail       | Agent completion report inbox                                         |
+| User Role  | CTO character                                                         |
 
 ---
 
 ## 3. GAP Analysis
 
-| # | Item | Current | Required | GAP |
-|---|------|---------|----------|-----|
-| 1 | BottomDock | 10 static icons | Multi terminal session tabs + CTO | Full redesign |
-| 2 | Terminal | Single PTY (embedded in RunPanel) | N independent PTYs, each with different cwd | Multi-instance |
-| 3 | AgentTown <-> Terminal | No connection | Terminal state -> character real-time sync | Event bridge |
-| 4 | Character click -> chat | BottomDock->RightSidebar, AgentTown->InspectorCard (separated) | Unified | Unification needed |
-| 5 | Zone usage | Only 'work' zone used | Role-based zone routing | Zone branching |
-| 6 | Mail/Reports | Button only | Agent completion -> auto report -> inbox | New feature |
-| 7 | CTO Character | Does not exist | Fixed at BottomDock left side | New feature |
-| 8 | tool-use visualization | IPC exists but unsubscribed | Tool usage -> character animation | Subscribe & connect |
-| 9 | ERROR state | Animation exists but no trigger | Chat failure -> ERROR transition | Connection needed |
-| 10 | Session management | closeSession IPC not exposed | Cleanup on app exit | Memory leak fix |
+| #   | Item                    | Current                                                        | Required                                    | GAP                 |
+| --- | ----------------------- | -------------------------------------------------------------- | ------------------------------------------- | ------------------- |
+| 1   | BottomDock              | 10 static icons                                                | Multi terminal session tabs + CTO           | Full redesign       |
+| 2   | Terminal                | Single PTY (embedded in RunPanel)                              | N independent PTYs, each with different cwd | Multi-instance      |
+| 3   | AgentTown <-> Terminal  | No connection                                                  | Terminal state -> character real-time sync  | Event bridge        |
+| 4   | Character click -> chat | BottomDock->RightSidebar, AgentTown->InspectorCard (separated) | Unified                                     | Unification needed  |
+| 5   | Zone usage              | Only 'work' zone used                                          | Role-based zone routing                     | Zone branching      |
+| 6   | Mail/Reports            | Button only                                                    | Agent completion -> auto report -> inbox    | New feature         |
+| 7   | CTO Character           | Does not exist                                                 | Fixed at BottomDock left side               | New feature         |
+| 8   | tool-use visualization  | IPC exists but unsubscribed                                    | Tool usage -> character animation           | Subscribe & connect |
+| 9   | ERROR state             | Animation exists but no trigger                                | Chat failure -> ERROR transition            | Connection needed   |
+| 10  | Session management      | closeSession IPC not exposed                                   | Cleanup on app exit                         | Memory leak fix     |
 
 ---
 
@@ -135,17 +135,18 @@ const CTO_PROFILE: AgentProfile = {
 
 ## 6. IPC Channel Reference (Before/After)
 
-| Channel | Direction | Before | After |
-|---------|-----------|--------|-------|
-| `terminal:create` | R -> M | `(cols, rows) -> id` | `(cols, rows, options?) -> {id, label, cwd}` |
-| `terminal:list` | R -> M | N/A | `() -> TerminalInfo[]` |
-| `terminal:write` | R -> M | No change | No change |
-| `terminal:resize` | R -> M | No change | No change |
-| `terminal:destroy` | R -> M | No change | No change |
-| `terminal:data` | M -> R | No change | No change |
-| `terminal:exit` | M -> R | No change | No change |
+| Channel            | Direction | Before               | After                                        |
+| ------------------ | --------- | -------------------- | -------------------------------------------- |
+| `terminal:create`  | R -> M    | `(cols, rows) -> id` | `(cols, rows, options?) -> {id, label, cwd}` |
+| `terminal:list`    | R -> M    | N/A                  | `() -> TerminalInfo[]`                       |
+| `terminal:write`   | R -> M    | No change            | No change                                    |
+| `terminal:resize`  | R -> M    | No change            | No change                                    |
+| `terminal:destroy` | R -> M    | No change            | No change                                    |
+| `terminal:data`    | M -> R    | No change            | No change                                    |
+| `terminal:exit`    | M -> R    | No change            | No change                                    |
 
 **Key changes:**
+
 - `terminal:create` gains an optional `options` parameter (`{ agentId?, label?, cwd?, autoCommand? }`)
 - `terminal:list` is a new IPC channel for querying active terminal sessions
 
@@ -176,64 +177,64 @@ const CTO_PROFILE: AgentProfile = {
 
 ### Phase 1: Multi-Terminal Foundation (Current)
 
-| Step | Task |
-|------|------|
-| 1 | Create `useTerminalStore.ts` |
-| 2 | Extend `terminal:create` IPC with options parameter |
-| 3 | Add `terminal:list` IPC channel |
-| 4 | Refactor `TerminalPanel` for multi-tab support |
-| 5 | Update `BottomDock` for terminal tab switching |
-| 6 | Implement `MainLayout` top-bottom split |
+| Step | Task                                                |
+| ---- | --------------------------------------------------- |
+| 1    | Create `useTerminalStore.ts`                        |
+| 2    | Extend `terminal:create` IPC with options parameter |
+| 3    | Add `terminal:list` IPC channel                     |
+| 4    | Refactor `TerminalPanel` for multi-tab support      |
+| 5    | Update `BottomDock` for terminal tab switching      |
+| 6    | Implement `MainLayout` top-bottom split             |
 
 ### Phase 2: State Visualization
 
-| Step | Task |
-|------|------|
-| 7 | Unify `highlightedAgentId` + `selectedAgentId` |
-| 8 | Sync AgentTown PIXI with store |
-| 9 | Subscribe to tool-use events for character feedback |
-| 10 | Add CTO character |
+| Step | Task                                                |
+| ---- | --------------------------------------------------- |
+| 7    | Unify `highlightedAgentId` + `selectedAgentId`      |
+| 8    | Sync AgentTown PIXI with store                      |
+| 9    | Subscribe to tool-use events for character feedback |
+| 10   | Add CTO character                                   |
 
 ### Phase 3: Mailbox
 
-| Step | Task |
-|------|------|
-| 11 | Create `useMailStore.ts` |
-| 12 | Implement auto report generation |
-| 13 | Build `MailInbox.tsx` UI |
+| Step | Task                             |
+| ---- | -------------------------------- |
+| 11   | Create `useMailStore.ts`         |
+| 12   | Implement auto report generation |
+| 13   | Build `MailInbox.tsx` UI         |
 
 ---
 
 ## 9. Technical Constraints and Solutions
 
-| Constraint | Solution |
-|------------|----------|
-| Multiple PTY memory usage | Limit tabs (max 8) + immediate release on destroy |
-| Multiple xterm DOM performance | `display:none` (keep DOM, skip rendering) |
-| `terminal:create` backward compatibility | `options` parameter is optional |
-| `autoCommand` security | Protected by `contextIsolation` |
+| Constraint                               | Solution                                          |
+| ---------------------------------------- | ------------------------------------------------- |
+| Multiple PTY memory usage                | Limit tabs (max 8) + immediate release on destroy |
+| Multiple xterm DOM performance           | `display:none` (keep DOM, skip rendering)         |
+| `terminal:create` backward compatibility | `options` parameter is optional                   |
+| `autoCommand` security                   | Protected by `contextIsolation`                   |
 
 ---
 
 ## 10. BROKEN/STUB Issues
 
-| Issue | Severity | Fix |
-|-------|----------|-----|
-| `job:stop` -- AbortController not connected | BROKEN | Set AC on record in `job:run` |
-| `job:getArtifacts` -- not exposed in preload | BROKEN | Add to preload |
-| `studio:getDiff/rollback` -- stub | STUB | Implement in P2 |
-| `closeSession` IPC not exposed | GAP | Add to preload + main |
-| NDJSON buffer boundary | BUG | Buffer in spawn path |
-| `handleImport/Export` TODO | STUB | Connect file IPC |
-| `WsMessage` type remnants | CLEANUP | Delete |
+| Issue                                        | Severity | Fix                           |
+| -------------------------------------------- | -------- | ----------------------------- |
+| `job:stop` -- AbortController not connected  | BROKEN   | Set AC on record in `job:run` |
+| `job:getArtifacts` -- not exposed in preload | BROKEN   | Add to preload                |
+| `studio:getDiff/rollback` -- stub            | STUB     | Implement in P2               |
+| `closeSession` IPC not exposed               | GAP      | Add to preload + main         |
+| NDJSON buffer boundary                       | BUG      | Buffer in spawn path          |
+| `handleImport/Export` TODO                   | STUB     | Connect file IPC              |
+| `WsMessage` type remnants                    | CLEANUP  | Delete                        |
 
 ---
 
 ## 11. Deprecation/Removal Targets
 
-| Component | Action | Timeline |
-|-----------|--------|----------|
-| RightSidebar chat | Convert to MailSidebar | Phase 3 |
-| RunPanel Terminal tab | Remove (move to main layout) | Phase 1 |
-| AssetInbox | Convert to MailInbox | Phase 3 |
-| `agent-runtime.ts` legacy | Merge into otter-runtime | Phase 2 |
+| Component                 | Action                       | Timeline |
+| ------------------------- | ---------------------------- | -------- |
+| RightSidebar chat         | Convert to MailSidebar       | Phase 3  |
+| RunPanel Terminal tab     | Remove (move to main layout) | Phase 1  |
+| AssetInbox                | Convert to MailInbox         | Phase 3  |
+| `agent-runtime.ts` legacy | Merge into otter-runtime     | Phase 2  |

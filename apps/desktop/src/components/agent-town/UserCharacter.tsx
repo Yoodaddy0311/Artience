@@ -1,14 +1,15 @@
 import * as PIXI from 'pixi.js';
 import {
-    type OtterTextures,
-    type OtterVisual,
-    createOtterVisual,
-    setOtterDirection,
-    tickOtterAnimation,
-    updateOtterStateDot,
-    showOtterBubble,
-    tickOtterBubble,
-} from './otter-runtime';
+    type AnimalTextures,
+    type AnimalVisual,
+    createAnimalVisual,
+    setAnimalDirection,
+    tickAnimalAnimation,
+    updateAnimalStateDot,
+    showAnimalBubble,
+    tickAnimalBubble,
+    type AnimalType,
+} from './animal-runtime';
 import { STATE_COLORS } from './agent-runtime';
 import { gridToIso, getIsoDirection } from '../../systems/isometric';
 import {
@@ -40,7 +41,8 @@ export interface UserCharacterRuntime {
     memberId: string;
     username: string;
     jobSlot: string;
-    visual: OtterVisual;
+    animalType: AnimalType;
+    visual: AnimalVisual;
     /** User icon badge (lucide-style) above the character */
     userBadge: PIXI.Graphics;
     /** Task progress bar container */
@@ -82,32 +84,34 @@ const USER_BADGE_SIZE = 6;
 // ── Job slot to grid zone mapping ──
 
 const JOB_SLOT_ZONES: Record<string, { x: number; y: number }> = {
-    'PM': { x: 5, y: 3 },
-    'backend': { x: 8, y: 5 },
-    'frontend': { x: 11, y: 5 },
-    'data': { x: 14, y: 3 },
-    'qa': { x: 17, y: 5 },
-    'devops': { x: 5, y: 7 },
-    'design': { x: 8, y: 7 },
-    'security': { x: 11, y: 7 },
-    'docs': { x: 14, y: 7 },
-    'infra': { x: 17, y: 7 },
+    PM: { x: 5, y: 3 },
+    backend: { x: 8, y: 5 },
+    frontend: { x: 11, y: 5 },
+    data: { x: 14, y: 3 },
+    qa: { x: 17, y: 5 },
+    devops: { x: 5, y: 7 },
+    design: { x: 8, y: 7 },
+    security: { x: 11, y: 7 },
+    docs: { x: 14, y: 7 },
+    infra: { x: 17, y: 7 },
 };
 
 // ── Create user character visual ──
 
 export function createUserCharacter(
-    textures: OtterTextures,
+    textures: AnimalTextures,
     member: RoomMember,
     gridWorld: GridWorld,
+    animalType: AnimalType = 'dog', // Default to dog for CTO/PM
 ): UserCharacterRuntime {
     // Determine spawn position from job slot
     const homePos = JOB_SLOT_ZONES[member.job_slot] || { x: 10, y: 10 };
     const spawnPos = getNearestWalkable(gridWorld, homePos.x, homePos.y);
 
     // Create otter visual with user-specific name
-    const stateColor = STATE_COLORS[STATUS_TO_AGENT_STATE[member.status]] || STATE_COLORS.IDLE;
-    const visual = createOtterVisual(textures, member.username, stateColor);
+    const stateColor =
+        STATE_COLORS[STATUS_TO_AGENT_STATE[member.status]] || STATE_COLORS.IDLE;
+    const visual = createAnimalVisual(textures, member.username, stateColor, animalType);
 
     // Apply user-specific tint to distinguish from AI
     if (member.avatar_color) {
@@ -164,13 +168,14 @@ export function createUserCharacter(
     // Show initial status bubble
     const statusLabel = STATUS_LABELS[member.status] || STATUS_LABELS.idle;
     if (member.status !== 'idle') {
-        showOtterBubble(visual, member.current_task || statusLabel);
+        showAnimalBubble(visual, member.current_task || statusLabel);
     }
 
     return {
         memberId: member.id,
         username: member.username,
         jobSlot: member.job_slot,
+        animalType,
         visual,
         userBadge,
         progressBar,
@@ -208,7 +213,13 @@ function createProgressBar(progress: number): {
     // Fill
     const fill = new PIXI.Graphics();
     const fillWidth = (barWidth - 2) * Math.min(progress / 100, 1);
-    fill.roundRect(-barWidth / 2 + 1, -barHeight / 2 + 1, fillWidth, barHeight - 2, 1);
+    fill.roundRect(
+        -barWidth / 2 + 1,
+        -barHeight / 2 + 1,
+        fillWidth,
+        barHeight - 2,
+        1,
+    );
     fill.fill(progress >= 100 ? 0x22c55e : 0x3b82f6);
     container.addChild(fill);
 
@@ -261,14 +272,14 @@ export function updateUserStatus(
     userChar.state = newState;
     userChar.statusText = STATUS_LABELS[status];
 
-    updateOtterStateDot(
+    updateAnimalStateDot(
         userChar.visual,
         STATE_COLORS[newState] || STATE_COLORS.IDLE,
     );
 
     // Show status bubble for active states
     if (status !== 'idle' && status !== 'away') {
-        showOtterBubble(userChar.visual, currentTask || STATUS_LABELS[status]);
+        showAnimalBubble(userChar.visual, currentTask || STATUS_LABELS[status]);
     }
 }
 
@@ -276,12 +287,12 @@ export function updateUserStatus(
 
 export function tickUserCharacter(
     userChar: UserCharacterRuntime,
-    otterTextures: OtterTextures,
+    animalTextures: AnimalTextures,
     gridWorld: GridWorld,
     now: number,
 ): void {
     // Bubble tick
-    tickOtterBubble(userChar.visual);
+    tickAnimalBubble(userChar.visual);
 
     const isMoving = userChar.path.length > 0;
 
@@ -299,11 +310,11 @@ export function tickUserCharacter(
             userChar.visual.container.x += (dx / dist) * speed;
             userChar.visual.container.y += (dy / dist) * speed;
 
-            // Update otter direction
+            // Update animal direction
             const gridDx = target.x - userChar.gridX;
             const gridDy = target.y - userChar.gridY;
             const dir = getIsoDirection(gridDx, gridDy);
-            setOtterDirection(userChar.visual, otterTextures, dir);
+            setAnimalDirection(userChar.visual, animalTextures, dir);
         } else {
             userChar.visual.container.x = targetIso.x;
             userChar.visual.container.y = targetIso.y;
@@ -324,13 +335,19 @@ export function tickUserCharacter(
                 4,
             );
             if (near) {
-                const path = findPath(gridWorld, userChar.gridX, userChar.gridY, near.x, near.y);
+                const path = findPath(
+                    gridWorld,
+                    userChar.gridX,
+                    userChar.gridY,
+                    near.x,
+                    near.y,
+                );
                 userChar.path = path;
             }
         }
     }
 
-    tickOtterAnimation(userChar.visual, now, isMoving);
+    tickAnimalAnimation(userChar.visual, now, isMoving);
 }
 
 // ── Remove user character from world ──

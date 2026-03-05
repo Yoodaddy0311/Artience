@@ -78,7 +78,10 @@ export const useMailStore = create<MailState>()(
                 messages: state.messages,
             }),
             merge: (persisted, current) => {
-                const merged = { ...current, ...(persisted as Partial<MailState>) };
+                const merged = {
+                    ...current,
+                    ...(persisted as Partial<MailState>),
+                };
                 merged.unreadCount = computeUnread(merged.messages);
                 return merged;
             },

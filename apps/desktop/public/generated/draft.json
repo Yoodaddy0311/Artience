@@ -1,275 +1,273 @@
 {
-  "prompt": "캐릭터 만들어줘\n\n[Refinement]: 회의실 1개 더 추가",
-  "scope": "all",
-  "theme": {
-    "name": "Modern Office",
-    "primary_color": "#FFD100",
-    "secondary_color": "#9DE5DC",
-    "background": "#FFF8E7"
-  },
-  "world": {
-    "grid_size": 32,
-    "rooms": [
-      {
-        "id": "room_1",
-        "name": "Room 1",
-        "type": "office",
-        "width": 8,
-        "height": 8,
-        "x": 0,
-        "y": 0
-      },
-      {
-        "id": "room_2",
-        "name": "Room 2",
-        "type": "office",
-        "width": 8,
-        "height": 8,
-        "x": 8,
-        "y": 0
-      },
-      {
-        "id": "room_3",
-        "name": "Room 3",
-        "type": "office",
-        "width": 8,
-        "height": 8,
-        "x": 16,
-        "y": 0
-      },
-      {
-        "id": "room_4",
-        "name": "Room 4",
-        "type": "office",
-        "width": 8,
-        "height": 8,
-        "x": 24,
-        "y": 0
-      }
+    "prompt": "캐릭터 만들어줘\n\n[Refinement]: 회의실 1개 더 추가",
+    "scope": "all",
+    "theme": {
+        "name": "Modern Office",
+        "primary_color": "#FFD100",
+        "secondary_color": "#9DE5DC",
+        "background": "#FFF8E7"
+    },
+    "world": {
+        "grid_size": 32,
+        "rooms": [
+            {
+                "id": "room_1",
+                "name": "Room 1",
+                "type": "office",
+                "width": 8,
+                "height": 8,
+                "x": 0,
+                "y": 0
+            },
+            {
+                "id": "room_2",
+                "name": "Room 2",
+                "type": "office",
+                "width": 8,
+                "height": 8,
+                "x": 8,
+                "y": 0
+            },
+            {
+                "id": "room_3",
+                "name": "Room 3",
+                "type": "office",
+                "width": 8,
+                "height": 8,
+                "x": 16,
+                "y": 0
+            },
+            {
+                "id": "room_4",
+                "name": "Room 4",
+                "type": "office",
+                "width": 8,
+                "height": 8,
+                "x": 24,
+                "y": 0
+            }
+        ],
+        "zones": [
+            {
+                "id": "z01",
+                "name": "Work Area",
+                "type": "work"
+            },
+            {
+                "id": "z02",
+                "name": "Social Area",
+                "type": "social"
+            }
+        ]
+    },
+    "agents": [
+        {
+            "id": "a01",
+            "name": "Agent_1",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a02",
+            "name": "Agent_2",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a03",
+            "name": "Agent_3",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a04",
+            "name": "Agent_4",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a05",
+            "name": "Agent_5",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a06",
+            "name": "Agent_6",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a07",
+            "name": "Agent_7",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a08",
+            "name": "Agent_8",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a09",
+            "name": "Agent_9",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a10",
+            "name": "Agent_10",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a11",
+            "name": "Agent_11",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a12",
+            "name": "Agent_12",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a13",
+            "name": "Agent_13",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a14",
+            "name": "Agent_14",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a15",
+            "name": "Agent_15",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a16",
+            "name": "Agent_16",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a17",
+            "name": "Agent_17",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a18",
+            "name": "Agent_18",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a19",
+            "name": "Agent_19",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a20",
+            "name": "Agent_20",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a21",
+            "name": "Agent_21",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a22",
+            "name": "Agent_22",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a23",
+            "name": "Agent_23",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a24",
+            "name": "Agent_24",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        },
+        {
+            "id": "a25",
+            "name": "Agent_25",
+            "role": "General",
+            "personality": "Diligent worker",
+            "sprite": "default"
+        }
     ],
-    "zones": [
-      {
-        "id": "z01",
-        "name": "Work Area",
-        "type": "work"
-      },
-      {
-        "id": "z02",
-        "name": "Social Area",
-        "type": "social"
-      }
-    ]
-  },
-  "agents": [
-    {
-      "id": "a01",
-      "name": "Agent_1",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a02",
-      "name": "Agent_2",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a03",
-      "name": "Agent_3",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a04",
-      "name": "Agent_4",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a05",
-      "name": "Agent_5",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a06",
-      "name": "Agent_6",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a07",
-      "name": "Agent_7",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a08",
-      "name": "Agent_8",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a09",
-      "name": "Agent_9",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a10",
-      "name": "Agent_10",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a11",
-      "name": "Agent_11",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a12",
-      "name": "Agent_12",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a13",
-      "name": "Agent_13",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a14",
-      "name": "Agent_14",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a15",
-      "name": "Agent_15",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a16",
-      "name": "Agent_16",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a17",
-      "name": "Agent_17",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a18",
-      "name": "Agent_18",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a19",
-      "name": "Agent_19",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a20",
-      "name": "Agent_20",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a21",
-      "name": "Agent_21",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a22",
-      "name": "Agent_22",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a23",
-      "name": "Agent_23",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a24",
-      "name": "Agent_24",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
-    },
-    {
-      "id": "a25",
-      "name": "Agent_25",
-      "role": "General",
-      "personality": "Diligent worker",
-      "sprite": "default"
+    "recipes": [
+        {
+            "id": "r01",
+            "name": "System Info",
+            "command": "node",
+            "args": ["-v"],
+            "description": "Show Node.js version"
+        },
+        {
+            "id": "r02",
+            "name": "File List",
+            "command": "dir",
+            "args": [],
+            "description": "List files in current directory"
+        },
+        {
+            "id": "r03",
+            "name": "Current Path",
+            "command": "cd",
+            "args": [],
+            "description": "Show current working directory"
+        }
+    ],
+    "summary": {
+        "rooms": 4,
+        "collisionTiles": 120,
+        "spawnPoints": 25,
+        "agents": 25,
+        "recipes": 3,
+        "theme": "Modern Office",
+        "generatedAt": "2026-02-28T01:14:40.960606",
+        "method": "rule-based"
     }
-  ],
-  "recipes": [
-    {
-      "id": "r01",
-      "name": "System Info",
-      "command": "node",
-      "args": [
-        "-v"
-      ],
-      "description": "Show Node.js version"
-    },
-    {
-      "id": "r02",
-      "name": "File List",
-      "command": "dir",
-      "args": [],
-      "description": "List files in current directory"
-    },
-    {
-      "id": "r03",
-      "name": "Current Path",
-      "command": "cd",
-      "args": [],
-      "description": "Show current working directory"
-    }
-  ],
-  "summary": {
-    "rooms": 4,
-    "collisionTiles": 120,
-    "spawnPoints": 25,
-    "agents": 25,
-    "recipes": 3,
-    "theme": "Modern Office",
-    "generatedAt": "2026-02-28T01:14:40.960606",
-    "method": "rule-based"
-  }
 }

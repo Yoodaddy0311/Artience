@@ -1,16 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ProjectData } from '../types/project';
+import type { ProjectData, WorldObject } from '../types/project';
 import { DEFAULT_PROJECT } from '../types/project';
 
-// ── AI Builder Messages ──
-
-export interface AiBuilderMessage {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: number;
-}
 
 // ── Toast Notifications ──
 
@@ -111,7 +103,7 @@ const DEFAULT_RUN_SETTINGS: RunSettings = {
 
 interface AppState {
     // Auth Gate
-    isAuthenticated: boolean | null;  // null = checking, true/false = result
+    isAuthenticated: boolean | null; // null = checking, true/false = result
     authChecking: boolean;
     checkAuth: () => Promise<void>;
     loginAuth: () => Promise<void>;
@@ -125,10 +117,6 @@ interface AppState {
     updateRunSettings: (patch: Partial<RunSettings>) => void;
     resetRunSettings: () => void;
 
-    // AI Builder Messages
-    aiBuilderMessages: AiBuilderMessage[];
-    addAiBuilderMessage: (message: AiBuilderMessage) => void;
-    clearAiBuilderMessages: () => void;
 
     // Toast Notifications
     toasts: Toast[];
@@ -137,6 +125,8 @@ interface AppState {
 
     // App Settings
     appSettings: AppSettings;
+    activeView: 'town' | 'studio';
+    setActiveView: (view: 'town' | 'studio') => void;
     updateAppSettings: (settings: Partial<AppSettings>) => void;
     resetAppSettings: () => void;
 
@@ -160,12 +150,55 @@ interface AppState {
     loadProject: () => Promise<void>;
     saveProject: () => Promise<void>;
     updateProjectConfig: (patch: Partial<ProjectData>) => void;
+    updateWorldObject: (id: string, x: number, y: number) => void;
+    updateWorldObjectProperties: (id: string, properties: Record<string, unknown>) => void;
+    updateWorldObjectCorners: (id: string, corners: { x: number; y: number }[] | undefined) => void;
+
+    // Clipboard
+    clipboard: WorldObject | null;
+    setClipboard: (obj: WorldObject | null) => void;
+
+    // Undo
+    undoStack: ProjectData[];
+    pushUndoState: () => void;
+    undo: () => void;
+
     resetProjectConfig: () => void;
 }
 
 export const useAppStore = create<AppState>()(
     persist(
         (set, get) => ({
+            undoStack: [],
+            clipboard: null,
+            setClipboard: (obj) => set({ clipboard: obj }),
+
+            pushUndoState: () => {
+                const currentConfig = JSON.parse(JSON.stringify(get().projectConfig));
+                set((state) => {
+                    const newStack = [...state.undoStack, currentConfig];
+                    // keep max 50 states
+                    if (newStack.length > 50) newStack.shift();
+                    return { undoStack: newStack };
+                });
+            },
+
+            undo: () => {
+                set((state) => {
+                    if (state.undoStack.length === 0) return {};
+                    const stack = [...state.undoStack];
+                    const prevConfig = stack.pop();
+
+                    // Immediately trigger save to filesystem so it persists
+                    setTimeout(() => get().saveProject(), 0);
+
+                    return {
+                        undoStack: stack,
+                        projectConfig: prevConfig,
+                    };
+                });
+            },
+
             // ── Auth Gate ──
             isAuthenticated: null,
             authChecking: false,
@@ -179,19 +212,28 @@ export const useAppStore = create<AppState>()(
                 try {
                     const api = window.dogbaApi?.cli;
                     if (!api) {
+                        console.warn('[checkAuth] dogbaApi.cli not available');
                         set({ isAuthenticated: false, authChecking: false });
                         return;
                     }
-                    // 3-second timeout
+                    // 15-second timeout (claude auth status can be slow on first run)
                     const result = await Promise.race([
                         api.authStatus(),
                         new Promise<never>((_, reject) =>
-                            setTimeout(() => reject(new Error('timeout')), 3000),
+                            setTimeout(
+                                () => reject(new Error('timeout')),
+                                15000,
+                            ),
                         ),
                     ]);
-                    set({ isAuthenticated: result.authenticated, authChecking: false });
-                } catch {
+                    console.log('[checkAuth] result:', JSON.stringify(result));
+                    set({
+                        isAuthenticated: result.authenticated,
+                        authChecking: false,
+                    });
+                } catch (err) {
                     // Timeout or error → treat as unauthenticated
+                    console.error('[checkAuth] error:', err);
                     set({ isAuthenticated: false, authChecking: false });
                 }
             },
@@ -220,16 +262,6 @@ export const useAppStore = create<AppState>()(
             resetRunSettings: () =>
                 set({ runSettings: { ...DEFAULT_RUN_SETTINGS } }),
 
-            // ── AI Builder Messages ──
-            aiBuilderMessages: [],
-
-            addAiBuilderMessage: (message) =>
-                set((state) => ({
-                    aiBuilderMessages: [...state.aiBuilderMessages, message],
-                })),
-
-            clearAiBuilderMessages: () =>
-                set({ aiBuilderMessages: [] }),
 
             // ── Toast Notifications ──
             toasts: [],
@@ -249,6 +281,9 @@ export const useAppStore = create<AppState>()(
 
             // ── App Settings ──
             appSettings: { ...DEFAULT_SETTINGS },
+            activeView: 'town',
+
+            setActiveView: (view) => set({ activeView: view }),
 
             updateAppSettings: (settings) =>
                 set((state) => ({
@@ -286,8 +321,16 @@ export const useAppStore = create<AppState>()(
                         newPointsToNext = Math.floor(newPointsToNext * 1.3);
                         lastLevelUp = Date.now();
                         const titles: Record<number, string> = {
-                            1: '입문자', 2: '학습자', 3: '수험생', 4: '우등생', 5: '전문가',
-                            6: '마스터', 7: '그랜드마스터', 8: '레전드', 9: '챔피언', 10: '엘리트',
+                            1: '입문자',
+                            2: '학습자',
+                            3: '수험생',
+                            4: '우등생',
+                            5: '전문가',
+                            6: '마스터',
+                            7: '그랜드마스터',
+                            8: '레전드',
+                            9: '챔피언',
+                            10: '엘리트',
                         };
                         newTitle = titles[newLevel] || `Lv.${newLevel}`;
                     }
@@ -343,14 +386,28 @@ export const useAppStore = create<AppState>()(
                 try {
                     const result = await api.load();
                     if (result.success && result.data) {
-                        set({ projectConfig: result.data, projectLoading: false });
+                        // Hotfix: Inject default objects if empty (for legacy saves)
+                        if (!result.data.world.layers.objects || result.data.world.layers.objects.length === 0) {
+                            result.data.world.layers.objects = DEFAULT_PROJECT.world.layers.objects;
+                        }
+
+                        set({
+                            projectConfig: result.data,
+                            projectLoading: false,
+                        });
                     } else {
-                        set({ projectConfig: { ...DEFAULT_PROJECT }, projectLoading: false });
+                        set({
+                            projectConfig: { ...DEFAULT_PROJECT },
+                            projectLoading: false,
+                        });
                     }
                 } catch (err) {
                     set({
                         projectLoading: false,
-                        projectError: err instanceof Error ? err.message : 'Failed to load project',
+                        projectError:
+                            err instanceof Error
+                                ? err.message
+                                : 'Failed to load project',
                     });
                 }
             },
@@ -362,32 +419,111 @@ export const useAppStore = create<AppState>()(
                 try {
                     const config = get().projectConfig;
                     const result = await api.save(config);
-                    if (!result.success) throw new Error(result.error || 'Failed to save');
+                    if (!result.success)
+                        throw new Error(result.error || 'Failed to save');
                     set({ projectLoading: false });
                 } catch (err) {
                     set({
                         projectLoading: false,
-                        projectError: err instanceof Error ? err.message : 'Failed to save project',
+                        projectError:
+                            err instanceof Error
+                                ? err.message
+                                : 'Failed to save project',
                     });
                 }
             },
 
-            updateProjectConfig: (patch) =>
+            updateProjectConfig: (patch) => {
+                get().pushUndoState();
                 set((state) => ({
                     projectConfig: { ...state.projectConfig, ...patch },
-                })),
+                }));
+            },
+
+            updateWorldObject: (id, x, y) => {
+                get().pushUndoState();
+                set((state) => {
+                    const layers = state.projectConfig.world.layers;
+                    const objects = layers.objects.map((obj) =>
+                        obj.id === id ? { ...obj, x, y } : obj
+                    );
+                    return {
+                        projectConfig: {
+                            ...state.projectConfig,
+                            world: {
+                                ...state.projectConfig.world,
+                                layers: { ...layers, objects },
+                            },
+                        },
+                    };
+                });
+            },
+
+            updateWorldObjectProperties: (id, properties) => {
+                get().pushUndoState();
+                set((state) => {
+                    const layers = state.projectConfig.world.layers;
+                    const objects = layers.objects.map((obj) =>
+                        obj.id === id
+                            ? { ...obj, properties: { ...obj.properties, ...properties } }
+                            : obj
+                    );
+                    return {
+                        projectConfig: {
+                            ...state.projectConfig,
+                            world: {
+                                ...state.projectConfig.world,
+                                layers: { ...layers, objects },
+                            },
+                        },
+                    };
+                });
+            },
+
+            updateWorldObjectCorners: (id, corners) => {
+                get().pushUndoState();
+                set((state) => {
+                    const layers = state.projectConfig.world.layers;
+                    const objects = layers.objects.map((obj) =>
+                        obj.id === id
+                            ? { ...obj, properties: { ...obj.properties, corners } }
+                            : obj
+                    );
+                    return {
+                        projectConfig: {
+                            ...state.projectConfig,
+                            world: {
+                                ...state.projectConfig.world,
+                                layers: { ...layers, objects },
+                            },
+                        },
+                    };
+                });
+            },
 
             resetProjectConfig: () =>
-                set({ projectConfig: { ...DEFAULT_PROJECT }, projectError: null }),
+                set({
+                    projectConfig: { ...DEFAULT_PROJECT },
+                    projectError: null,
+                }),
         }),
         {
             name: 'dogba-app-store',
             partialize: (state) => ({
-                aiBuilderMessages: state.aiBuilderMessages,
                 appSettings: state.appSettings,
                 gamification: state.gamification,
                 projectConfig: state.projectConfig,
             }),
+            onRehydrateStorage: () => (state) => {
+                // Inject default building objects if persisted state has none
+                if (state && state.projectConfig) {
+                    const objects = state.projectConfig.world?.layers?.objects;
+                    if (!objects || objects.length === 0) {
+                        state.projectConfig.world.layers.objects =
+                            DEFAULT_PROJECT.world.layers.objects;
+                    }
+                }
+            },
         },
     ),
 );

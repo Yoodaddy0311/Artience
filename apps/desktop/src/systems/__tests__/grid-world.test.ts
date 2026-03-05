@@ -102,13 +102,13 @@ describe('grid-world', () => {
         });
 
         it('should exclude collision cells', () => {
-            const world = createTestGrid(3, 3, [
-                { x: 1, y: 1 },
-            ]);
+            const world = createTestGrid(3, 3, [{ x: 1, y: 1 }]);
             const walkable = getWalkableCells(world);
 
             expect(walkable).toHaveLength(8);
-            expect(walkable.find((c) => c.x === 1 && c.y === 1)).toBeUndefined();
+            expect(
+                walkable.find((c) => c.x === 1 && c.y === 1),
+            ).toBeUndefined();
         });
 
         it('should exclude wall cells', () => {
@@ -118,7 +118,9 @@ describe('grid-world', () => {
             const walkable = getWalkableCells(world);
 
             expect(walkable).toHaveLength(8);
-            expect(walkable.find((c) => c.x === 0 && c.y === 0)).toBeUndefined();
+            expect(
+                walkable.find((c) => c.x === 0 && c.y === 0),
+            ).toBeUndefined();
         });
 
         it('should return cells from the default world', () => {
@@ -208,9 +210,7 @@ describe('grid-world', () => {
         });
 
         it('should find the nearest walkable cell when starting on a collision cell', () => {
-            const world = createTestGrid(5, 5, [
-                { x: 2, y: 2 },
-            ]);
+            const world = createTestGrid(5, 5, [{ x: 2, y: 2 }]);
             const result = getNearestWalkable(world, 2, 2);
 
             // Should be one of the 4 adjacent cells

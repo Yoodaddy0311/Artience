@@ -16,14 +16,29 @@
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface ParsedEvent {
-    type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'error' | 'prompt' | 'team_update';
+    type:
+        | 'text'
+        | 'thinking'
+        | 'tool_use'
+        | 'tool_result'
+        | 'error'
+        | 'prompt'
+        | 'team_update';
     content: string;
     toolName?: string;
     teamMembers?: string[];
     timestamp: number;
 }
 
-export type AgentActivity = 'idle' | 'thinking' | 'working' | 'success' | 'error';
+export type AgentActivity =
+    | 'idle'
+    | 'thinking'
+    | 'working'
+    | 'success'
+    | 'error'
+    | 'reading'
+    | 'typing'
+    | 'writing';
 
 // ── ANSI strip ─────────────────────────────────────────────────────────────
 
@@ -33,22 +48,24 @@ export type AgentActivity = 'idle' | 'thinking' | 'working' | 'success' | 'error
  * Also strips common ConPTY artifacts on Windows.
  */
 export function stripAnsi(raw: string): string {
-    return raw
-        // CSI sequences: ESC [ ... (letter)
-        .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-        // OSC sequences: ESC ] ... (ST or BEL)
-        .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-        // Simple ESC sequences: ESC (letter) or ESC (#)(digit)
-        .replace(/\x1b[()#][A-Za-z0-9]/g, '')
-        .replace(/\x1b[A-Za-z]/g, '')
-        // Remaining bare ESC
-        .replace(/\x1b/g, '')
-        // Normalize all \r\n to \n first
-        .replace(/\r\n/g, '\n')
-        // Carriage return (without newline) — ConPTY often sends lone \r
-        .replace(/\r/g, '')
-        // Collapse 3+ consecutive blank lines into 2
-        .replace(/\n{3,}/g, '\n\n');
+    return (
+        raw
+            // CSI sequences: ESC [ ... (letter)
+            .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+            // OSC sequences: ESC ] ... (ST or BEL)
+            .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+            // Simple ESC sequences: ESC (letter) or ESC (#)(digit)
+            .replace(/\x1b[()#][A-Za-z0-9]/g, '')
+            .replace(/\x1b[A-Za-z]/g, '')
+            // Remaining bare ESC
+            .replace(/\x1b/g, '')
+            // Normalize all \r\n to \n first
+            .replace(/\r\n/g, '\n')
+            // Carriage return (without newline) — ConPTY often sends lone \r
+            .replace(/\r/g, '')
+            // Collapse 3+ consecutive blank lines into 2
+            .replace(/\n{3,}/g, '\n\n')
+    );
 }
 
 // ── Noise filters ─────────────────────────────────────────────────────────
@@ -81,15 +98,25 @@ export function isNoiseLine(trimmed: string): boolean {
 // ── Pattern definitions ────────────────────────────────────────────────────
 
 /** Unicode codepoints that Claude Code uses as visual markers */
-const THINKING_MARKER = '\u23FA';    // ⏺
-const SUCCESS_MARKER = '\u2713';     // ✓
-const PROMPT_MARKER = '\u276F';      // ❯
+const THINKING_MARKER = '\u23FA'; // ⏺
+const SUCCESS_MARKER = '\u2713'; // ✓
+const PROMPT_MARKER = '\u276F'; // ❯
 
 /** Known Claude Code tool names (from tool_use blocks in TUI output) */
 const KNOWN_TOOLS = [
-    'Edit', 'Write', 'Read', 'Bash', 'Glob', 'Grep',
-    'TodoWrite', 'TodoRead', 'WebFetch', 'WebSearch',
-    'Task', 'NotebookEdit', 'MultiEdit',
+    'Edit',
+    'Write',
+    'Read',
+    'Bash',
+    'Glob',
+    'Grep',
+    'TodoWrite',
+    'TodoRead',
+    'WebFetch',
+    'WebSearch',
+    'Task',
+    'NotebookEdit',
+    'MultiEdit',
 ] as const;
 
 /** Regex to match tool use headers in the TUI output.
@@ -105,10 +132,7 @@ const TOOL_USE_RE = new RegExp(
 );
 
 /** Match the specific tool name from a tool use line */
-const TOOL_NAME_RE = new RegExp(
-    `\\b(${KNOWN_TOOLS.join('|')})\\b`,
-    'i',
-);
+const TOOL_NAME_RE = new RegExp(`\\b(${KNOWN_TOOLS.join('|')})\\b`, 'i');
 
 /** Error patterns */
 const ERROR_PATTERNS = [
@@ -120,7 +144,7 @@ const ERROR_PATTERNS = [
     /panic:/i,
     /unhandled/i,
     /failed to/i,
-    /\u2573/,        // ╳ Claude Code error marker
+    /\u2573/, // ╳ Claude Code error marker
 ];
 
 /** Team member pattern: @name appearing 2+ times on a single line.
@@ -138,8 +162,8 @@ const TEAM_SHUTDOWN_RE = /\bshutdown\b/i;
 
 /** Tool result patterns — usually follow tool_use with output content */
 const TOOL_RESULT_PATTERNS = [
-    /^\s*\u2713\s/,          // ✓ at line start (with content after)
-    /^\s*\d+ files? /i,     // file count in results
+    /^\s*\u2713\s/, // ✓ at line start (with content after)
+    /^\s*\d+ files? /i, // file count in results
     /^Output:/i,
 ];
 
@@ -182,7 +206,10 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
                     members.push(agentMatch[1]);
                     contentLines.push(nextLine.trim());
                     i++;
-                } else if (nextLine.trim() === '' || /^\s+[└├─│]/.test(nextLine)) {
+                } else if (
+                    nextLine.trim() === '' ||
+                    /^\s+[└├─│]/.test(nextLine)
+                ) {
                     // Skip tree-drawing lines and blank lines within the block
                     contentLines.push(nextLine.trim());
                     i++;
@@ -208,7 +235,7 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
             events.push({
                 type: 'team_update',
                 content: trimmed,
-                teamMembers: atMatches.map(m => m[1]),
+                teamMembers: atMatches.map((m) => m[1]),
                 timestamp: now,
             });
             continue;
@@ -271,7 +298,7 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
         }
 
         // 5. Error detection
-        if (ERROR_PATTERNS.some(pat => pat.test(trimmed))) {
+        if (ERROR_PATTERNS.some((pat) => pat.test(trimmed))) {
             events.push({
                 type: 'error',
                 content: trimmed,
@@ -281,7 +308,7 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
         }
 
         // 6. Tool result patterns
-        if (TOOL_RESULT_PATTERNS.some(pat => pat.test(trimmed))) {
+        if (TOOL_RESULT_PATTERNS.some((pat) => pat.test(trimmed))) {
             events.push({
                 type: 'tool_result',
                 content: trimmed,
@@ -314,7 +341,7 @@ export function detectActivity(events: ParsedEvent[]): AgentActivity {
     const recent = events.slice(-10);
 
     // Error takes highest priority
-    if (recent.some(e => e.type === 'error')) {
+    if (recent.some((e) => e.type === 'error')) {
         return 'error';
     }
 
@@ -322,24 +349,52 @@ export function detectActivity(events: ParsedEvent[]): AgentActivity {
     const last = recent[recent.length - 1];
     if (last.type === 'prompt') {
         // If there were tool uses or thinking before the prompt, it's success
-        const hasWork = recent.some(e =>
-            e.type === 'tool_use' || e.type === 'thinking' || e.type === 'tool_result',
+        const hasWork = recent.some(
+            (e) =>
+                e.type === 'tool_use' ||
+                e.type === 'thinking' ||
+                e.type === 'tool_result',
         );
         return hasWork ? 'success' : 'idle';
     }
 
-    // Active tool use = working
-    if (recent.some(e => e.type === 'tool_use')) {
+    // Active tool use = typing, reading, or writing based on toolName
+    const lastTool = [...recent].reverse().find((e) => e.type === 'tool_use');
+    if (lastTool && lastTool.toolName) {
+        const name = lastTool.toolName.toLowerCase();
+        if (['bash', 'terminal'].includes(name)) return 'typing';
+        if (
+            [
+                'read',
+                'glob',
+                'grep',
+                'todoread',
+                'webfetch',
+                'websearch',
+                'ls',
+            ].includes(name)
+        )
+            return 'reading';
+        if (
+            [
+                'edit',
+                'write',
+                'todowrite',
+                'notebookedit',
+                'multiedit',
+            ].includes(name)
+        )
+            return 'writing';
         return 'working';
     }
 
     // Thinking indicator
-    if (recent.some(e => e.type === 'thinking')) {
+    if (recent.some((e) => e.type === 'thinking')) {
         return 'thinking';
     }
 
     // Tool result without subsequent prompt = still working
-    if (recent.some(e => e.type === 'tool_result')) {
+    if (recent.some((e) => e.type === 'tool_result')) {
         return 'working';
     }
 
@@ -354,13 +409,13 @@ export function detectActivity(events: ParsedEvent[]): AgentActivity {
  */
 export function summarizeEvents(events: ParsedEvent[]): string {
     const tools = events
-        .filter(e => e.type === 'tool_use' && e.toolName)
-        .map(e => e.toolName!);
+        .filter((e) => e.type === 'tool_use' && e.toolName)
+        .map((e) => e.toolName!);
     const uniqueTools = [...new Set(tools)];
-    const errors = events.filter(e => e.type === 'error');
+    const errors = events.filter((e) => e.type === 'error');
     const textLines = events
-        .filter(e => e.type === 'text')
-        .map(e => e.content)
+        .filter((e) => e.type === 'text')
+        .map((e) => e.content)
         .slice(-5);
 
     const parts: string[] = [];

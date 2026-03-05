@@ -21,7 +21,7 @@ export const tokens = {
             lavender: '#D6BCFA',
             blue: '#90CDF4',
             peach: '#FEB2B2',
-        }
+        },
     },
     radius: {
         sm: '8px',
@@ -36,5 +36,5 @@ export const tokens = {
         lg: '0 4px 16px rgba(93, 78, 66, 0.12)',
         xl: '0 8px 32px rgba(93, 78, 66, 0.16)',
         glow: '0 0 20px rgba(255, 181, 181, 0.2)',
-    }
+    },
 };

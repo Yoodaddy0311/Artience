@@ -1,4 +1,10 @@
-import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import React, {
+    useRef,
+    useEffect,
+    useCallback,
+    useState,
+    useMemo,
+} from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -36,11 +42,30 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
             title="복사"
         >
             {copied ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-green-500"
+                >
                     <polyline points="20 6 9 17 4 12" />
                 </svg>
             ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                >
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                 </svg>
@@ -50,7 +75,11 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
 };
 
 // ── 채팅 메시지 버블 ──
-const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName?: string }> = ({ event, agentSprite, agentName }) => {
+const ChatBubble: React.FC<{
+    event: ParsedEvent;
+    agentSprite?: string;
+    agentName?: string;
+}> = ({ event, agentSprite, agentName }) => {
     const [collapsed, setCollapsed] = useState(true);
 
     switch (event.type) {
@@ -70,20 +99,30 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                 <div className="flex gap-2 items-end max-w-[85%] group">
                     {agentSprite && (
                         <div className="w-7 h-7 border-2 border-black rounded-lg bg-[#E8DAFF] p-0.5 flex items-center justify-center shrink-0">
-                            <img src={assetPath(agentSprite)} alt="" className="w-5 h-5 object-contain" />
+                            <img
+                                src={assetPath(agentSprite)}
+                                alt=""
+                                className="w-5 h-5 object-contain"
+                            />
                         </div>
                     )}
                     <div className="flex flex-col gap-0.5">
                         {agentName && (
-                            <span className="text-[10px] font-bold text-gray-500 ml-1">{agentName}</span>
+                            <span className="text-[10px] font-bold text-gray-500 ml-1">
+                                {agentName}
+                            </span>
                         )}
                         <div className="relative bg-white border-2 border-black rounded-2xl shadow-[2px_2px_0_0_#000] px-3 py-2">
-                            <p className="text-sm text-black whitespace-pre-wrap break-words">{event.content}</p>
+                            <p className="text-sm text-black whitespace-pre-wrap break-words">
+                                {event.content}
+                            </p>
                             <div className="absolute -top-1 -right-1">
                                 <CopyButton text={event.content} />
                             </div>
                         </div>
-                        <span className="text-[9px] text-gray-400 ml-1">{relativeTime(event.timestamp)}</span>
+                        <span className="text-[9px] text-gray-400 ml-1">
+                            {relativeTime(event.timestamp)}
+                        </span>
                     </div>
                 </div>
             );
@@ -95,17 +134,28 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                         onClick={() => setCollapsed(!collapsed)}
                         className="flex items-center gap-1 text-[10px] font-bold text-gray-500 hover:text-gray-700 transition-colors mb-0.5"
                     >
-                        <span className="transform transition-transform" style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>
+                        <span
+                            className="transform transition-transform"
+                            style={{
+                                transform: collapsed
+                                    ? 'rotate(0deg)'
+                                    : 'rotate(90deg)',
+                            }}
+                        >
                             ▶
                         </span>
                         thinking...
                     </button>
                     {!collapsed && (
                         <div className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-2">
-                            <p className="text-xs text-gray-600 italic whitespace-pre-wrap break-words">{event.content}</p>
+                            <p className="text-xs text-gray-600 italic whitespace-pre-wrap break-words">
+                                {event.content}
+                            </p>
                         </div>
                     )}
-                    <span className="text-[9px] text-gray-400 ml-1">{relativeTime(event.timestamp)}</span>
+                    <span className="text-[9px] text-gray-400 ml-1">
+                        {relativeTime(event.timestamp)}
+                    </span>
                 </div>
             );
 
@@ -119,9 +169,13 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                                 {event.toolName || 'tool'}
                             </span>
                         </div>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">{event.content}</p>
+                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">
+                            {event.content}
+                        </p>
                     </div>
-                    <span className="text-[9px] text-gray-400 ml-1">{relativeTime(event.timestamp)}</span>
+                    <span className="text-[9px] text-gray-400 ml-1">
+                        {relativeTime(event.timestamp)}
+                    </span>
                 </div>
             );
 
@@ -133,7 +187,14 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                             onClick={() => setCollapsed(!collapsed)}
                             className="flex items-center gap-1 text-[10px] font-bold text-gray-500 hover:text-gray-700 transition-colors mb-0.5"
                         >
-                            <span className="transform transition-transform" style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>
+                            <span
+                                className="transform transition-transform"
+                                style={{
+                                    transform: collapsed
+                                        ? 'rotate(0deg)'
+                                        : 'rotate(90deg)',
+                                }}
+                            >
                                 ▶
                             </span>
                             결과 보기
@@ -142,10 +203,14 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                     </div>
                     {!collapsed && (
                         <div className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 overflow-x-auto">
-                            <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">{event.content}</pre>
+                            <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono">
+                                {event.content}
+                            </pre>
                         </div>
                     )}
-                    <span className="text-[9px] text-gray-400 ml-1">{relativeTime(event.timestamp)}</span>
+                    <span className="text-[9px] text-gray-400 ml-1">
+                        {relativeTime(event.timestamp)}
+                    </span>
                 </div>
             );
         }
@@ -156,11 +221,17 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
                     <div className="bg-red-50 border-2 border-red-300 rounded-lg px-3 py-2">
                         <div className="flex items-center gap-1.5 mb-1">
                             <span className="text-xs">✕</span>
-                            <span className="text-[11px] font-black text-red-600">Error</span>
+                            <span className="text-[11px] font-black text-red-600">
+                                Error
+                            </span>
                         </div>
-                        <p className="text-xs text-red-700 whitespace-pre-wrap break-words">{event.content}</p>
+                        <p className="text-xs text-red-700 whitespace-pre-wrap break-words">
+                            {event.content}
+                        </p>
                     </div>
-                    <span className="text-[9px] text-gray-400 ml-1">{relativeTime(event.timestamp)}</span>
+                    <span className="text-[9px] text-gray-400 ml-1">
+                        {relativeTime(event.timestamp)}
+                    </span>
                 </div>
             );
 
@@ -170,7 +241,8 @@ const ChatBubble: React.FC<{ event: ParsedEvent; agentSprite?: string; agentName
 };
 
 // ── 이미지 경로 감지 ──
-const IMAGE_PATH_RE = /(?:^|\s)((?:[A-Za-z]:[\\\/]|[\/~])[\w\s.\-\\\/]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/gi;
+const IMAGE_PATH_RE =
+    /(?:^|\s)((?:[A-Za-z]:[\\\/]|[\/~])[\w\s.\-\\\/]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/gi;
 
 function extractImagePaths(text: string): string[] {
     const matches: string[] = [];
@@ -190,14 +262,19 @@ function toFileUrl(p: string): string {
 }
 
 // ── 사용자 입력 버블 (오른쪽 정렬) ──
-const UserBubble: React.FC<{ content: string; timestamp: number }> = ({ content, timestamp }) => {
+const UserBubble: React.FC<{ content: string; timestamp: number }> = ({
+    content,
+    timestamp,
+}) => {
     const imagePaths = useMemo(() => extractImagePaths(content), [content]);
 
     return (
         <div className="flex justify-end">
             <div className="max-w-[75%] flex flex-col items-end gap-0.5">
                 <div className="bg-[#E8DAFF] border-2 border-black rounded-2xl px-3 py-2">
-                    <p className="text-sm text-black whitespace-pre-wrap break-words">{content}</p>
+                    <p className="text-sm text-black whitespace-pre-wrap break-words">
+                        {content}
+                    </p>
                     {imagePaths.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                             {imagePaths.map((p, i) => (
@@ -206,13 +283,19 @@ const UserBubble: React.FC<{ content: string; timestamp: number }> = ({ content,
                                     src={toFileUrl(p)}
                                     alt=""
                                     className="max-w-[200px] max-h-[120px] rounded-lg border border-black/20 object-contain"
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                    onError={(e) => {
+                                        (
+                                            e.target as HTMLImageElement
+                                        ).style.display = 'none';
+                                    }}
                                 />
                             ))}
                         </div>
                     )}
                 </div>
-                <span className="text-[9px] text-gray-400 mr-1">{relativeTime(timestamp)}</span>
+                <span className="text-[9px] text-gray-400 mr-1">
+                    {relativeTime(timestamp)}
+                </span>
             </div>
         </div>
     );
@@ -247,11 +330,19 @@ const ChatView: React.FC<{
                 <div className="text-center">
                     {agentSprite && (
                         <div className="w-12 h-12 border-2 border-black rounded-xl bg-[#E8DAFF] p-1 flex items-center justify-center mx-auto mb-3">
-                            <img src={assetPath(agentSprite)} alt="" className="w-9 h-9 object-contain" />
+                            <img
+                                src={assetPath(agentSprite)}
+                                alt=""
+                                className="w-9 h-9 object-contain"
+                            />
                         </div>
                     )}
-                    <p className="text-sm font-bold text-black">메시지를 입력하면 여기에 대화가 표시됩니다</p>
-                    <p className="text-xs text-gray-400 mt-1">Claude Code 세션과 실시간으로 동기화됩니다</p>
+                    <p className="text-sm font-bold text-black">
+                        메시지를 입력하면 여기에 대화가 표시됩니다
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                        Claude Code 세션과 실시간으로 동기화됩니다
+                    </p>
                 </div>
             </div>
         );
@@ -266,7 +357,13 @@ const ChatView: React.FC<{
             {messages.map((event, i) => {
                 // 사용자 입력은 오른쪽 정렬 버블
                 if (event.toolName === '__user_input__') {
-                    return <UserBubble key={i} content={event.content} timestamp={event.timestamp} />;
+                    return (
+                        <UserBubble
+                            key={i}
+                            content={event.content}
+                            timestamp={event.timestamp}
+                        />
+                    );
                 }
                 // prompt 구분선
                 if (event.type === 'prompt') {
@@ -288,7 +385,10 @@ const ChatView: React.FC<{
                 <button
                     onClick={() => {
                         setAutoScroll(true);
-                        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+                        scrollRef.current?.scrollTo({
+                            top: scrollRef.current.scrollHeight,
+                            behavior: 'smooth',
+                        });
                     }}
                     className="sticky bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 text-[10px] font-bold bg-white border-2 border-black rounded-full shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all"
                 >
@@ -311,28 +411,25 @@ const ViewModeToggle: React.FC<{
         <div className="flex items-center bg-gray-100 border-2 border-black rounded-full p-0.5">
             <button
                 onClick={() => onChange('terminal')}
-                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${
-                    mode === 'terminal'
-                        ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
-                        : 'text-gray-500 hover:text-black'
-                }`}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${mode === 'terminal'
+                    ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
+                    : 'text-gray-500 hover:text-black'
+                    }`}
             >
                 터미널
             </button>
             <button
                 onClick={() => onChange('chat')}
-                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${
-                    mode === 'chat'
-                        ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
-                        : 'text-gray-500 hover:text-black'
-                }`}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${mode === 'chat'
+                    ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
+                    : 'text-gray-500 hover:text-black'
+                    }`}
             >
                 채팅
             </button>
         </div>
     );
 };
-
 
 // Stable empty array reference (avoids infinite re-render from [] !== [])
 const STABLE_EMPTY_MESSAGES: ParsedEvent[] = [];
@@ -350,38 +447,54 @@ export const TerminalPanel: React.FC = () => {
     const setViewMode = useTerminalStore((s) => s.setViewMode);
     const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
     const panelFullscreen = useTerminalStore((s) => s.panelFullscreen);
-    const togglePanelFullscreen = useTerminalStore((s) => s.togglePanelFullscreen);
+    const togglePanelFullscreen = useTerminalStore(
+        (s) => s.togglePanelFullscreen,
+    );
 
-    const xtermMapRef = useRef<Map<string, { terminal: Terminal; fitAddon: FitAddon }>>(new Map());
+    const xtermMapRef = useRef<
+        Map<string, { terminal: Terminal; fitAddon: FitAddon }>
+    >(new Map());
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalAreaRef = useRef<HTMLDivElement>(null);
 
-    const activeTab = tabs.find(t => t.id === activeTabId);
+    const activeTab = tabs.find((t) => t.id === activeTabId);
     const activeAgent = activeTab?.agentId
-        ? (activeTab.agentId === 'raccoon'
-            ? { id: 'raccoon', name: 'Dokba', role: 'AI 어시스턴트', sprite: '/assets/characters/raccoon_spritesheet.png' }
-            : DEFAULT_AGENTS.find(a => a.id === activeTab.agentId))
+        ? activeTab.agentId === 'raccoon'
+            ? {
+                id: 'raccoon',
+                name: 'Dokba',
+                role: 'AI 어시스턴트',
+                sprite: '/assets/characters/dokba_profile.png',
+            }
+            : DEFAULT_AGENTS.find((a) => a.id === activeTab.agentId)
         : null;
 
     // 현재 에이전트 활동 상태 (selective subscription)
     const activeAgentId = activeTab?.agentId;
-    const currentActivity = useTerminalStore((s) => activeAgentId ? s.agentActivity[activeAgentId] : undefined);
+    const currentActivity = useTerminalStore((s) =>
+        activeAgentId ? s.agentActivity[activeAgentId] : undefined,
+    );
 
     // 현재 탭의 뷰 모드 (기본: terminal)
-    const currentViewMode: ViewMode = activeTabId ? (viewMode[activeTabId] || 'terminal') : 'terminal';
+    const currentViewMode: ViewMode = activeTabId
+        ? viewMode[activeTabId] || 'terminal'
+        : 'terminal';
 
     // 현재 탭의 채팅 메시지 (selective subscription — stable empty ref to avoid infinite re-render)
     const currentMessages = useTerminalStore(
-        useCallback((s: { parsedMessages: Record<string, ParsedEvent[]> }) => {
-            if (!activeTabId) return STABLE_EMPTY_MESSAGES;
-            return s.parsedMessages[activeTabId] || STABLE_EMPTY_MESSAGES;
-        }, [activeTabId]),
+        useCallback(
+            (s: { parsedMessages: Record<string, ParsedEvent[]> }) => {
+                if (!activeTabId) return STABLE_EMPTY_MESSAGES;
+                return s.parsedMessages[activeTabId] || STABLE_EMPTY_MESSAGES;
+            },
+            [activeTabId],
+        ),
     );
 
     // ── ChatInput onSubmit 콜백: PTY write(50ms split) + parsedMessages 추가 ──
     const handleChatSubmit = useCallback((msg: string) => {
         const state = useTerminalStore.getState();
-        const currentTab = state.tabs.find(t => t.id === state.activeTabId);
+        const currentTab = state.tabs.find((t) => t.id === state.activeTabId);
         if (!currentTab) return;
 
         const tabId = currentTab.id;
@@ -419,21 +532,25 @@ export const TerminalPanel: React.FC = () => {
                 status: 'connecting',
             });
         } catch (e) {
-            if (import.meta.env.DEV) console.error('Failed to create terminal:', e);
+            if (import.meta.env.DEV)
+                console.error('Failed to create terminal:', e);
         }
     }, [addTab]);
 
     // Close a terminal tab
-    const handleCloseTab = useCallback((id: string) => {
-        const api = window.dogbaApi?.terminal;
-        if (api) api.destroy(id);
-        const entry = xtermMapRef.current.get(id);
-        if (entry) {
-            entry.terminal.dispose();
-            xtermMapRef.current.delete(id);
-        }
-        removeTab(id);
-    }, [removeTab]);
+    const handleCloseTab = useCallback(
+        (id: string) => {
+            const api = window.dogbaApi?.terminal;
+            if (api) api.destroy(id);
+            const entry = xtermMapRef.current.get(id);
+            if (entry) {
+                entry.terminal.dispose();
+                xtermMapRef.current.delete(id);
+            }
+            removeTab(id);
+        },
+        [removeTab],
+    );
 
     // ── Terminal IPC listeners — xterm write + parsed events ──
     useEffect(() => {
@@ -451,29 +568,36 @@ export const TerminalPanel: React.FC = () => {
         });
 
         // Parsed events from PTY parser (tee path from main process)
-        const unsubParsed = api.onParsedEvent?.((tabId: string, event: ParsedEvent) => {
-            useTerminalStore.getState().addParsedEvent(tabId, event);
+        const unsubParsed = api.onParsedEvent?.(
+            (tabId: string, event: ParsedEvent) => {
+                useTerminalStore.getState().addParsedEvent(tabId, event);
 
-            // team_update 이벤트 → 캐릭터 자동 매핑
-            if (event.type === 'team_update') {
-                const store = useTerminalStore.getState();
-                if (event.teamMembers && event.teamMembers.length > 0) {
-                    store.setActiveTeamMembers(event.teamMembers);
-                } else {
-                    store.clearActiveTeam();
+                // team_update 이벤트 → 캐릭터 자동 매핑
+                if (event.type === 'team_update') {
+                    const store = useTerminalStore.getState();
+                    if (event.teamMembers && event.teamMembers.length > 0) {
+                        store.setActiveTeamMembers(event.teamMembers);
+                    } else {
+                        store.clearActiveTeam();
+                    }
                 }
-            }
-        });
+            },
+        );
 
         // Activity changes → agentActivity store (for badge + AgentTown)
-        const unsubActivity = api.onActivityChange?.((tabId: string, activity: string) => {
-            // Map tabId to agentId through the tabs list
-            const state = useTerminalStore.getState();
-            const tab = state.tabs.find(t => t.id === tabId);
-            if (tab?.agentId) {
-                state.setAgentActivity(tab.agentId, activity as import('../../lib/pty-parser').AgentActivity);
-            }
-        });
+        const unsubActivity = api.onActivityChange?.(
+            (tabId: string, activity: string) => {
+                // Map tabId to agentId through the tabs list
+                const state = useTerminalStore.getState();
+                const tab = state.tabs.find((t) => t.id === tabId);
+                if (tab?.agentId) {
+                    state.setAgentActivity(
+                        tab.agentId,
+                        activity as import('../../lib/pty-parser').AgentActivity,
+                    );
+                }
+            },
+        );
 
         return () => {
             unsubData();
@@ -489,7 +613,11 @@ export const TerminalPanel: React.FC = () => {
             if (xtermMapRef.current.has(tab.id)) continue;
 
             const terminal = new Terminal({
-                theme: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+                theme: {
+                    background: '#1e1e2e',
+                    foreground: '#cdd6f4',
+                    cursor: '#f5e0dc',
+                },
                 fontFamily: '"Cascadia Code", "Fira Code", monospace',
                 fontSize: 14,
                 cursorBlink: true,
@@ -510,7 +638,7 @@ export const TerminalPanel: React.FC = () => {
         }
 
         // Cleanup instances for removed tabs
-        const tabIds = new Set(tabs.map(t => t.id));
+        const tabIds = new Set(tabs.map((t) => t.id));
         for (const [id, entry] of xtermMapRef.current) {
             if (!tabIds.has(id)) {
                 entry.terminal.dispose();
@@ -520,19 +648,22 @@ export const TerminalPanel: React.FC = () => {
     }, [tabs]);
 
     // Ref callback to mount xterm into DOM
-    const mountTerminal = useCallback((id: string, el: HTMLDivElement | null) => {
-        if (!el) return;
-        const entry = xtermMapRef.current.get(id);
-        if (!entry) return;
-        if (el.querySelector('.xterm')) return;
-        entry.terminal.open(el);
-        // 레이아웃 완료 후 fit (마진 반영)
-        requestAnimationFrame(() => {
-            entry.fitAddon.fit();
-            entry.terminal.focus();
-        });
-        updateTab(id, { status: 'connected' });
-    }, [updateTab]);
+    const mountTerminal = useCallback(
+        (id: string, el: HTMLDivElement | null) => {
+            if (!el) return;
+            const entry = xtermMapRef.current.get(id);
+            if (!entry) return;
+            if (el.querySelector('.xterm')) return;
+            entry.terminal.open(el);
+            // 레이아웃 완료 후 fit (마진 반영)
+            requestAnimationFrame(() => {
+                entry.fitAddon.fit();
+                entry.terminal.focus();
+            });
+            updateTab(id, { status: 'connected' });
+        },
+        [updateTab],
+    );
 
     // Re-fit active tab when it changes, and refocus
     useEffect(() => {
@@ -587,8 +718,13 @@ export const TerminalPanel: React.FC = () => {
             <div className="w-full h-full bg-cream-50 flex items-center justify-center">
                 <div className="text-center">
                     <p className="text-3xl mb-3">{'👇'}</p>
-                    <p className="text-black text-sm font-bold">캐릭터를 클릭하여 시작하세요</p>
-                    <p className="text-gray-500 text-xs mt-1">하단 독바에서 캐릭터를 선택하면 Claude Code 세션이 시작됩니다</p>
+                    <p className="text-black text-sm font-bold">
+                        캐릭터를 클릭하여 시작하세요
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                        하단 독바에서 캐릭터를 선택하면 Claude Code 세션이
+                        시작됩니다
+                    </p>
                     <button
                         onClick={handleAddTab}
                         className="mt-4 px-4 py-2 bg-white text-black text-xs font-bold border-2 border-black shadow-[3px_3px_0_0_#000] rounded-lg hover:-translate-y-1 hover:shadow-[5px_5px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
@@ -636,24 +772,35 @@ export const TerminalPanel: React.FC = () => {
     })();
 
     return (
-        <div ref={containerRef} className="w-full h-full flex flex-col bg-white">
+        <div
+            ref={containerRef}
+            className="w-full h-full flex flex-col bg-white"
+        >
             {/* 헤더: 캐릭터 정보 + 상태 + 뷰 토글 */}
             <div className="flex items-center bg-white border-b-2 border-black h-[44px] shrink-0 px-3">
                 {activeAgent ? (
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 border-2 border-black rounded-lg bg-[#E8DAFF] p-0.5 flex items-center justify-center">
-                            <img src={assetPath(activeAgent.sprite)} alt={activeAgent.name} className="w-6 h-6 object-contain" />
+                            <img
+                                src={assetPath(activeAgent.sprite)}
+                                alt={activeAgent.name}
+                                className="w-6 h-6 object-contain"
+                            />
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-sm font-black text-black leading-tight">{activeAgent.name}</span>
-                            <span className="text-[10px] font-bold text-gray-400">{activeAgent.role}</span>
+                            <span className="text-sm font-black text-black leading-tight">
+                                {activeAgent.name}
+                            </span>
+                            <span className="text-[10px] font-bold text-gray-400">
+                                {activeAgent.role}
+                            </span>
                         </div>
-                        <div className="ml-2">
-                            {activityBadge}
-                        </div>
+                        <div className="ml-2">{activityBadge}</div>
                     </div>
                 ) : (
-                    <span className="text-sm text-black font-black">Terminal</span>
+                    <span className="text-sm text-black font-black">
+                        Terminal
+                    </span>
                 )}
 
                 <div className="ml-auto flex items-center gap-2">
@@ -677,14 +824,32 @@ export const TerminalPanel: React.FC = () => {
                         title={panelFullscreen ? '패널 축소' : '패널 전체 화면'}
                     >
                         {panelFullscreen ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
                                 <polyline points="4 14 10 14 10 20" />
                                 <polyline points="20 10 14 10 14 4" />
                                 <line x1="14" y1="10" x2="21" y2="3" />
                                 <line x1="3" y1="21" x2="10" y2="14" />
                             </svg>
                         ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
                                 <polyline points="15 3 21 3 21 9" />
                                 <polyline points="9 21 3 21 3 15" />
                                 <line x1="21" y1="3" x2="14" y2="10" />
@@ -706,25 +871,30 @@ export const TerminalPanel: React.FC = () => {
             {/* 탭 바 (멀티탭일 때) */}
             {tabs.length > 1 && (
                 <div className="flex items-center gap-1.5 bg-gray-50 border-b-2 border-black px-2 py-1 shrink-0">
-                    {tabs.map(tab => (
+                    {tabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
-                                tab.id === activeTabId
-                                    ? 'bg-[#E8DAFF] border-2 border-black shadow-[2px_2px_0_0_#000] text-black'
-                                    : 'bg-white border border-gray-300 text-gray-500 hover:border-black'
-                            }`}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${tab.id === activeTabId
+                                ? 'bg-[#E8DAFF] border-2 border-black shadow-[2px_2px_0_0_#000] text-black'
+                                : 'bg-white border border-gray-300 text-gray-500 hover:border-black'
+                                }`}
                         >
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                                tab.status === 'connected' ? 'bg-green-400'
-                                : tab.status === 'connecting' ? 'bg-yellow-400'
-                                : 'bg-red-400'
-                            }`} />
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${tab.status === 'connected'
+                                    ? 'bg-green-400'
+                                    : tab.status === 'connecting'
+                                        ? 'bg-yellow-400'
+                                        : 'bg-red-400'
+                                    }`}
+                            />
                             {tab.label}
                             <span
                                 role="button"
-                                onClick={(e) => { e.stopPropagation(); handleCloseTab(tab.id); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCloseTab(tab.id);
+                                }}
                                 className="ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-100 text-gray-400 hover:text-red-500 font-black"
                             >
                                 x
@@ -745,13 +915,21 @@ export const TerminalPanel: React.FC = () => {
             ) : (
                 /* 터미널 영역 — 밝은 배경 + 마진으로 여백, 안쪽만 다크 */
                 <div className="flex-1 flex min-h-0 bg-cream-50">
-                    <div ref={terminalAreaRef} className="flex-1 min-h-0 m-3 rounded-xl border-2 border-black overflow-hidden relative">
-                        {tabs.map(tab => (
+                    <div
+                        ref={terminalAreaRef}
+                        className="flex-1 min-h-0 m-3 rounded-xl border-2 border-black overflow-hidden relative"
+                    >
+                        {tabs.map((tab) => (
                             <div
                                 key={tab.id}
                                 ref={(el) => mountTerminal(tab.id, el)}
                                 className="absolute inset-0"
-                                style={{ display: tab.id === activeTabId ? 'block' : 'none' }}
+                                style={{
+                                    display:
+                                        tab.id === activeTabId
+                                            ? 'block'
+                                            : 'none',
+                                }}
                             />
                         ))}
                     </div>

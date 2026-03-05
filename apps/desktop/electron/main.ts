@@ -6,15 +6,46 @@ import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
-import { agentManager, AGENT_PERSONAS, type StreamChunk } from './agent-manager';
+import {
+    agentManager,
+    AGENT_PERSONAS,
+    type StreamChunk,
+} from './agent-manager';
 import { getSkillProfile } from './skill-map';
 import { ChatSessionManager } from './chat-session-manager';
 import { ctoController } from './cto-controller';
-import { parsePtyChunk, detectActivity, summarizeEvents, type ParsedEvent, type AgentActivity } from '../src/lib/pty-parser';
+import {
+    parsePtyChunk,
+    detectActivity,
+    summarizeEvents,
+    type ParsedEvent,
+    type AgentActivity,
+} from '../src/lib/pty-parser';
 import { worktreeManager } from './worktree-manager';
 import { hooksManager } from './hooks-manager';
-import { registerMcpServer, MCP_BRIDGE_DIR, type McpBridge } from './mcp-artience-server';
-import { loadSkills, installDefaultSkills, getAgentSkills } from './skill-manager';
+import {
+    registerMcpServer,
+    MCP_BRIDGE_DIR,
+    type McpBridge,
+} from './mcp-artience-server';
+
+// Dev 환경에서 Vite HMR을 위한 unsafe-eval 관련 보안 경고 무시
+if (!app.isPackaged) {
+    process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
+}
+
+const isDev = process.env.NODE_ENV !== 'production';
+import {
+    loadSkills,
+    installDefaultSkills,
+    getAgentSkills,
+} from './skill-manager';
+import {
+    scanArtibotDir,
+    watchArtibotDir,
+    stopWatching,
+    getRegistry,
+} from './artibot-registry';
 
 console.log('[Electron] BUILD_ID: 20260303-v8 (Hydration-Fix)');
 
@@ -124,6 +155,11 @@ interface HistorySnapshot {
 
 const historySnapshots: HistorySnapshot[] = [];
 
+const DOGBA_DIR = path.join(os.homedir(), '.dogba');
+const LOGS_DIR = path.join(DOGBA_DIR, 'logs');
+if (!fs.existsSync(DOGBA_DIR)) fs.mkdirSync(DOGBA_DIR, { recursive: true });
+if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+
 // ── Terminal process store (node-pty based for proper TTY support) ──────────
 
 const terminals = new Map<string, pty.IPty>();
@@ -148,7 +184,13 @@ const tabParserState = new Map<string, TabParserState>();
 function getOrCreateParserState(tabId: string): TabParserState {
     let state = tabParserState.get(tabId);
     if (!state) {
-        state = { lastActivity: 'idle', events: [], workCycleActive: false, lineBuffer: '', flushTimer: null };
+        state = {
+            lastActivity: 'idle',
+            events: [],
+            workCycleActive: false,
+            lineBuffer: '',
+            flushTimer: null,
+        };
         tabParserState.set(tabId, state);
     }
     return state;
@@ -161,7 +203,11 @@ const LINE_BUFFER_FLUSH_MS = 200;
  * Process parsed events: push to event buffer, send to renderer, detect activity changes.
  * Shared by both the normal parse path and the flush-timer path.
  */
-function processParsedEvents(tabId: string, state: TabParserState, parsed: ParsedEvent[]): void {
+function processParsedEvents(
+    tabId: string,
+    state: TabParserState,
+    parsed: ParsedEvent[],
+): void {
     if (parsed.length === 0) return;
 
     for (const event of parsed) {
@@ -184,18 +230,30 @@ function processParsedEvents(tabId: string, state: TabParserState, parsed: Parse
 
     // Detect activity change
     const newActivity = detectActivity(state.events);
-    console.log(`[PTY-DEBUG] activity: ${state.lastActivity} → ${newActivity} (events=${state.events.length})`);
+    console.log(
+        `[PTY - DEBUG] activity: ${state.lastActivity} → ${newActivity} (events = ${state.events.length})`,
+    );
     if (newActivity !== state.lastActivity) {
         const prevActivity = state.lastActivity;
         state.lastActivity = newActivity;
 
-        console.log(`[PTY-DEBUG] *** ACTIVITY CHANGED: ${prevActivity} → ${newActivity} for tab ${tabId}`);
+        console.log(
+            `[PTY - DEBUG] *** ACTIVITY CHANGED: ${prevActivity} → ${newActivity} for tab ${tabId}`,
+        );
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('terminal:activity-change', tabId, newActivity);
+            mainWindow.webContents.send(
+                'terminal:activity-change',
+                tabId,
+                newActivity,
+            );
         }
 
         // Mail trigger: work cycle completed (transition to success/idle after work)
-        if (state.workCycleActive && (newActivity === 'success' || (newActivity === 'idle' && prevActivity !== 'idle'))) {
+        if (
+            state.workCycleActive &&
+            (newActivity === 'success' ||
+                (newActivity === 'idle' && prevActivity !== 'idle'))
+        ) {
             state.workCycleActive = false;
             const meta = terminalMeta.get(tabId);
             const agentLabel = meta?.label || tabId;
@@ -223,8 +281,11 @@ function processParsedEvents(tabId: string, state: TabParserState, parsed: Parse
             }
             const meta = terminalMeta.get(tabId);
             const agentLabel = meta?.label || tabId;
-            const errorEvents = state.events.filter(e => e.type === 'error');
-            const errorSummary = errorEvents.map(e => e.content).join('\n').slice(0, 500);
+            const errorEvents = state.events.filter((e) => e.type === 'error');
+            const errorSummary = errorEvents
+                .map((e) => e.content)
+                .join('\n')
+                .slice(0, 500);
 
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('mail:new-report', {
@@ -255,6 +316,15 @@ function processParsedEvents(tabId: string, state: TabParserState, parsed: Parse
  * preventing activity detection from being blocked indefinitely.
  */
 function processPtyForParser(tabId: string, rawData: string): void {
+    const meta = terminalMeta.get(tabId);
+    const agentLabel = meta?.label || tabId;
+    const logFile = path.join(LOGS_DIR, `${agentLabel} _history.log`);
+
+    // 백그라운드에서 로그 파일 기록
+    fs.appendFile(logFile, rawData, (err) => {
+        if (err) console.error(`Failed to write log for ${agentLabel}: `, err);
+    });
+
     const state = getOrCreateParserState(tabId);
 
     // Clear any pending flush timer — new data arrived
@@ -268,24 +338,35 @@ function processPtyForParser(tabId: string, rawData: string): void {
 
     // DEBUG: log raw data info
     const hasNewline = data.includes('\n') || data.includes('\r');
-    console.log(`[PTY-DEBUG] tabId=${tabId} rawLen=${rawData.length} bufLen=${state.lineBuffer.length} hasNewline=${hasNewline}`);
+    console.log(
+        `[PTY - DEBUG] tabId = ${tabId} rawLen = ${rawData.length} bufLen = ${state.lineBuffer.length} hasNewline = ${hasNewline} `,
+    );
 
     // If the chunk does not end with a newline, the last segment is incomplete
     let dataToParse: string;
     if (data.length > 0 && !data.endsWith('\n') && !data.endsWith('\r')) {
-        const lastNewline = Math.max(data.lastIndexOf('\n'), data.lastIndexOf('\r'));
+        const lastNewline = Math.max(
+            data.lastIndexOf('\n'),
+            data.lastIndexOf('\r'),
+        );
         if (lastNewline === -1) {
             // Entire chunk is a partial line — buffer it, schedule flush
             state.lineBuffer = data;
-            console.log(`[PTY-DEBUG] BUFFERED (no newline) bufLen=${state.lineBuffer.length}`);
+            console.log(
+                `[PTY - DEBUG] BUFFERED(no newline) bufLen = ${state.lineBuffer.length} `,
+            );
             state.flushTimer = setTimeout(() => {
                 state.flushTimer = null;
                 if (state.lineBuffer.length === 0) return;
                 const buffered = state.lineBuffer;
                 state.lineBuffer = '';
-                console.log(`[PTY-DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`);
+                console.log(
+                    `[PTY - DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`,
+                );
                 const parsed = parsePtyChunk(buffered);
-                console.log(`[PTY-DEBUG] flush parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+                console.log(
+                    `[PTY - DEBUG] flush parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
+                );
                 processParsedEvents(tabId, state, parsed);
             }, LINE_BUFFER_FLUSH_MS);
             return;
@@ -301,9 +382,13 @@ function processPtyForParser(tabId: string, rawData: string): void {
                 if (state.lineBuffer.length === 0) return;
                 const buffered = state.lineBuffer;
                 state.lineBuffer = '';
-                console.log(`[PTY-DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`);
+                console.log(
+                    `[PTY - DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`,
+                );
                 const parsed = parsePtyChunk(buffered);
-                console.log(`[PTY-DEBUG] flush parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+                console.log(
+                    `[PTY - DEBUG] flush parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
+                );
                 processParsedEvents(tabId, state, parsed);
             }, LINE_BUFFER_FLUSH_MS);
         }
@@ -313,7 +398,9 @@ function processPtyForParser(tabId: string, rawData: string): void {
     }
 
     const parsed = parsePtyChunk(dataToParse);
-    console.log(`[PTY-DEBUG] parsed ${parsed.length} events: ${parsed.map(e => e.type).join(', ')}`);
+    console.log(
+        `[PTY - DEBUG] parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
+    );
     processParsedEvents(tabId, state, parsed);
 }
 
@@ -342,18 +429,41 @@ async function createWindow() {
         },
     });
 
-    mainWindow.webContents.on('preload-error', (_event: any, preloadPath: string, error: Error) => {
-        console.error('[Electron] PRELOAD ERROR in', preloadPath, ':', error.message);
-    });
+    mainWindow.webContents.on(
+        'preload-error',
+        (_event: any, preloadPath: string, error: Error) => {
+            console.error(
+                '[Electron] PRELOAD ERROR in',
+                preloadPath,
+                ':',
+                error.message,
+            );
+        },
+    );
 
-    mainWindow.webContents.on('console-message', (_event: any, level: number, message: string, line: number, sourceId: string) => {
-        const msg = typeof message === 'string' ? message : String(message ?? '');
-        if (msg.includes('[Preload]') || msg.includes('[ChatSend]') || msg.includes('[terminal') || level >= 3) {
-            const tag = level >= 3 ? 'ERROR' : 'LOG';
-            const src = sourceId && line ? ` [${sourceId}:${line}]` : '';
-            console.log(`[Renderer ${tag}]${src}`, msg);
-        }
-    });
+    mainWindow.webContents.on(
+        'console-message',
+        (
+            _event: any,
+            level: number,
+            message: string,
+            line: number,
+            sourceId: string,
+        ) => {
+            const msg =
+                typeof message === 'string' ? message : String(message ?? '');
+            if (
+                msg.includes('[Preload]') ||
+                msg.includes('[ChatSend]') ||
+                msg.includes('[terminal') ||
+                level >= 3
+            ) {
+                const tag = level >= 3 ? 'ERROR' : 'LOG';
+                const src = sourceId && line ? ` [${sourceId}:${line}]` : '';
+                console.log(`[Renderer ${tag}]${src} `, msg);
+            }
+        },
+    );
 
     if (process.env.VITE_DEV_SERVER_URL) {
         // Purge Chromium HTTP cache to prevent stale JS from previous builds
@@ -363,7 +473,12 @@ async function createWindow() {
     } else {
         // __dirname = dist-electron/, Vite 출력 = ../dist/index.html
         const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
-        console.log('[Electron] Loading index.html from:', indexPath, '| exists:', fs.existsSync(indexPath));
+        console.log(
+            '[Electron] Loading index.html from:',
+            indexPath,
+            '| exists:',
+            fs.existsSync(indexPath),
+        );
         mainWindow.loadFile(indexPath);
     }
 
@@ -372,14 +487,14 @@ async function createWindow() {
     mainWindow.webContents.on('did-finish-load', async () => {
         try {
             const result = await mainWindow.webContents.executeJavaScript(`
-                JSON.stringify({
-                    dogbaApi: typeof window.dogbaApi,
-                    keys: window.dogbaApi ? Object.keys(window.dogbaApi) : [],
-                    chatAvailable: !!window.dogbaApi?.chat?.send,
-                    terminalAvailable: !!window.dogbaApi?.terminal?.create,
-                    cliAvailable: !!window.dogbaApi?.cli?.authStatus,
-                    projectAvailable: !!window.dogbaApi?.project?.load,
-                })
+JSON.stringify({
+    dogbaApi: typeof window.dogbaApi,
+    keys: window.dogbaApi ? Object.keys(window.dogbaApi) : [],
+    chatAvailable: !!window.dogbaApi?.chat?.send,
+    terminalAvailable: !!window.dogbaApi?.terminal?.create,
+    cliAvailable: !!window.dogbaApi?.cli?.authStatus,
+    projectAvailable: !!window.dogbaApi?.project?.load,
+})
             `);
             console.log('[Electron] window.dogbaApi check:', result);
         } catch (e: any) {
@@ -390,100 +505,134 @@ async function createWindow() {
 
 // ── Terminal IPC handlers (node-pty for full TTY support) ───────────────────
 
-ipcMain.handle('terminal:create', (_event, cols: number, rows: number, options?: {
-    cwd?: string;
-    autoCommand?: string;
-    shell?: string;
-    label?: string;
-    agentSettings?: { model?: string; permissionMode?: string; maxTurns?: number };
-}) => {
-    const id = `term-${++terminalIdCounter}`;
-    const shell = options?.shell || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
-    const cwd = options?.cwd || process.env.HOME || process.env.USERPROFILE || '.';
-    const label = options?.label || id;
+ipcMain.handle(
+    'terminal:create',
+    (
+        _event,
+        cols: number,
+        rows: number,
+        options?: {
+            cwd?: string;
+            autoCommand?: string;
+            shell?: string;
+            label?: string;
+            agentSettings?: {
+                model?: string;
+                permissionMode?: string;
+                maxTurns?: number;
+            };
+        },
+    ) => {
+        const id = `term - ${++terminalIdCounter} `;
+        const shell =
+            options?.shell ||
+            (process.platform === 'win32' ? 'powershell.exe' : 'bash');
+        const cwd =
+            options?.cwd || process.env.HOME || process.env.USERPROFILE || '.';
+        const label = options?.label || id;
 
-    const env = { ...process.env } as Record<string, string>;
-    delete env.CLAUDECODE;
-    delete env.CLAUDE_CODE_ENTRYPOINT;
+        const env = { ...process.env } as Record<string, string>;
+        delete env.CLAUDECODE;
+        delete env.CLAUDE_CODE_ENTRYPOINT;
 
-    const proc = pty.spawn(shell, [], {
-        name: 'xterm-256color',
-        cols: cols || 80,
-        rows: rows || 24,
-        cwd,
-        env,
-    });
+        const proc = pty.spawn(shell, [], {
+            name: 'xterm-256color',
+            cols: cols || 80,
+            rows: rows || 24,
+            cwd,
+            env,
+        });
 
-    terminals.set(id, proc);
-    terminalMeta.set(id, { cwd, label });
+        terminals.set(id, proc);
+        terminalMeta.set(id, { cwd, label });
 
-    if (options?.autoCommand) {
-        // Build the actual command with agent settings flags
-        let cmd = options.autoCommand;
-        const settings = options.agentSettings;
-        if (settings && cmd === 'claude') {
-            const flags: string[] = [];
-            if (settings.model) flags.push(`--model ${settings.model}`);
-            // Apply permission mode: explicit setting > preset > default
-            const permMode = settings.permissionMode && settings.permissionMode !== 'default'
-                ? settings.permissionMode
-                : getDefaultPermissionMode(label);
-            if (permMode && permMode !== 'default') {
-                if (permMode === 'bypassPermissions') {
-                    flags.push('--dangerously-skip-permissions');
-                } else {
-                    flags.push(`--permission-mode ${permMode}`);
+        if (options?.autoCommand) {
+            // Build the actual command with agent settings flags
+            let cmd = options.autoCommand;
+            const settings = options.agentSettings;
+            if (settings && cmd === 'claude') {
+                const flags: string[] = [];
+                if (settings.model) flags.push(`--model ${settings.model} `);
+                // Apply permission mode: explicit setting > preset > default
+                const permMode =
+                    settings.permissionMode &&
+                        settings.permissionMode !== 'default'
+                        ? settings.permissionMode
+                        : getDefaultPermissionMode(label);
+                if (permMode && permMode !== 'default') {
+                    if (permMode === 'bypassPermissions') {
+                        flags.push('--dangerously-skip-permissions');
+                    } else {
+                        flags.push(`--permission - mode ${permMode} `);
+                    }
+                }
+                if (settings.maxTurns)
+                    flags.push(`--max - turns ${settings.maxTurns} `);
+                if (flags.length > 0) {
+                    cmd = `claude ${flags.join(' ')} `;
                 }
             }
-            if (settings.maxTurns) flags.push(`--max-turns ${settings.maxTurns}`);
-            if (flags.length > 0) {
-                cmd = `claude ${flags.join(' ')}`;
+
+            setTimeout(() => {
+                proc.write(cmd + '\r');
+            }, 1500);
+        }
+
+        proc.onData((data: string) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                // Original path: send raw data to xterm (unchanged)
+                mainWindow.webContents.send('terminal:data', id, data);
             }
-        }
+            // Tee path: parse for structured events (does NOT affect xterm)
+            processPtyForParser(id, data);
+        });
 
-        setTimeout(() => {
-            proc.write(cmd + '\r');
-        }, 1500);
-    }
+        proc.onExit(({ exitCode }) => {
+            terminals.delete(id);
+            terminalMeta.delete(id);
+            const parserState = tabParserState.get(id);
+            if (
+                parserState?.flushTimer !== null &&
+                parserState?.flushTimer !== undefined
+            ) {
+                clearTimeout(parserState.flushTimer);
+            }
+            tabParserState.delete(id);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('terminal:exit', id, exitCode ?? 1);
+            }
+        });
 
-    proc.onData((data: string) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            // Original path: send raw data to xterm (unchanged)
-            mainWindow.webContents.send('terminal:data', id, data);
-        }
-        // Tee path: parse for structured events (does NOT affect xterm)
-        processPtyForParser(id, data);
-    });
-
-    proc.onExit(({ exitCode }) => {
-        terminals.delete(id);
-        terminalMeta.delete(id);
-        const parserState = tabParserState.get(id);
-        if (parserState?.flushTimer !== null && parserState?.flushTimer !== undefined) {
-            clearTimeout(parserState.flushTimer);
-        }
-        tabParserState.delete(id);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('terminal:exit', id, exitCode ?? 1);
-        }
-    });
-
-    return { id, label, cwd };
-});
+        return { id, label, cwd };
+    },
+);
 
 ipcMain.on('terminal:write', (_event, id: string, data: string) => {
     const pty = terminals.get(id);
     if (pty) {
-        console.log('[terminal:write] OK → id:', id, '| data:', JSON.stringify(data).slice(0, 80));
+        console.log(
+            '[terminal:write] OK → id:',
+            id,
+            '| data:',
+            JSON.stringify(data).slice(0, 80),
+        );
         pty.write(data);
     } else {
-        console.warn('[terminal:write] No PTY found for id:', id, '| available:', [...terminals.keys()]);
+        console.warn(
+            '[terminal:write] No PTY found for id:',
+            id,
+            '| available:',
+            [...terminals.keys()],
+        );
     }
 });
 
-ipcMain.on('terminal:resize', (_event, id: string, cols: number, rows: number) => {
-    terminals.get(id)?.resize(cols, rows);
-});
+ipcMain.on(
+    'terminal:resize',
+    (_event, id: string, cols: number, rows: number) => {
+        terminals.get(id)?.resize(cols, rows);
+    },
+);
 
 ipcMain.on('terminal:destroy', (_event, id: string) => {
     const proc = terminals.get(id);
@@ -492,7 +641,10 @@ ipcMain.on('terminal:destroy', (_event, id: string) => {
         terminals.delete(id);
         terminalMeta.delete(id);
         const parserState = tabParserState.get(id);
-        if (parserState?.flushTimer !== null && parserState?.flushTimer !== undefined) {
+        if (
+            parserState?.flushTimer !== null &&
+            parserState?.flushTimer !== undefined
+        ) {
             clearTimeout(parserState.flushTimer);
         }
         tabParserState.delete(id);
@@ -508,6 +660,20 @@ ipcMain.handle('terminal:list', () => {
     }));
 });
 
+ipcMain.handle('history:read', async (_event, agentId: string) => {
+    const logFile = path.join(LOGS_DIR, `${agentId} _history.log`);
+    try {
+        if (fs.existsSync(logFile)) {
+            // 최대 마지막 5MB만 읽기 등 제한을 둘 수 있으나, 일단 심플하게 전체/직접 읽기로 시작
+            return fs.promises.readFile(logFile, 'utf-8');
+        }
+        return ''; // 파일이 없으면 빈 문자열 반환
+    } catch (err) {
+        console.error(`Error reading history for ${agentId}: `, err);
+        return '';
+    }
+});
+
 // ── Chat IPC (Agent Manager) ───────────────────────────────────────────────
 
 // Helper: resolve agent display name from agentName key
@@ -516,7 +682,10 @@ function resolveAgentName(agentName: string): string {
     return persona ? `${agentName} (${persona.role})` : agentName;
 }
 
-async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): Promise<{ success: boolean; text: string; sessionId?: string }> {
+async function drainChat(
+    agentName: string,
+    gen: AsyncGenerator<StreamChunk>,
+): Promise<{ success: boolean; text: string; sessionId?: string }> {
     let fullText = '';
     let sessionId: string | undefined;
 
@@ -526,9 +695,17 @@ async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): P
 
             if (chunk.type === 'text') {
                 fullText += chunk.content;
-                mainWindow?.webContents.send('chat:stream', agentName, chunk.content);
+                mainWindow?.webContents.send(
+                    'chat:stream',
+                    agentName,
+                    chunk.content,
+                );
             } else if (chunk.type === 'tool_use') {
-                mainWindow?.webContents.send('chat:tool-use', agentName, chunk.content);
+                mainWindow?.webContents.send(
+                    'chat:tool-use',
+                    agentName,
+                    chunk.content,
+                );
             } else if (chunk.type === 'result') {
                 fullText = chunk.content || fullText;
             } else if (chunk.type === 'error') {
@@ -572,26 +749,64 @@ async function drainChat(agentName: string, gen: AsyncGenerator<StreamChunk>): P
 
 // Helper: resolve project directory from electron-store
 function getProjectDir(): string {
-    return (store.get('projectData') as any)?.meta?.dir || process.env.HOME || process.env.USERPROFILE || '.';
+    return (
+        (store.get('projectData') as any)?.meta?.dir ||
+        process.env.HOME ||
+        process.env.USERPROFILE ||
+        '.'
+    );
 }
 
 // Legacy single-shot (kept for backward compat, now routed through Agent Manager)
-ipcMain.handle('chat:send', async (_event, agentName: string, userMessage: string, skillId?: string) => {
-    const gen = agentManager.chat(agentName, userMessage, getProjectDir(), skillId);
-    return drainChat(agentName, gen);
-});
+ipcMain.handle(
+    'chat:send',
+    async (
+        _event,
+        agentName: string,
+        userMessage: string,
+        skillId?: string,
+    ) => {
+        const gen = agentManager.chat(
+            agentName,
+            userMessage,
+            getProjectDir(),
+            skillId,
+        );
+        return drainChat(agentName, gen);
+    },
+);
 
 // Streaming chat
-ipcMain.handle('chat:send-stream', async (_event, agentName: string, userMessage: string, skillId?: string) => {
-    console.log('[Chat:send-stream] agentName:', agentName, '| message:', userMessage?.slice(0, 50), '| projectDir:', getProjectDir());
-    try {
-        const gen = agentManager.chat(agentName, userMessage, getProjectDir(), skillId);
-        return drainChat(agentName, gen);
-    } catch (err: any) {
-        console.error('[Chat:send-stream] CRITICAL ERROR:', err);
-        return { success: false, text: err.message || 'Unknown error' };
-    }
-});
+ipcMain.handle(
+    'chat:send-stream',
+    async (
+        _event,
+        agentName: string,
+        userMessage: string,
+        skillId?: string,
+    ) => {
+        console.log(
+            '[Chat:send-stream] agentName:',
+            agentName,
+            '| message:',
+            userMessage?.slice(0, 50),
+            '| projectDir:',
+            getProjectDir(),
+        );
+        try {
+            const gen = agentManager.chat(
+                agentName,
+                userMessage,
+                getProjectDir(),
+                skillId,
+            );
+            return drainChat(agentName, gen);
+        } catch (err: any) {
+            console.error('[Chat:send-stream] CRITICAL ERROR:', err);
+            return { success: false, text: err.message || 'Unknown error' };
+        }
+    },
+);
 
 // Get available skills for an agent
 ipcMain.handle('chat:get-skills', (_event, agentName: string) => {
@@ -615,19 +830,39 @@ ipcMain.handle('chat:close-session', (_e, agentName: string) => {
 
 // ── Chat Session IPC (ChatSessionManager — stream-json 기반) ────────────────
 
-ipcMain.handle('chat:create-session', async (_e, agentId: string, agentName: string, cwd: string, extraArgs?: string[]) => {
-    try {
-        const sessionId = await chatSessionManager.createSession(agentId, agentName, cwd, extraArgs);
-        return { success: true, sessionId };
-    } catch (err: any) {
-        return { success: false, error: err.message || 'Failed to create session' };
-    }
-});
+ipcMain.handle(
+    'chat:create-session',
+    async (
+        _e,
+        agentId: string,
+        agentName: string,
+        cwd: string,
+        extraArgs?: string[],
+    ) => {
+        try {
+            const sessionId = await chatSessionManager.createSession(
+                agentId,
+                agentName,
+                cwd,
+                extraArgs,
+            );
+            return { success: true, sessionId };
+        } catch (err: any) {
+            return {
+                success: false,
+                error: err.message || 'Failed to create session',
+            };
+        }
+    },
+);
 
-ipcMain.handle('chat:send-message', async (_e, agentId: string, message: string) => {
-    chatSessionManager.sendMessage(agentId, message);
-    return { success: true };
-});
+ipcMain.handle(
+    'chat:send-message',
+    async (_e, agentId: string, message: string) => {
+        chatSessionManager.sendMessage(agentId, message);
+        return { success: true };
+    },
+);
 
 // ChatSessionManager → Renderer 이벤트 전송
 chatSessionManager.on('stream', (agentId: string, event: unknown) => {
@@ -654,14 +889,19 @@ ipcMain.handle('cli:auth-status', async () => {
     try {
         const env = { ...process.env };
         delete env.CLAUDECODE;
+        console.log('[cli:auth-status] Running claude auth status...');
         const { stdout } = await execFileAsync('claude', ['auth', 'status'], {
             env,
             timeout: 10000,
             shell: true,
         });
+        console.log('[cli:auth-status] stdout:', stdout);
         const data = JSON.parse(stdout);
-        return { authenticated: !!data.loggedIn };
-    } catch {
+        const authenticated = !!data.loggedIn;
+        console.log('[cli:auth-status] authenticated:', authenticated);
+        return { authenticated };
+    } catch (err: any) {
+        console.error('[cli:auth-status] ERROR:', err.message || err);
         return { authenticated: false };
     }
 });
@@ -672,11 +912,23 @@ ipcMain.handle('cli:auth-login', async () => {
         delete env.CLAUDECODE;
 
         if (process.platform === 'win32') {
-            spawn('cmd', ['/c', 'start', 'cmd', '/k', 'claude auth login'], { env, detached: true, stdio: 'ignore' });
+            spawn('cmd', ['/c', 'start', 'cmd', '/k', 'claude auth login'], {
+                env,
+                detached: true,
+                stdio: 'ignore',
+            });
         } else if (process.platform === 'darwin') {
-            spawn('open', ['-a', 'Terminal', '--args', 'claude', 'auth', 'login'], { env, detached: true, stdio: 'ignore' });
+            spawn(
+                'open',
+                ['-a', 'Terminal', '--args', 'claude', 'auth', 'login'],
+                { env, detached: true, stdio: 'ignore' },
+            );
         } else {
-            spawn('x-terminal-emulator', ['-e', 'claude', 'auth', 'login'], { env, detached: true, stdio: 'ignore' });
+            spawn('x-terminal-emulator', ['-e', 'claude', 'auth', 'login'], {
+                env,
+                detached: true,
+                stdio: 'ignore',
+            });
         }
         return { success: true };
     } catch (error: any) {
@@ -701,7 +953,20 @@ ipcMain.handle('project:save', (_e, data: Record<string, unknown>) => {
 
         // Register MCP server when project is saved with a valid directory
         const dir = (data as any)?.meta?.dir;
-        if (dir) { registerMcpServer(dir); }
+        if (dir) {
+            registerMcpServer(dir);
+
+            // Initialize/refresh artibot registry for the project
+            scanArtibotDir(dir);
+            watchArtibotDir(dir, (registry) => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send(
+                        'artibot:registry-updated',
+                        registry,
+                    );
+                }
+            });
+        }
 
         return { success: true };
     } catch (err: any) {
@@ -721,7 +986,9 @@ ipcMain.handle('project:selectDir', async () => {
     if (selectedDir) {
         try {
             const initResult = hooksManager.initProject(selectedDir);
-            console.log(`[project:selectDir] Auto-init hooks: ${JSON.stringify(initResult)}`);
+            console.log(
+                `[project:selectDir]Auto - init hooks: ${JSON.stringify(initResult)} `,
+            );
         } catch (err: any) {
             console.warn('[project:selectDir] Hooks init failed:', err.message);
         }
@@ -732,15 +999,21 @@ ipcMain.handle('project:selectDir', async () => {
 
 // ── Worktree IPC ────────────────────────────────────────────────────────────
 
-ipcMain.handle('worktree:create', async (_e, agentId: string, projectDir?: string) => {
-    const dir = projectDir || getProjectDir();
-    return worktreeManager.createWorktree(agentId, dir);
-});
+ipcMain.handle(
+    'worktree:create',
+    async (_e, agentId: string, projectDir?: string) => {
+        const dir = projectDir || getProjectDir();
+        return worktreeManager.createWorktree(agentId, dir);
+    },
+);
 
-ipcMain.handle('worktree:remove', async (_e, agentId: string, projectDir?: string) => {
-    const dir = projectDir || getProjectDir();
-    return worktreeManager.removeWorktree(agentId, dir);
-});
+ipcMain.handle(
+    'worktree:remove',
+    async (_e, agentId: string, projectDir?: string) => {
+        const dir = projectDir || getProjectDir();
+        return worktreeManager.removeWorktree(agentId, dir);
+    },
+);
 
 ipcMain.handle('worktree:list', async (_e, projectDir?: string) => {
     const dir = projectDir || getProjectDir();
@@ -791,15 +1064,17 @@ ipcMain.handle('file:import', async () => {
 ipcMain.handle('file:export', async (_e, data: unknown) => {
     if (!mainWindow) return { success: false, error: 'No window' };
     const result = await dialog.showSaveDialog(mainWindow, {
-        filters: [
-            { name: 'JSON', extensions: ['json'] },
-        ],
+        filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) {
         return { success: false, error: 'canceled' };
     }
     try {
-        fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
+        fs.writeFileSync(
+            result.filePath,
+            JSON.stringify(data, null, 2),
+            'utf-8',
+        );
         return { success: true, filePath: result.filePath };
     } catch (err: any) {
         return { success: false, error: err.message };
@@ -809,7 +1084,9 @@ ipcMain.handle('file:export', async (_e, data: unknown) => {
 ipcMain.handle('file:read', async (_e, filePath: string) => {
     try {
         const projectDir = (store.get('projectData') as any)?.meta?.dir || '.';
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(projectDir, filePath);
+        const resolvedPath = path.isAbsolute(filePath)
+            ? filePath
+            : path.join(projectDir, filePath);
         if (!fs.existsSync(resolvedPath)) {
             return { success: false, error: 'File not found' };
         }
@@ -820,17 +1097,25 @@ ipcMain.handle('file:read', async (_e, filePath: string) => {
     }
 });
 
-ipcMain.handle('file:saveTempFile', async (_e, base64: string, filename: string) => {
-    try {
-        const sanitized = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-        const dest = path.join(os.tmpdir(), `artience-${Date.now()}-${sanitized}`);
-        const data = base64.replace(/^data:[^;]+;base64,/, '');
-        fs.writeFileSync(dest, Buffer.from(data, 'base64'));
-        return { success: true, filePath: dest };
-    } catch (err: any) {
-        return { success: false, error: err.message };
-    }
-});
+ipcMain.handle(
+    'file:saveTempFile',
+    async (_e, base64: string, filename: string) => {
+        try {
+            const sanitized = path
+                .basename(filename)
+                .replace(/[^a-zA-Z0-9._-]/g, '_');
+            const dest = path.join(
+                os.tmpdir(),
+                `artience - ${Date.now()} -${sanitized} `,
+            );
+            const data = base64.replace(/^data:[^;]+;base64,/, '');
+            fs.writeFileSync(dest, Buffer.from(data, 'base64'));
+            return { success: true, filePath: dest };
+        } catch (err: any) {
+            return { success: false, error: err.message };
+        }
+    },
+);
 
 // ── MCP Bridge (Artience MCP Server ↔ main process) ────────────────────────
 
@@ -848,7 +1133,13 @@ const mcpBridge: McpBridge = {
         });
     },
 
-    sendMail(from: string, to: string, subject: string, body: string, type: 'report' | 'error') {
+    sendMail(
+        from: string,
+        to: string,
+        subject: string,
+        body: string,
+        type: 'report' | 'error',
+    ) {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('mail:new-report', {
                 fromAgentId: from,
@@ -870,7 +1161,7 @@ const mcpBridge: McpBridge = {
     getProjectInfo() {
         const projectDir = getProjectDir();
         const agents = Object.keys(AGENT_PERSONAS);
-        const activeSessions = Array.from(terminals.keys()).map(id => {
+        const activeSessions = Array.from(terminals.keys()).map((id) => {
             const meta = terminalMeta.get(id);
             return meta?.label || id;
         });
@@ -893,7 +1184,7 @@ function startMcpBridgeWatcher(): void {
     mcpBridgeWatcher = setInterval(() => {
         try {
             const files = fs.readdirSync(MCP_BRIDGE_DIR);
-            const reqFiles = files.filter(f => f.endsWith('.req.json'));
+            const reqFiles = files.filter((f) => f.endsWith('.req.json'));
 
             for (const reqFile of reqFiles) {
                 const reqPath = path.join(MCP_BRIDGE_DIR, reqFile);
@@ -901,11 +1192,20 @@ function startMcpBridgeWatcher(): void {
 
                 try {
                     const raw = fs.readFileSync(reqPath, 'utf-8');
-                    const request = JSON.parse(raw) as { id: string; method: string; args: Record<string, unknown>; timestamp: number };
+                    const request = JSON.parse(raw) as {
+                        id: string;
+                        method: string;
+                        args: Record<string, unknown>;
+                        timestamp: number;
+                    };
 
                     // Skip stale requests (older than 10 seconds)
                     if (Date.now() - request.timestamp > 10000) {
-                        try { fs.unlinkSync(reqPath); } catch { /* ignore */ }
+                        try {
+                            fs.unlinkSync(reqPath);
+                        } catch {
+                            /* ignore */
+                        }
                         continue;
                     }
 
@@ -926,7 +1226,10 @@ function startMcpBridgeWatcher(): void {
                                 result = { sent: true };
                                 break;
                             case 'notify':
-                                mcpBridge.notify(request.args.message as string, request.args.type as string);
+                                mcpBridge.notify(
+                                    request.args.message as string,
+                                    request.args.type as string,
+                                );
                                 result = { notified: true };
                                 break;
                             case 'getProjectInfo':
@@ -935,9 +1238,20 @@ function startMcpBridgeWatcher(): void {
                             default:
                                 result = null;
                         }
-                        fs.writeFileSync(resPath, JSON.stringify({ id: request.id, result }), 'utf-8');
+                        fs.writeFileSync(
+                            resPath,
+                            JSON.stringify({ id: request.id, result }),
+                            'utf-8',
+                        );
                     } catch (err: any) {
-                        fs.writeFileSync(resPath, JSON.stringify({ id: request.id, error: err.message }), 'utf-8');
+                        fs.writeFileSync(
+                            resPath,
+                            JSON.stringify({
+                                id: request.id,
+                                error: err.message,
+                            }),
+                            'utf-8',
+                        );
                     }
                 } catch {
                     // Couldn't read/parse request file — skip
@@ -974,72 +1288,140 @@ ipcMain.handle('skill:install-defaults', (_e, projectDir?: string) => {
         const result = installDefaultSkills(dir);
         return { success: true, ...result };
     } catch (err: any) {
-        return { success: false, installed: [], skipped: [], error: err.message };
+        return {
+            success: false,
+            installed: [],
+            skipped: [],
+            error: err.message,
+        };
     }
 });
 
-ipcMain.handle('skill:get-agent-skills', (_e, agentName: string, projectDir?: string) => {
-    const dir = projectDir || getProjectDir();
-    try {
-        const skills = getAgentSkills(agentName, dir);
-        return { success: true, skills };
-    } catch (err: any) {
-        return { success: false, skills: [], error: err.message };
-    }
-});
+ipcMain.handle(
+    'skill:get-agent-skills',
+    (_e, agentName: string, projectDir?: string) => {
+        const dir = projectDir || getProjectDir();
+        try {
+            const skills = getAgentSkills(agentName, dir);
+            return { success: true, skills };
+        } catch (err: any) {
+            return { success: false, skills: [], error: err.message };
+        }
+    },
+);
 
 // ── Studio IPC (Agent Manager) ─────────────────────────────────────────────
 
-ipcMain.handle('studio:generate', async (_e, prompt: string, projectDir?: string) => {
-    const dir = projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
-    const gen = agentManager.chat('luna', prompt, dir);
+ipcMain.handle(
+    'studio:generate',
+    async (_e, prompt: string, projectDir?: string) => {
+        const dir =
+            projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
+        const gen = agentManager.chat('luna', prompt, dir);
 
-    let fullText = '';
-    let sessionId: string | undefined;
-    try {
-        for await (const chunk of gen) {
-            sessionId = chunk.sessionId || sessionId;
-            if (chunk.type === 'text') {
-                fullText += chunk.content;
-                mainWindow?.webContents.send('studio:progress', chunk.content);
-            } else if (chunk.type === 'result') {
-                fullText = chunk.content || fullText;
-            } else if (chunk.type === 'error') {
-                return { success: false, error: chunk.content, result: '', text: '' };
+        let fullText = '';
+        let sessionId: string | undefined;
+        try {
+            for await (const chunk of gen) {
+                sessionId = chunk.sessionId || sessionId;
+                if (chunk.type === 'text') {
+                    fullText += chunk.content;
+                    mainWindow?.webContents.send(
+                        'studio:progress',
+                        chunk.content,
+                    );
+                } else if (chunk.type === 'result') {
+                    fullText = chunk.content || fullText;
+                } else if (chunk.type === 'error') {
+                    return {
+                        success: false,
+                        error: chunk.content,
+                        result: '',
+                        text: '',
+                    };
+                }
             }
+        } catch (err: any) {
+            return { success: false, error: err.message, result: '', text: '' };
         }
-    } catch (err: any) {
-        return { success: false, error: err.message, result: '', text: '' };
+
+        // Save to history
+        const snapId = `snap - ${Date.now()} `;
+        historySnapshots.unshift({
+            id: snapId,
+            message: prompt.slice(0, 100),
+            timestamp: new Date().toISOString(),
+            data: fullText,
+        });
+
+        return { success: true, result: fullText, text: fullText, sessionId };
+    },
+);
+
+ipcMain.handle('studio:uploadAsset', async () => {
+    if (!mainWindow) return { success: false, error: 'No window', copied: [] };
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, error: 'canceled', copied: [] };
     }
 
-    // Save to history
-    const snapId = `snap-${Date.now()}`;
-    historySnapshots.unshift({
-        id: snapId,
-        message: prompt.slice(0, 100),
-        timestamp: new Date().toISOString(),
-        data: fullText,
-    });
+    const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+    if (!fs.existsSync(isoDir)) fs.mkdirSync(isoDir, { recursive: true });
 
-    return { success: true, result: fullText, text: fullText, sessionId };
+    const copied: string[] = [];
+    try {
+        for (const filePath of result.filePaths) {
+            const fileName = path.basename(filePath);
+            const destPath = path.join(isoDir, fileName);
+            fs.copyFileSync(filePath, destPath);
+            copied.push(fileName);
+        }
+        return { success: true, copied };
+    } catch (err: any) {
+        return { success: false, error: err.message, copied };
+    }
+});
+
+ipcMain.handle('studio:deleteAsset', async (_e, filename: string) => {
+    try {
+        const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+        const filePath = path.join(isoDir, filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            return { success: true };
+        }
+        return { success: false, error: 'File not found' };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
 });
 
 ipcMain.handle('studio:getAssets', async () => {
     try {
-        const projectDir = (store.get('projectData') as any)?.meta?.dir || '';
-        if (!projectDir) return { assets: [] };
-        const assetsDir = path.join(projectDir, 'assets');
-        if (!fs.existsSync(assetsDir)) return { assets: [] };
+        const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+        if (!fs.existsSync(isoDir)) return { assets: [] };
 
-        const files = fs.readdirSync(assetsDir, { withFileTypes: true });
+        const files = fs.readdirSync(isoDir, { withFileTypes: true });
         const assets = files
-            .filter(f => f.isFile())
-            .map(f => {
-                const filePath = path.join(assetsDir, f.name);
+            .filter((f) => f.isFile())
+            .map((f) => {
+                const filePath = path.join(isoDir, f.name);
                 const stat = fs.statSync(filePath);
                 const ext = path.extname(f.name).toLowerCase();
-                const type = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(ext) ? 'image' : 'data';
-                return { name: f.name, path: filePath, type, size: stat.size };
+                const type = [
+                    '.png',
+                    '.jpg',
+                    '.jpeg',
+                    '.gif',
+                    '.webp',
+                    '.svg',
+                ].includes(ext)
+                    ? 'image'
+                    : 'data';
+                return { name: f.name, path: `/sprites/iso/${f.name}`, type, size: stat.size };
             });
         return { assets };
     } catch {
@@ -1048,36 +1430,68 @@ ipcMain.handle('studio:getAssets', async () => {
 });
 
 ipcMain.handle('studio:getHistory', () => {
-    return { snapshots: historySnapshots.map(s => ({ id: s.id, message: s.message, timestamp: s.timestamp })) };
+    return {
+        snapshots: historySnapshots.map((s) => ({
+            id: s.id,
+            message: s.message,
+            timestamp: s.timestamp,
+        })),
+    };
 });
 
 ipcMain.handle('studio:getDiff', (_e, oldId: string, newId: string) => {
-    const oldSnap = historySnapshots.find(s => s.id === oldId);
-    const newSnap = historySnapshots.find(s => s.id === newId);
+    const oldSnap = historySnapshots.find((s) => s.id === oldId);
+    const newSnap = historySnapshots.find((s) => s.id === newId);
     if (!oldSnap || !newSnap) return { success: false, diff: '[]' };
 
     // Compute simple diff between snapshot data
-    const changes: Array<{ path: string; type: 'added' | 'removed' | 'modified'; oldValue?: string; newValue?: string }> = [];
+    const changes: Array<{
+        path: string;
+        type: 'added' | 'removed' | 'modified';
+        oldValue?: string;
+        newValue?: string;
+    }> = [];
     try {
         const oldData = oldSnap.data ? JSON.parse(oldSnap.data) : {};
         const newData = newSnap.data ? JSON.parse(newSnap.data) : {};
         // Shallow key diff
-        const allKeys = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
+        const allKeys = new Set([
+            ...Object.keys(oldData),
+            ...Object.keys(newData),
+        ]);
         for (const key of allKeys) {
             const oldVal = JSON.stringify(oldData[key]);
             const newVal = JSON.stringify(newData[key]);
             if (!(key in oldData)) {
-                changes.push({ path: key, type: 'added', newValue: newVal?.slice(0, 100) });
+                changes.push({
+                    path: key,
+                    type: 'added',
+                    newValue: newVal?.slice(0, 100),
+                });
             } else if (!(key in newData)) {
-                changes.push({ path: key, type: 'removed', oldValue: oldVal?.slice(0, 100) });
+                changes.push({
+                    path: key,
+                    type: 'removed',
+                    oldValue: oldVal?.slice(0, 100),
+                });
             } else if (oldVal !== newVal) {
-                changes.push({ path: key, type: 'modified', oldValue: oldVal?.slice(0, 100), newValue: newVal?.slice(0, 100) });
+                changes.push({
+                    path: key,
+                    type: 'modified',
+                    oldValue: oldVal?.slice(0, 100),
+                    newValue: newVal?.slice(0, 100),
+                });
             }
         }
     } catch {
         // Data wasn't JSON — compare as plain text
         if (oldSnap.data !== newSnap.data) {
-            changes.push({ path: 'content', type: 'modified', oldValue: oldSnap.data?.slice(0, 100), newValue: newSnap.data?.slice(0, 100) });
+            changes.push({
+                path: 'content',
+                type: 'modified',
+                oldValue: oldSnap.data?.slice(0, 100),
+                newValue: newSnap.data?.slice(0, 100),
+            });
         }
     }
 
@@ -1085,16 +1499,16 @@ ipcMain.handle('studio:getDiff', (_e, oldId: string, newId: string) => {
 });
 
 ipcMain.handle('studio:rollback', async (_e, snapshotId: string) => {
-    const snap = historySnapshots.find(s => s.id === snapshotId);
+    const snap = historySnapshots.find((s) => s.id === snapshotId);
     if (!snap) return { success: false, error: 'Snapshot not found' };
 
     const projectDir = getProjectDir();
     try {
         // Save current state as a new snapshot before rollback
-        const backupId = `snap-${Date.now()}`;
+        const backupId = `snap - ${Date.now()} `;
         historySnapshots.unshift({
             id: backupId,
-            message: `[backup] before rollback to ${snap.message}`,
+            message: `[backup] before rollback to ${snap.message} `,
             timestamp: new Date().toISOString(),
             data: historySnapshots[0]?.data,
         });
@@ -1105,16 +1519,24 @@ ipcMain.handle('studio:rollback', async (_e, snapshotId: string) => {
             if (!fs.existsSync(draftDir)) {
                 fs.mkdirSync(draftDir, { recursive: true });
             }
-            fs.writeFileSync(path.join(draftDir, 'draft.json'), snap.data, 'utf-8');
+            fs.writeFileSync(
+                path.join(draftDir, 'draft.json'),
+                snap.data,
+                'utf-8',
+            );
         }
 
         // Attempt git stash as safety net
         try {
-            await execFileAsync('git', ['stash', 'push', '-m', `artience-rollback-${snapshotId}`], {
-                cwd: projectDir,
-                timeout: 10000,
-                shell: true,
-            });
+            await execFileAsync(
+                'git',
+                ['stash', 'push', '-m', `artience - rollback - ${snapshotId} `],
+                {
+                    cwd: projectDir,
+                    timeout: 10000,
+                    shell: true,
+                },
+            );
         } catch {
             // git stash may fail if no git repo or no changes — that's fine
         }
@@ -1129,7 +1551,9 @@ ipcMain.handle('studio:rollback', async (_e, snapshotId: string) => {
 
 // Helper: save job to persistent history
 function saveJobToHistory(record: JobRecord, resultPreview?: string): void {
-    const history = (store.get('jobHistory') || []) as Array<Record<string, unknown>>;
+    const history = (store.get('jobHistory') || []) as Array<
+        Record<string, unknown>
+    >;
     history.unshift({
         id: record.id,
         agent: record.agent,
@@ -1145,97 +1569,131 @@ function saveJobToHistory(record: JobRecord, resultPreview?: string): void {
 }
 
 // Helper: save artifact reference
-function saveJobArtifact(jobId: string, name: string, filePath: string, type: string): void {
-    const artifacts = (store.get('jobArtifacts') || []) as Array<Record<string, unknown>>;
+function saveJobArtifact(
+    jobId: string,
+    name: string,
+    filePath: string,
+    type: string,
+): void {
+    const artifacts = (store.get('jobArtifacts') || []) as Array<
+        Record<string, unknown>
+    >;
     artifacts.unshift({ name, path: filePath, type, jobId, ts: Date.now() });
     if (artifacts.length > 200) artifacts.length = 200;
     store.set('jobArtifacts', artifacts);
 }
 
-ipcMain.handle('job:run', async (_e, agentNameOrRecipeId: string, taskOrAgentId: string, projectDir?: string) => {
-    const dir = projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
-    const jobId = `job-${++jobIdCounter}`;
+ipcMain.handle(
+    'job:run',
+    async (
+        _e,
+        agentNameOrRecipeId: string,
+        taskOrAgentId: string,
+        projectDir?: string,
+    ) => {
+        const dir =
+            projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
+        const jobId = `job - ${++jobIdCounter} `;
 
-    const record: JobRecord = {
-        id: jobId,
-        status: 'running',
-        agent: agentNameOrRecipeId,
-        task: taskOrAgentId,
-        progress: 0,
-        startedAt: new Date().toISOString(),
-    };
-    activeJobs.set(jobId, record);
+        const record: JobRecord = {
+            id: jobId,
+            status: 'running',
+            agent: agentNameOrRecipeId,
+            task: taskOrAgentId,
+            progress: 0,
+            startedAt: new Date().toISOString(),
+        };
+        activeJobs.set(jobId, record);
 
-    const gen = agentManager.chat(agentNameOrRecipeId, taskOrAgentId, dir);
+        const gen = agentManager.chat(agentNameOrRecipeId, taskOrAgentId, dir);
 
-    let fullText = '';
-    let sessionId: string | undefined;
-    try {
-        for await (const chunk of gen) {
-            sessionId = chunk.sessionId || sessionId;
-            if (chunk.type === 'text') {
-                fullText += chunk.content;
-                mainWindow?.webContents.send('job:progress', agentNameOrRecipeId, chunk.content);
-            } else if (chunk.type === 'tool_use') {
-                mainWindow?.webContents.send('job:progress', agentNameOrRecipeId, `[tool] ${chunk.content}`);
-            } else if (chunk.type === 'result') {
-                fullText = chunk.content || fullText;
-            } else if (chunk.type === 'error') {
-                record.status = 'failed';
-                saveJobToHistory(record, chunk.content);
-                mainWindow?.webContents.send('mail:new-report', {
-                    fromAgentId: agentNameOrRecipeId.toLowerCase(),
-                    fromAgentName: resolveAgentName(agentNameOrRecipeId),
-                    subject: `작업 실패 (${jobId})`,
-                    body: chunk.content.slice(0, 500),
-                    type: 'error',
-                    timestamp: Date.now(),
-                });
-                return { success: false, jobId, error: chunk.content };
+        let fullText = '';
+        let sessionId: string | undefined;
+        try {
+            for await (const chunk of gen) {
+                sessionId = chunk.sessionId || sessionId;
+                if (chunk.type === 'text') {
+                    fullText += chunk.content;
+                    mainWindow?.webContents.send(
+                        'job:progress',
+                        agentNameOrRecipeId,
+                        chunk.content,
+                    );
+                } else if (chunk.type === 'tool_use') {
+                    mainWindow?.webContents.send(
+                        'job:progress',
+                        agentNameOrRecipeId,
+                        `[tool] ${chunk.content} `,
+                    );
+                } else if (chunk.type === 'result') {
+                    fullText = chunk.content || fullText;
+                } else if (chunk.type === 'error') {
+                    record.status = 'failed';
+                    saveJobToHistory(record, chunk.content);
+                    mainWindow?.webContents.send('mail:new-report', {
+                        fromAgentId: agentNameOrRecipeId.toLowerCase(),
+                        fromAgentName: resolveAgentName(agentNameOrRecipeId),
+                        subject: `작업 실패(${jobId})`,
+                        body: chunk.content.slice(0, 500),
+                        type: 'error',
+                        timestamp: Date.now(),
+                    });
+                    return { success: false, jobId, error: chunk.content };
+                }
+            }
+        } catch (err: any) {
+            record.status = 'failed';
+            const errorMsg = err.message || 'Job failed';
+            saveJobToHistory(record, errorMsg);
+            mainWindow?.webContents.send('mail:new-report', {
+                fromAgentId: agentNameOrRecipeId.toLowerCase(),
+                fromAgentName: resolveAgentName(agentNameOrRecipeId),
+                subject: `작업 실패(${jobId})`,
+                body: errorMsg.slice(0, 500),
+                type: 'error',
+                timestamp: Date.now(),
+            });
+            return { success: false, jobId, error: err.message };
+        }
+
+        record.status = 'completed';
+        record.progress = 100;
+        saveJobToHistory(record, fullText);
+
+        // Save result as artifact if substantial
+        if (fullText.length > 50) {
+            try {
+                const artifactDir = path.join(
+                    dir,
+                    'generated',
+                    'job-artifacts',
+                );
+                if (!fs.existsSync(artifactDir))
+                    fs.mkdirSync(artifactDir, { recursive: true });
+                const artifactPath = path.join(artifactDir, `${jobId}.txt`);
+                fs.writeFileSync(artifactPath, fullText, 'utf-8');
+                saveJobArtifact(
+                    jobId,
+                    `${agentNameOrRecipeId} -result.txt`,
+                    artifactPath,
+                    'text',
+                );
+            } catch {
+                // Artifact save failed — not critical
             }
         }
-    } catch (err: any) {
-        record.status = 'failed';
-        const errorMsg = err.message || 'Job failed';
-        saveJobToHistory(record, errorMsg);
+
         mainWindow?.webContents.send('mail:new-report', {
             fromAgentId: agentNameOrRecipeId.toLowerCase(),
             fromAgentName: resolveAgentName(agentNameOrRecipeId),
-            subject: `작업 실패 (${jobId})`,
-            body: errorMsg.slice(0, 500),
-            type: 'error',
+            subject: `작업 완료 보고(${jobId})`,
+            body: fullText.slice(0, 500),
+            type: 'report',
             timestamp: Date.now(),
         });
-        return { success: false, jobId, error: err.message };
-    }
-
-    record.status = 'completed';
-    record.progress = 100;
-    saveJobToHistory(record, fullText);
-
-    // Save result as artifact if substantial
-    if (fullText.length > 50) {
-        try {
-            const artifactDir = path.join(dir, 'generated', 'job-artifacts');
-            if (!fs.existsSync(artifactDir)) fs.mkdirSync(artifactDir, { recursive: true });
-            const artifactPath = path.join(artifactDir, `${jobId}.txt`);
-            fs.writeFileSync(artifactPath, fullText, 'utf-8');
-            saveJobArtifact(jobId, `${agentNameOrRecipeId}-result.txt`, artifactPath, 'text');
-        } catch {
-            // Artifact save failed — not critical
-        }
-    }
-
-    mainWindow?.webContents.send('mail:new-report', {
-        fromAgentId: agentNameOrRecipeId.toLowerCase(),
-        fromAgentName: resolveAgentName(agentNameOrRecipeId),
-        subject: `작업 완료 보고 (${jobId})`,
-        body: fullText.slice(0, 500),
-        type: 'report',
-        timestamp: Date.now(),
-    });
-    return { success: true, jobId, text: fullText, sessionId };
-});
+        return { success: true, jobId, text: fullText, sessionId };
+    },
+);
 
 ipcMain.handle('job:stop', (_e, jobId: string) => {
     const record = activeJobs.get(jobId);
@@ -1248,7 +1706,7 @@ ipcMain.handle('job:stop', (_e, jobId: string) => {
 });
 
 ipcMain.handle('job:getStatus', () => {
-    const jobs = Array.from(activeJobs.values()).map(j => ({
+    const jobs = Array.from(activeJobs.values()).map((j) => ({
         id: j.id,
         status: j.status,
         agent: j.agent,
@@ -1259,7 +1717,11 @@ ipcMain.handle('job:getStatus', () => {
 
 ipcMain.handle('job:getArtifacts', () => {
     const artifacts = (store.get('jobArtifacts') || []) as Array<{
-        name: string; path: string; type: string; jobId: string; ts: number;
+        name: string;
+        path: string;
+        type: string;
+        jobId: string;
+        ts: number;
     }>;
     return { artifacts };
 });
@@ -1280,8 +1742,13 @@ ipcMain.handle('job:saveSettings', (_e, settings: Record<string, unknown>) => {
 
 ipcMain.handle('job:getHistory', () => {
     const history = (store.get('jobHistory') || []) as Array<{
-        id: string; agent: string; task: string; status: string;
-        startedAt: string; completedAt?: string; resultPreview?: string;
+        id: string;
+        agent: string;
+        task: string;
+        status: string;
+        startedAt: string;
+        completedAt?: string;
+        resultPreview?: string;
     }>;
     return { history };
 });
@@ -1293,13 +1760,63 @@ ipcMain.handle('agent:create-team', async (_e, cwd?: string) => {
     return ctoController.createTeamSession(dir);
 });
 
-ipcMain.handle('agent:delegate-task', async (_e, agentName: string, task: string) => {
-    return ctoController.delegateTask(agentName, task);
-});
+ipcMain.handle(
+    'agent:delegate-task',
+    async (_e, agentName: string, task: string) => {
+        return ctoController.delegateTask(agentName, task);
+    },
+);
 
 // agent:task-result is emitted via chat:stream-event when CTO session
 // produces subagent-related output. The renderer can detect subagent
 // events from the stream event type/content.
+
+// ── Artibot Registry IPC ────────────────────────────────────────────────────
+
+ipcMain.handle('artibot:get-registry', () => {
+    return getRegistry();
+});
+
+ipcMain.handle('artibot:rescan', (_e, projectDir?: string) => {
+    const dir = projectDir || getProjectDir();
+    return scanArtibotDir(dir);
+});
+
+ipcMain.handle(
+    'artibot:execute-command',
+    async (_e, command: string, args: string) => {
+        const registry = getRegistry();
+        if (!registry) return { success: false, error: 'Registry not loaded' };
+
+        // Find command routing from artibot.config.json taskBased
+        const cmdDef = registry.commands.find((c) => c.command === command);
+        if (!cmdDef)
+            return { success: false, error: `Unknown command: ${command} ` };
+
+        console.log(
+            `[artibot: execute - command] ${command} → agent: ${cmdDef.agent}, args: ${args} `,
+        );
+
+        // Route to appropriate handler
+        switch (command) {
+            case 'team': {
+                const dir = args || getProjectDir();
+                return ctoController.createTeamSession(dir);
+            }
+            default: {
+                // General agent-based task execution
+                const dir = getProjectDir();
+                const gen = agentManager.chat(
+                    cmdDef.agent,
+                    args || `Execute ${command} task`,
+                    dir,
+                );
+                const result = await drainChat(cmdDef.agent, gen);
+                return { success: result.success, text: result.text };
+            }
+        }
+    },
+);
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
@@ -1314,6 +1831,22 @@ app.whenReady().then(async () => {
     if (projectDir && projectDir !== '.') {
         registerMcpServer(projectDir);
     }
+
+    // Initialize artibot registry from .agent/ directory
+    if (projectDir && projectDir !== '.') {
+        scanArtibotDir(projectDir);
+        watchArtibotDir(projectDir, (registry) => {
+            console.log(
+                '[artibot-registry] Registry updated, notifying renderer',
+            );
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(
+                    'artibot:registry-updated',
+                    registry,
+                );
+            }
+        });
+    }
 });
 
 app.on('window-all-closed', () => {
@@ -1325,9 +1858,15 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
     // Stop MCP bridge watcher
     stopMcpBridgeWatcher();
+    // Stop artibot file watcher
+    stopWatching();
     // Clean up terminals
     for (const [id, proc] of terminals) {
-        try { proc.kill(); } catch (_) { /* ignore */ }
+        try {
+            proc.kill();
+        } catch (_) {
+            /* ignore */
+        }
         terminals.delete(id);
     }
     terminalMeta.clear();

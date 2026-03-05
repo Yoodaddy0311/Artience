@@ -1,27 +1,41 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="icon" type="image/png" href="./favicon.png" />
+        <meta name="theme-color" content="#1a1a2e" />
+        <title>Dokba Studio</title>
+    </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" href="./favicon.png" />
-  <meta name="theme-color" content="#1a1a2e" />
-  <title>Dokba Studio</title>
-</head>
-
-<body>
-  <div id="root"></div>
-  <script>
-    // Debug: capture raw JS stack traces before source maps
-    window.addEventListener('error', function(e) {
-      console.error('[RAW ERROR]', e.message, '\nFile:', e.filename, '\nLine:', e.lineno, ':',  e.colno, '\nStack:', e.error && e.error.stack);
-    });
-    window.addEventListener('unhandledrejection', function(e) {
-      var err = e.reason;
-      console.error('[RAW REJECTION]', err && err.message, '\nStack:', err && err.stack);
-    });
-  </script>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
-
+    <body>
+        <div id="root"></div>
+        <script>
+            // Debug: capture raw JS stack traces before source maps
+            window.addEventListener('error', function (e) {
+                console.error(
+                    '[RAW ERROR]',
+                    e.message,
+                    '\nFile:',
+                    e.filename,
+                    '\nLine:',
+                    e.lineno,
+                    ':',
+                    e.colno,
+                    '\nStack:',
+                    e.error && e.error.stack,
+                );
+            });
+            window.addEventListener('unhandledrejection', function (e) {
+                var err = e.reason;
+                console.error(
+                    '[RAW REJECTION]',
+                    err && err.message,
+                    '\nStack:',
+                    err && err.stack,
+                );
+            });
+        </script>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
 </html>

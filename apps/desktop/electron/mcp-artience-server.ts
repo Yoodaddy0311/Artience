@@ -39,7 +39,10 @@ interface McpToolDefinition {
     description: string;
     inputSchema: {
         type: 'object';
-        properties: Record<string, { type: string; description: string; enum?: string[] }>;
+        properties: Record<
+            string,
+            { type: string; description: string; enum?: string[] }
+        >;
         required?: string[];
     };
 }
@@ -49,33 +52,46 @@ interface McpToolDefinition {
 const TOOLS: McpToolDefinition[] = [
     {
         name: 'artience_notify',
-        description: 'Artience 앱에 토스트 알림을 표시합니다. 작업 완료나 중요 이벤트를 사용자에게 알릴 때 사용하세요.',
+        description:
+            'Artience 앱에 토스트 알림을 표시합니다. 작업 완료나 중요 이벤트를 사용자에게 알릴 때 사용하세요.',
         inputSchema: {
             type: 'object',
             properties: {
                 message: { type: 'string', description: '표시할 알림 메시지' },
-                type: { type: 'string', description: '알림 유형', enum: ['info', 'success', 'warning', 'error'] },
+                type: {
+                    type: 'string',
+                    description: '알림 유형',
+                    enum: ['info', 'success', 'warning', 'error'],
+                },
             },
             required: ['message'],
         },
     },
     {
         name: 'artience_agent_status',
-        description: '현재 활성 에이전트들의 상태를 조회합니다. agentId를 지정하면 해당 에이전트만, 생략하면 전체 목록을 반환합니다.',
+        description:
+            '현재 활성 에이전트들의 상태를 조회합니다. agentId를 지정하면 해당 에이전트만, 생략하면 전체 목록을 반환합니다.',
         inputSchema: {
             type: 'object',
             properties: {
-                agentId: { type: 'string', description: '조회할 에이전트 ID (생략 시 전체 조회)' },
+                agentId: {
+                    type: 'string',
+                    description: '조회할 에이전트 ID (생략 시 전체 조회)',
+                },
             },
         },
     },
     {
         name: 'artience_send_mail',
-        description: '에이전트 간 메일(보고서)을 전송합니다. 작업 완료 보고, 오류 알림 등에 사용하세요.',
+        description:
+            '에이전트 간 메일(보고서)을 전송합니다. 작업 완료 보고, 오류 알림 등에 사용하세요.',
         inputSchema: {
             type: 'object',
             properties: {
-                to: { type: 'string', description: '수신 에이전트 이름 (예: sera, rio, luna)' },
+                to: {
+                    type: 'string',
+                    description: '수신 에이전트 이름 (예: sera, rio, luna)',
+                },
                 subject: { type: 'string', description: '메일 제목' },
                 body: { type: 'string', description: '메일 본문' },
             },
@@ -84,7 +100,8 @@ const TOOLS: McpToolDefinition[] = [
     },
     {
         name: 'artience_project_info',
-        description: '현재 Artience 프로젝트 정보를 반환합니다. 프로젝트 디렉토리, 에이전트 목록, 활성 세션 등을 포함합니다.',
+        description:
+            '현재 Artience 프로젝트 정보를 반환합니다. 프로젝트 디렉토리, 에이전트 목록, 활성 세션 등을 포함합니다.',
         inputSchema: {
             type: 'object',
             properties: {},
@@ -95,10 +112,25 @@ const TOOLS: McpToolDefinition[] = [
 // ── State Bridge (main process에서 주입) ────────────────────────────────────
 
 export interface McpBridge {
-    getAgentStatuses(): Array<{ id: string; label: string; activity: string; pid?: number }>;
-    sendMail(from: string, to: string, subject: string, body: string, type: 'report' | 'error'): void;
+    getAgentStatuses(): Array<{
+        id: string;
+        label: string;
+        activity: string;
+        pid?: number;
+    }>;
+    sendMail(
+        from: string,
+        to: string,
+        subject: string,
+        body: string,
+        type: 'report' | 'error',
+    ): void;
     notify(message: string, type: string): void;
-    getProjectInfo(): { dir: string; agents: string[]; activeSessions: string[] };
+    getProjectInfo(): {
+        dir: string;
+        agents: string[];
+        activeSessions: string[];
+    };
 }
 
 // ── File-based IPC Bridge (standalone mode) ─────────────────────────────────
@@ -129,7 +161,10 @@ interface BridgeResponse {
 class FileBridge implements McpBridge {
     private requestCounter = 0;
 
-    private sendRequest(method: string, args: Record<string, unknown>): unknown {
+    private sendRequest(
+        method: string,
+        args: Record<string, unknown>,
+    ): unknown {
         const reqId = `req-${Date.now()}-${++this.requestCounter}`;
         const reqFile = path.join(MCP_BRIDGE_DIR, `${reqId}.req.json`);
         const resFile = path.join(MCP_BRIDGE_DIR, `${reqId}.res.json`);
@@ -139,7 +174,12 @@ class FileBridge implements McpBridge {
             fs.mkdirSync(MCP_BRIDGE_DIR, { recursive: true });
         }
 
-        const request: BridgeRequest = { id: reqId, method, args, timestamp: Date.now() };
+        const request: BridgeRequest = {
+            id: reqId,
+            method,
+            args,
+            timestamp: Date.now(),
+        };
         fs.writeFileSync(reqFile, JSON.stringify(request), 'utf-8');
 
         // Poll for response (synchronous — MCP tool calls are blocking)
@@ -151,21 +191,36 @@ class FileBridge implements McpBridge {
                     const raw = fs.readFileSync(resFile, 'utf-8');
                     const response: BridgeResponse = JSON.parse(raw);
                     // Clean up
-                    try { fs.unlinkSync(reqFile); } catch { /* ignore */ }
-                    try { fs.unlinkSync(resFile); } catch { /* ignore */ }
+                    try {
+                        fs.unlinkSync(reqFile);
+                    } catch {
+                        /* ignore */
+                    }
+                    try {
+                        fs.unlinkSync(resFile);
+                    } catch {
+                        /* ignore */
+                    }
                     if (response.error) throw new Error(response.error);
                     return response.result;
                 } catch (err: any) {
-                    if (err.message && !err.message.includes('ENOENT')) throw err;
+                    if (err.message && !err.message.includes('ENOENT'))
+                        throw err;
                 }
             }
             // Synchronous sleep ~20ms via busy-wait (no native sleep in Node)
             const sleepEnd = Date.now() + 20;
-            while (Date.now() < sleepEnd) { /* spin */ }
+            while (Date.now() < sleepEnd) {
+                /* spin */
+            }
         }
 
         // Timeout — clean up request file
-        try { fs.unlinkSync(reqFile); } catch { /* ignore */ }
+        try {
+            fs.unlinkSync(reqFile);
+        } catch {
+            /* ignore */
+        }
 
         // Return fallback data instead of throwing
         return this.getFallback(method);
@@ -173,17 +228,31 @@ class FileBridge implements McpBridge {
 
     private getFallback(method: string): unknown {
         switch (method) {
-            case 'getAgentStatuses': return [];
-            case 'getProjectInfo': return { dir: '.', agents: [], activeSessions: [] };
-            default: return undefined;
+            case 'getAgentStatuses':
+                return [];
+            case 'getProjectInfo':
+                return { dir: '.', agents: [], activeSessions: [] };
+            default:
+                return undefined;
         }
     }
 
-    getAgentStatuses(): Array<{ id: string; label: string; activity: string; pid?: number }> {
+    getAgentStatuses(): Array<{
+        id: string;
+        label: string;
+        activity: string;
+        pid?: number;
+    }> {
         return (this.sendRequest('getAgentStatuses', {}) || []) as any;
     }
 
-    sendMail(from: string, to: string, subject: string, body: string, type: 'report' | 'error'): void {
+    sendMail(
+        from: string,
+        to: string,
+        subject: string,
+        body: string,
+        type: 'report' | 'error',
+    ): void {
         this.sendRequest('sendMail', { from, to, subject, body, type });
     }
 
@@ -191,8 +260,16 @@ class FileBridge implements McpBridge {
         this.sendRequest('notify', { message, type });
     }
 
-    getProjectInfo(): { dir: string; agents: string[]; activeSessions: string[] } {
-        return (this.sendRequest('getProjectInfo', {}) || { dir: '.', agents: [], activeSessions: [] }) as any;
+    getProjectInfo(): {
+        dir: string;
+        agents: string[];
+        activeSessions: string[];
+    } {
+        return (this.sendRequest('getProjectInfo', {}) || {
+            dir: '.',
+            agents: [],
+            activeSessions: [],
+        }) as any;
     }
 }
 
@@ -228,7 +305,10 @@ export function startMcpServer(bridge: McpBridge): void {
     });
 }
 
-function handleRequest(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse {
+function handleRequest(
+    req: JsonRpcRequest,
+    bridge: McpBridge,
+): JsonRpcResponse {
     switch (req.method) {
         case 'initialize':
             return {
@@ -259,13 +339,21 @@ function handleRequest(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse 
             return {
                 jsonrpc: '2.0',
                 id: req.id,
-                error: { code: -32601, message: `Method not found: ${req.method}` },
+                error: {
+                    code: -32601,
+                    message: `Method not found: ${req.method}`,
+                },
             };
     }
 }
 
-function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse {
-    const params = req.params as { name: string; arguments?: Record<string, unknown> } | undefined;
+function handleToolCall(
+    req: JsonRpcRequest,
+    bridge: McpBridge,
+): JsonRpcResponse {
+    const params = req.params as
+        | { name: string; arguments?: Record<string, unknown> }
+        | undefined;
     if (!params?.name) {
         return {
             jsonrpc: '2.0',
@@ -286,7 +374,12 @@ function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse
                     jsonrpc: '2.0',
                     id: req.id,
                     result: {
-                        content: [{ type: 'text', text: `Notification sent: "${message}" (${type})` }],
+                        content: [
+                            {
+                                type: 'text',
+                                text: `Notification sent: "${message}" (${type})`,
+                            },
+                        ],
                     },
                 };
             }
@@ -295,13 +388,22 @@ function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse
                 const agentId = args.agentId as string | undefined;
                 const statuses = bridge.getAgentStatuses();
                 const filtered = agentId
-                    ? statuses.filter(s => s.id === agentId || s.label.toLowerCase() === agentId.toLowerCase())
+                    ? statuses.filter(
+                          (s) =>
+                              s.id === agentId ||
+                              s.label.toLowerCase() === agentId.toLowerCase(),
+                      )
                     : statuses;
                 return {
                     jsonrpc: '2.0',
                     id: req.id,
                     result: {
-                        content: [{ type: 'text', text: JSON.stringify(filtered, null, 2) }],
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(filtered, null, 2),
+                            },
+                        ],
                     },
                 };
             }
@@ -315,7 +417,12 @@ function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse
                     jsonrpc: '2.0',
                     id: req.id,
                     result: {
-                        content: [{ type: 'text', text: `Mail sent to ${to}: "${subject}"` }],
+                        content: [
+                            {
+                                type: 'text',
+                                text: `Mail sent to ${to}: "${subject}"`,
+                            },
+                        ],
                     },
                 };
             }
@@ -326,7 +433,12 @@ function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse
                     jsonrpc: '2.0',
                     id: req.id,
                     result: {
-                        content: [{ type: 'text', text: JSON.stringify(info, null, 2) }],
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(info, null, 2),
+                            },
+                        ],
                     },
                 };
             }
@@ -335,14 +447,20 @@ function handleToolCall(req: JsonRpcRequest, bridge: McpBridge): JsonRpcResponse
                 return {
                     jsonrpc: '2.0',
                     id: req.id,
-                    error: { code: -32602, message: `Unknown tool: ${params.name}` },
+                    error: {
+                        code: -32602,
+                        message: `Unknown tool: ${params.name}`,
+                    },
                 };
         }
     } catch (err: any) {
         return {
             jsonrpc: '2.0',
             id: req.id,
-            error: { code: -32000, message: err.message || 'Tool execution failed' },
+            error: {
+                code: -32000,
+                message: err.message || 'Tool execution failed',
+            },
         };
     }
 }
@@ -383,7 +501,11 @@ export function registerMcpServer(projectDir: string): void {
     config.mcpServers = mcpServers;
 
     try {
-        fs.writeFileSync(mcpConfigPath, JSON.stringify(config, null, 2), 'utf-8');
+        fs.writeFileSync(
+            mcpConfigPath,
+            JSON.stringify(config, null, 2),
+            'utf-8',
+        );
         console.log(`[MCP] Registered artience server in ${mcpConfigPath}`);
     } catch (err: any) {
         console.warn(`[MCP] Failed to register in .mcp.json:`, err.message);
@@ -399,12 +521,18 @@ export function unregisterMcpServer(projectDir: string): void {
     try {
         if (!fs.existsSync(mcpConfigPath)) return;
         const config = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-        const mcpServers = config.mcpServers as Record<string, unknown> | undefined;
+        const mcpServers = config.mcpServers as
+            | Record<string, unknown>
+            | undefined;
         if (!mcpServers?.['artience']) return;
 
         delete mcpServers['artience'];
         config.mcpServers = mcpServers;
-        fs.writeFileSync(mcpConfigPath, JSON.stringify(config, null, 2), 'utf-8');
+        fs.writeFileSync(
+            mcpConfigPath,
+            JSON.stringify(config, null, 2),
+            'utf-8',
+        );
         console.log(`[MCP] Unregistered artience server from ${mcpConfigPath}`);
     } catch {
         // silently ignore
