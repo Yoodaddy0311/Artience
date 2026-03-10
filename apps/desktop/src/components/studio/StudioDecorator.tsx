@@ -22,7 +22,7 @@ export const StudioDecorator: React.FC<StudioDecoratorProps> = ({
             studioApi
                 .getAssets()
                 .then((data: any) => {
-                    if (data?.assets)
+                    if (Array.isArray(data?.assets))
                         setAssets(
                             data.assets.map((a: any) => a.path).filter(Boolean),
                         );

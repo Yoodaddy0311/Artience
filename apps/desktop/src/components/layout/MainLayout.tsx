@@ -139,7 +139,7 @@ const StudioActions: React.FC = () => {
             const api = window.dogbaApi?.studio;
             if (!api) throw new Error('Studio API not available');
             const history = await api.getHistory();
-            if (history.snapshots.length > 0) {
+            if (history.snapshots?.length > 0) {
                 const result = await api.rollback(history.snapshots[0].id);
                 if (!result.success)
                     throw new Error(result.error || 'Rollback failed');

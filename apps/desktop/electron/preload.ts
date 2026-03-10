@@ -420,6 +420,19 @@ try {
                 return () =>
                     ipcRenderer.removeListener('mail:new-report', listener);
             },
+            getGitDiff: (
+                cwd?: string,
+            ): Promise<{
+                success: boolean;
+                branch?: string;
+                commitHash?: string;
+                diffStats?: {
+                    file: string;
+                    additions: number;
+                    deletions: number;
+                }[];
+                error?: string;
+            }> => ipcRenderer.invoke('mail:getGitDiff', cwd),
         },
 
         // ── Agent Team (CTO Controller) ──
@@ -433,6 +446,10 @@ try {
                 task: string,
             ): Promise<{ success: boolean; error?: string }> =>
                 ipcRenderer.invoke('agent:delegate-task', agentName, task),
+            recommend: (
+                task: string,
+            ): Promise<{ agentId: string; score: number; reason: string }[]> =>
+                ipcRenderer.invoke('agent:recommend', task),
             onTaskResult: (callback: (agentId: string, event: any) => void) => {
                 const listener = (
                     _e: Electron.IpcRendererEvent,
@@ -487,6 +504,29 @@ try {
                     agentName,
                     projectDir,
                 ),
+            search: (
+                query: string,
+            ): Promise<{
+                success: boolean;
+                skills: {
+                    id: string;
+                    name: string;
+                    description: string;
+                    tags: string[];
+                    repoUrl: string;
+                    author: string;
+                    installed: boolean;
+                }[];
+                error?: string;
+            }> => ipcRenderer.invoke('skill:search', query),
+            install: (
+                skillId: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('skill:install', skillId),
+            uninstall: (
+                skillId: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('skill:uninstall', skillId),
         },
 
         // ── Worktree Manager ──

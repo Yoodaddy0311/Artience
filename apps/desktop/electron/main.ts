@@ -37,6 +37,7 @@ import {
 } from '../src/lib/pty-parser';
 import { worktreeManager } from './worktree-manager';
 import { hooksManager } from './hooks-manager';
+import { recommendAgents } from './agent-recommender';
 import {
     registerMcpServer,
     MCP_BRIDGE_DIR,
@@ -53,6 +54,9 @@ import {
     loadSkills,
     installDefaultSkills,
     getAgentSkills,
+    searchMarketplace,
+    installSkillFromCatalog,
+    uninstallSkill,
 } from './skill-manager';
 import {
     scanArtibotDir,
@@ -452,7 +456,10 @@ async function createWindow() {
     if (process.env.VITE_DEV_SERVER_URL) {
         // Purge Chromium HTTP cache to prevent stale JS from previous builds
         await mainWindow.webContents.session.clearCache();
-        console.log('[Electron] Dev cache purged');
+        await mainWindow.webContents.session.clearStorageData({
+            storages: ['serviceworkers', 'cachestorage'],
+        });
+        console.log('[Electron] Dev cache + storage purged');
         mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     } else {
         // __dirname = dist-electron/, Vite 출력 = ../dist/index.html
@@ -1005,6 +1012,59 @@ ipcMain.handle('worktree:list', async (_e, projectDir?: string) => {
     return { worktrees };
 });
 
+// ── Mail IPC ─────────────────────────────────────────────────────────────────
+
+const execFileAsync = promisify(execFile);
+
+ipcMain.handle(
+    'mail:getGitDiff',
+    async (
+        _e,
+        cwd?: string,
+    ): Promise<{
+        success: boolean;
+        branch?: string;
+        commitHash?: string;
+        diffStats?: { file: string; additions: number; deletions: number }[];
+        error?: string;
+    }> => {
+        const dir = cwd || getProjectDir();
+        try {
+            const [branchRes, hashRes, diffRes] = await Promise.all([
+                execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+                    cwd: dir,
+                }),
+                execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
+                    cwd: dir,
+                }),
+                execFileAsync('git', ['diff', '--numstat', 'HEAD~1'], {
+                    cwd: dir,
+                }),
+            ]);
+
+            const branch = branchRes.stdout.trim();
+            const commitHash = hashRes.stdout.trim();
+            const diffStats = diffRes.stdout
+                .trim()
+                .split('\n')
+                .filter((line) => line.trim())
+                .map((line) => {
+                    const [add, del, file] = line.split('\t');
+                    return {
+                        file: file || '',
+                        additions: parseInt(add, 10) || 0,
+                        deletions: parseInt(del, 10) || 0,
+                    };
+                })
+                .filter((s) => s.file);
+
+            return { success: true, branch, commitHash, diffStats };
+        } catch (err: any) {
+            return { success: false, error: err.message };
+        }
+    },
+);
+
 // ── Hooks IPC ───────────────────────────────────────────────────────────────
 
 ipcMain.handle('hooks:setup', (_e, projectDir?: string) => {
@@ -1293,6 +1353,28 @@ ipcMain.handle(
         }
     },
 );
+
+// ── Skill Marketplace IPC ───────────────────────────────────────────────────
+
+ipcMain.handle('skill:search', (_e, query: string) => {
+    const dir = getProjectDir();
+    try {
+        const results = searchMarketplace(query, dir);
+        return { success: true, skills: results };
+    } catch (err: any) {
+        return { success: false, skills: [], error: err.message };
+    }
+});
+
+ipcMain.handle('skill:install', async (_e, skillId: string) => {
+    const dir = getProjectDir();
+    return installSkillFromCatalog(skillId, dir);
+});
+
+ipcMain.handle('skill:uninstall', (_e, skillId: string) => {
+    const dir = getProjectDir();
+    return uninstallSkill(skillId, dir);
+});
 
 // ── Studio IPC (Agent Manager) ─────────────────────────────────────────────
 
@@ -1764,6 +1846,10 @@ ipcMain.handle(
 // agent:task-result is emitted via chat:stream-event when CTO session
 // produces subagent-related output. The renderer can detect subagent
 // events from the stream event type/content.
+
+ipcMain.handle('agent:recommend', async (_e, taskDescription: string) => {
+    return recommendAgents(taskDescription);
+});
 
 // ── Artibot Registry IPC ────────────────────────────────────────────────────
 

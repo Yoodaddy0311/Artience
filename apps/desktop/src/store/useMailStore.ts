@@ -15,12 +15,21 @@ export interface MailTestResults {
     coverage?: number;
 }
 
+export interface DiffStat {
+    file: string;
+    additions: number;
+    deletions: number;
+}
+
 export interface MailReport {
     summary: string;
     toolsUsed: string[];
     changedFiles: MailChangedFile[];
     testResults?: MailTestResults;
     duration?: number;
+    gitBranch?: string;
+    commitHash?: string;
+    diffStats?: DiffStat[];
 }
 
 export interface MailAction {
@@ -127,7 +136,7 @@ export const useMailStore = create<MailState>()(
                             ? {
                                   ...m,
                                   status,
-                                  actions: [...m.actions, action],
+                                  actions: [...(m.actions ?? []), action],
                               }
                             : m,
                     );
@@ -144,6 +153,14 @@ export const useMailStore = create<MailState>()(
                     ...current,
                     ...(persisted as Partial<MailState>),
                 };
+                // Patch old messages missing new fields (actions, status)
+                if (Array.isArray(merged.messages)) {
+                    merged.messages = merged.messages.map((m: any) => ({
+                        ...m,
+                        actions: m.actions ?? [],
+                        status: m.status ?? 'pending',
+                    }));
+                }
                 merged.unreadCount = computeUnread(merged.messages);
                 return merged;
             },

@@ -12,7 +12,9 @@ import {
     ThumbsUp,
     MessageSquare,
     Eye,
+    ExternalLink,
 } from 'lucide-react';
+import { MailReportDetail } from './MailReportDetail';
 import type {
     MailMessage,
     MailReport,
@@ -21,13 +23,13 @@ import type {
 } from '../../store/useMailStore';
 import { useMailStore } from '../../store/useMailStore';
 
-// ── Status Badge ──
+// ── Status Badge (Neobrutalism) ──
 
 const STATUS_STYLES: Record<MailStatus, string> = {
-    pending: 'bg-yellow-900/40 text-yellow-300 border-yellow-600/50',
-    approved: 'bg-green-900/40 text-green-300 border-green-600/50',
-    changes_requested: 'bg-orange-900/40 text-orange-300 border-orange-600/50',
-    acknowledged: 'bg-blue-900/40 text-blue-300 border-blue-600/50',
+    pending: 'bg-yellow-100 text-yellow-800 border-black',
+    approved: 'bg-green-100 text-green-800 border-black',
+    changes_requested: 'bg-orange-100 text-orange-800 border-black',
+    acknowledged: 'bg-blue-100 text-blue-800 border-black',
 };
 
 const STATUS_LABELS: Record<MailStatus, string> = {
@@ -40,9 +42,9 @@ const STATUS_LABELS: Record<MailStatus, string> = {
 // ── File Action Icon ──
 
 const FILE_ACTION_ICON: Record<MailChangedFile['action'], React.ReactNode> = {
-    created: <FilePlus className="w-3.5 h-3.5 text-green-400" />,
-    modified: <FileEdit className="w-3.5 h-3.5 text-yellow-400" />,
-    deleted: <Trash2 className="w-3.5 h-3.5 text-red-400" />,
+    created: <FilePlus className="w-3.5 h-3.5 text-green-600" />,
+    modified: <FileEdit className="w-3.5 h-3.5 text-yellow-600" />,
+    deleted: <Trash2 className="w-3.5 h-3.5 text-red-600" />,
 };
 
 // ── Format Duration ──
@@ -64,6 +66,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
     const updateStatus = useMailStore((s) => s.updateStatus);
     const [comment, setComment] = useState('');
     const [showCommentInput, setShowCommentInput] = useState(false);
+    const [showDetail, setShowDetail] = useState(false);
 
     const { report, status } = message;
 
@@ -86,25 +89,36 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
             {/* Header with Status */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-lg font-bold text-gray-100">
+                    <h2 className="text-lg font-black text-black">
                         {message.subject}
                     </h2>
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs font-bold text-gray-500 mt-1">
                         From {message.fromAgentName} --{' '}
                         {new Date(message.timestamp).toLocaleString('ko-KR')}
                     </p>
                 </div>
-                <span
-                    className={`text-xs font-bold px-3 py-1 rounded-full border ${STATUS_STYLES[status]}`}
-                >
-                    {STATUS_LABELS[status]}
-                </span>
+                <div className="flex items-center gap-2">
+                    {report && (
+                        <button
+                            onClick={() => setShowDetail(true)}
+                            className="flex items-center gap-1 text-[10px] font-black px-3 py-1 rounded-lg border-2 border-black bg-yellow-100 text-black shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
+                        >
+                            <ExternalLink className="w-3 h-3" />
+                            Detail
+                        </button>
+                    )}
+                    <span
+                        className={`text-[10px] font-black px-3 py-1 rounded-lg border-2 ${STATUS_STYLES[status]}`}
+                    >
+                        {STATUS_LABELS[status]}
+                    </span>
+                </div>
             </div>
 
             {/* Body (plain text fallback) */}
             {message.body && (
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
-                    <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+                <div className="bg-cream-50 rounded-xl p-4 border-2 border-black">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
                         {message.body}
                     </p>
                 </div>
@@ -113,15 +127,23 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
             {/* Report Section */}
             {report && <ReportDetails report={report} />}
 
+            {/* Detail Modal */}
+            {showDetail && (
+                <MailReportDetail
+                    message={message}
+                    onClose={() => setShowDetail(false)}
+                />
+            )}
+
             {/* Action Buttons */}
-            <div className="border-t border-gray-700/50 pt-4 mt-auto">
+            <div className="border-t-2 border-black/10 pt-4 mt-auto">
                 {showCommentInput && (
                     <div className="mb-3">
                         <textarea
                             value={comment}
                             onChange={(e) => setComment(e.target.value)}
                             placeholder="Describe the changes you'd like..."
-                            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-orange-500 resize-none"
+                            className="w-full bg-white border-2 border-black rounded-xl px-3 py-2 text-sm text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFD100] focus:ring-offset-2 resize-none"
                             rows={3}
                         />
                         <div className="flex gap-2 mt-2">
@@ -130,7 +152,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                                     handleAction('changes_requested')
                                 }
                                 disabled={!comment.trim()}
-                                className="px-3 py-1.5 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-500 transition-colors disabled:opacity-40"
+                                className="px-3 py-1.5 bg-orange-100 text-orange-800 text-xs font-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-40"
                             >
                                 Submit Request
                             </button>
@@ -139,7 +161,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                                     setShowCommentInput(false);
                                     setComment('');
                                 }}
-                                className="px-3 py-1.5 bg-gray-700 text-gray-300 text-xs font-bold rounded-lg hover:bg-gray-600 transition-colors"
+                                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
                             >
                                 Cancel
                             </button>
@@ -152,7 +174,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                         <button
                             onClick={() => handleAction('approved')}
                             disabled={status === 'approved'}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-green-700/80 text-green-100 text-xs font-bold rounded-lg hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-4 py-2 bg-green-100 text-green-800 text-xs font-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0_0_#000]"
                         >
                             <ThumbsUp className="w-3.5 h-3.5" />
                             Approve
@@ -160,7 +182,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                         <button
                             onClick={() => handleAction('changes_requested')}
                             disabled={status === 'changes_requested'}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-orange-700/80 text-orange-100 text-xs font-bold rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-4 py-2 bg-orange-100 text-orange-800 text-xs font-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0_0_#000]"
                         >
                             <MessageSquare className="w-3.5 h-3.5" />
                             Request Changes
@@ -168,7 +190,7 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                         <button
                             onClick={() => handleAction('acknowledged')}
                             disabled={status === 'acknowledged'}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-700/80 text-blue-100 text-xs font-bold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-100 text-blue-800 text-xs font-black border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0_0_#000]"
                         >
                             <Eye className="w-3.5 h-3.5" />
                             Acknowledge
@@ -177,19 +199,19 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
                 )}
 
                 {/* Action History */}
-                {message.actions.length > 0 && (
+                {(message.actions ?? []).length > 0 && (
                     <div className="mt-3 space-y-1">
-                        {message.actions.map((action, i) => (
+                        {(message.actions ?? []).map((action, i) => (
                             <div
                                 key={i}
                                 className="text-xs text-gray-500 flex items-center gap-1.5"
                             >
-                                <span className="text-gray-600">
+                                <span className="text-gray-600 font-bold">
                                     {new Date(
                                         action.timestamp,
                                     ).toLocaleTimeString('ko-KR')}
                                 </span>
-                                <span className="capitalize">
+                                <span className="capitalize font-bold text-black">
                                     {action.type.replace('_', ' ')}
                                 </span>
                                 {action.comment && (
@@ -206,28 +228,28 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
     );
 };
 
-// ── Report Details Sub-Component ──
+// ── Report Details Sub-Component (Neobrutalism) ──
 
 const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
     return (
         <div className="space-y-3">
             {/* Summary */}
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+            <div className="bg-blue-50 rounded-xl p-4 border-2 border-black">
                 <div className="flex items-center gap-2 mb-2">
-                    <FileText className="w-4 h-4 text-blue-400" />
-                    <h3 className="text-sm font-bold text-gray-200">Summary</h3>
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-black text-black">Summary</h3>
                 </div>
-                <p className="text-sm text-gray-300 leading-relaxed">
+                <p className="text-sm text-gray-700 leading-relaxed">
                     {report.summary}
                 </p>
             </div>
 
             {/* Tools Used */}
             {report.toolsUsed.length > 0 && (
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <div className="bg-purple-50 rounded-xl p-4 border-2 border-black">
                     <div className="flex items-center gap-2 mb-2">
-                        <Wrench className="w-4 h-4 text-purple-400" />
-                        <h3 className="text-sm font-bold text-gray-200">
+                        <Wrench className="w-4 h-4 text-purple-600" />
+                        <h3 className="text-sm font-black text-black">
                             Tools Used
                         </h3>
                     </div>
@@ -235,7 +257,7 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
                         {report.toolsUsed.map((tool) => (
                             <span
                                 key={tool}
-                                className="px-2 py-0.5 bg-purple-900/30 text-purple-300 text-xs rounded-md border border-purple-700/30"
+                                className="px-2 py-0.5 bg-white text-purple-800 text-xs font-bold rounded-md border-2 border-black"
                             >
                                 {tool}
                             </span>
@@ -246,30 +268,30 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
 
             {/* Changed Files */}
             {report.changedFiles.length > 0 && (
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <div className="bg-yellow-50 rounded-xl p-4 border-2 border-black">
                     <div className="flex items-center gap-2 mb-2">
-                        <FileEdit className="w-4 h-4 text-yellow-400" />
-                        <h3 className="text-sm font-bold text-gray-200">
+                        <FileEdit className="w-4 h-4 text-yellow-700" />
+                        <h3 className="text-sm font-black text-black">
                             Changed Files
                         </h3>
-                        <span className="text-xs text-gray-500">
-                            ({report.changedFiles.length})
+                        <span className="text-[10px] font-black text-gray-500 bg-white px-1.5 py-0.5 rounded border-2 border-black">
+                            {report.changedFiles.length}
                         </span>
                     </div>
                     <div className="space-y-1.5">
                         {report.changedFiles.map((file) => (
                             <div
                                 key={file.path}
-                                className="flex items-center gap-2 text-xs"
+                                className="flex items-center gap-2 text-xs bg-white rounded-lg px-2 py-1.5 border border-black/20"
                             >
                                 {FILE_ACTION_ICON[file.action]}
-                                <span className="text-gray-300 font-mono truncate flex-1">
+                                <span className="text-black font-mono font-bold truncate flex-1">
                                     {file.path}
                                 </span>
-                                <span className="text-green-400 font-mono flex-shrink-0">
+                                <span className="text-green-700 font-mono font-bold flex-shrink-0">
                                     +{file.linesAdded}
                                 </span>
-                                <span className="text-red-400 font-mono flex-shrink-0">
+                                <span className="text-red-700 font-mono font-bold flex-shrink-0">
                                     -{file.linesRemoved}
                                 </span>
                             </div>
@@ -280,29 +302,29 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
 
             {/* Test Results */}
             {report.testResults && (
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <div className="bg-green-50 rounded-xl p-4 border-2 border-black">
                     <div className="flex items-center gap-2 mb-3">
-                        <CheckCircle2 className="w-4 h-4 text-green-400" />
-                        <h3 className="text-sm font-bold text-gray-200">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <h3 className="text-sm font-black text-black">
                             Test Results
                         </h3>
                     </div>
                     <div className="flex gap-4 mb-3">
                         <div className="flex items-center gap-1.5 text-xs">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
-                            <span className="text-green-300 font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                            <span className="text-green-800 font-black">
                                 {report.testResults.passed} passed
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5 text-xs">
-                            <XCircle className="w-3.5 h-3.5 text-red-400" />
-                            <span className="text-red-300 font-bold">
+                            <XCircle className="w-3.5 h-3.5 text-red-600" />
+                            <span className="text-red-800 font-black">
                                 {report.testResults.failed} failed
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5 text-xs">
                             <MinusCircle className="w-3.5 h-3.5 text-gray-500" />
-                            <span className="text-gray-400 font-bold">
+                            <span className="text-gray-600 font-black">
                                 {report.testResults.skipped} skipped
                             </span>
                         </div>
@@ -322,7 +344,7 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
                                 ? (report.testResults.failed / total) * 100
                                 : 0;
                         return (
-                            <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div className="w-full h-3 bg-white rounded-full overflow-hidden border-2 border-black">
                                 <div className="h-full flex">
                                     <div
                                         className="bg-green-500 h-full"
@@ -337,7 +359,7 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
                         );
                     })()}
                     {report.testResults.coverage != null && (
-                        <p className="text-xs text-gray-400 mt-2">
+                        <p className="text-xs font-bold text-gray-600 mt-2">
                             Coverage: {report.testResults.coverage}%
                         </p>
                     )}
@@ -346,7 +368,7 @@ const ReportDetails: React.FC<{ report: MailReport }> = ({ report }) => {
 
             {/* Duration */}
             {report.duration != null && (
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-2 text-xs font-bold text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border-2 border-black/20">
                     <Clock className="w-3.5 h-3.5" />
                     <span>Duration: {formatDuration(report.duration)}</span>
                 </div>

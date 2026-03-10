@@ -74,8 +74,12 @@ export const MemoryLog: React.FC<MemoryLogProps> = ({ agentId }) => {
                 if (typeFilter !== 'all' && m.type !== typeFilter) return false;
                 if (
                     search &&
-                    !m.content.toLowerCase().includes(search.toLowerCase()) &&
-                    !m.context.toLowerCase().includes(search.toLowerCase())
+                    !(m.content ?? '')
+                        .toLowerCase()
+                        .includes(search.toLowerCase()) &&
+                    !(m.context ?? '')
+                        .toLowerCase()
+                        .includes(search.toLowerCase())
                 ) {
                     return false;
                 }

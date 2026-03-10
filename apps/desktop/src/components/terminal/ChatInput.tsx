@@ -8,6 +8,13 @@ import React, {
 import { assetPath } from '../../lib/assetPath';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useAppStore } from '../../store/useAppStore';
+import { MemoizedAgentRecommendPanel } from '../agent/AgentRecommendPanel';
+
+interface AgentRecommendation {
+    agentId: string;
+    score: number;
+    reason: string;
+}
 
 // ── Types ──
 
@@ -261,14 +268,19 @@ export interface ChatInputProps {
     tabId: string;
     agentSprite?: string;
     onSubmit: (message: string) => void;
+    onSelectAgent?: (agentId: string) => void;
     disabled?: boolean;
+    /** When true (no agent selected), enables recommendation panel */
+    showRecommendations?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
     tabId,
     agentSprite,
     onSubmit,
+    onSelectAgent,
     disabled,
+    showRecommendations,
 }) => {
     const [text, setText] = useState('');
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -278,6 +290,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [savedText, setSavedText] = useState('');
     const [projectSkills, setProjectSkills] = useState<SlashCommand[]>([]);
+    const [recommendations, setRecommendations] = useState<
+        AgentRecommendation[]
+    >([]);
+    const [recommendDismissed, setRecommendDismissed] = useState(false);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -326,6 +343,47 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         });
 
         return () => unsub?.();
+    }, []);
+
+    // Debounced agent recommendation (500ms)
+    useEffect(() => {
+        if (!showRecommendations || recommendDismissed) return;
+        const trimmed = text.trim();
+        // Only trigger for non-slash, non-empty input >= 5 chars
+        if (!trimmed || trimmed.startsWith('/') || trimmed.length < 5) {
+            setRecommendations([]);
+            return;
+        }
+
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(async () => {
+            const api = window.dogbaApi?.agent;
+            if (!api) return;
+            try {
+                const result = await api.recommend(trimmed);
+                setRecommendations(result || []);
+            } catch {
+                setRecommendations([]);
+            }
+        }, 500);
+
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+    }, [text, showRecommendations, recommendDismissed]);
+
+    const handleRecommendSelect = useCallback(
+        (agentId: string) => {
+            setRecommendations([]);
+            setRecommendDismissed(true);
+            onSelectAgent?.(agentId);
+        },
+        [onSelectAgent],
+    );
+
+    const handleRecommendClose = useCallback(() => {
+        setRecommendations([]);
+        setRecommendDismissed(true);
     }, []);
 
     // All slash commands (native + project skills)
@@ -540,6 +598,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         setHistoryIndex(-1);
         setSavedText('');
         setSlashOpen(false);
+        setRecommendations([]);
+        setRecommendDismissed(false);
 
         // Reset textarea height
         requestAnimationFrame(() => {
@@ -683,6 +743,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     commands={filteredCommands}
                     selectedIndex={slashIndex}
                     onSelect={handleSlashSelect}
+                />
+            )}
+
+            {/* Agent recommendation panel */}
+            {!slashOpen && recommendations.length > 0 && (
+                <MemoizedAgentRecommendPanel
+                    recommendations={recommendations}
+                    onSelect={handleRecommendSelect}
+                    onClose={handleRecommendClose}
                 />
             )}
 

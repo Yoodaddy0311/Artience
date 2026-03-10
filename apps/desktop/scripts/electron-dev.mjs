@@ -28,28 +28,33 @@ rmSync('dist', { recursive: true, force: true });
 
 // Purge Electron's V8 Code Cache, Chromium caches, and stale web storage
 // This prevents phantom modules from old builds from being served
-const electronDataDir = join(process.env.APPDATA || '', 'Electron');
-if (existsSync(electronDataDir)) {
-    // 캐시만 삭제 — Local Storage/Session Storage는 Zustand persist 데이터이므로 보존
-    const purgeDirs = [
-        'Cache',
-        'Code Cache',
-        'GPUCache',
-        'DawnGraphiteCache',
-        'DawnWebGPUCache',
-        'Service Worker',
-        'Shared Dictionary',
-        'SharedStorage',
-        'blob_storage',
-        'DIPS',
-        'Network',
-    ];
+const electronDataDirs = [
+    join(process.env.APPDATA || '', 'Electron'),
+    join(process.env.APPDATA || '', '@dogba'),
+    join(process.env.APPDATA || '', 'dokba-studio'),
+];
+// 캐시만 삭제 — Local Storage/Session Storage는 Zustand persist 데이터이므로 보존
+const purgeDirs = [
+    'Cache',
+    'Code Cache',
+    'GPUCache',
+    'DawnGraphiteCache',
+    'DawnWebGPUCache',
+    'Service Worker',
+    'Shared Dictionary',
+    'SharedStorage',
+    'blob_storage',
+    'DIPS',
+    'Network',
+];
+for (const electronDataDir of electronDataDirs) {
+    if (!existsSync(electronDataDir)) continue;
     for (const dir of purgeDirs) {
         const p = join(electronDataDir, dir);
         if (existsSync(p)) rmSync(p, { recursive: true, force: true });
     }
-    console.log('[dev] Electron data purged (all caches + web storage)');
 }
+console.log('[dev] Electron data purged (all caches across 3 app dirs)');
 
 // Step 3: Kill any leftover process on port 5173
 try {

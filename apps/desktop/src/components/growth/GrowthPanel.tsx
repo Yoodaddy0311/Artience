@@ -60,8 +60,8 @@ export const GrowthPanel: React.FC<GrowthPanelProps> = ({ agentId }) => {
         );
     }
 
-    const { evolution, stats, taskHistory } = profile;
-    const stageColor = STAGE_COLORS[evolution.stage];
+    const { evolution, stats, taskHistory = [] } = profile;
+    const stageColor = STAGE_COLORS[evolution?.stage ?? 'novice'];
     const recentTasks = taskHistory.slice(-10).reverse();
 
     return (
@@ -200,9 +200,9 @@ export const GrowthPanel: React.FC<GrowthPanelProps> = ({ agentId }) => {
                             <p className="text-[10px] font-black uppercase text-gray-400 mb-2">
                                 Unlocked Abilities
                             </p>
-                            {evolution.unlockedAbilities.length > 0 ? (
+                            {(evolution?.unlockedAbilities ?? []).length > 0 ? (
                                 <div className="flex flex-wrap gap-1.5">
-                                    {evolution.unlockedAbilities.map(
+                                    {(evolution?.unlockedAbilities ?? []).map(
                                         (ability) => (
                                             <span
                                                 key={ability}

@@ -431,6 +431,37 @@ export const useGrowthStore = create<GrowthStore>()(
             partialize: (state) => ({
                 profiles: state.profiles,
             }),
+            merge: (persisted: any, current) => {
+                const merged = {
+                    ...current,
+                    ...(persisted as Partial<GrowthStore>),
+                };
+                // Patch profiles with missing array fields from schema evolution
+                if (merged.profiles) {
+                    for (const [id, profile] of Object.entries(
+                        merged.profiles,
+                    ) as [string, any][]) {
+                        if (!profile) continue;
+                        const defaults = createDefaultGrowthProfile(id);
+                        profile.skills = profile.skills ?? defaults.skills;
+                        profile.memories =
+                            profile.memories ?? defaults.memories;
+                        profile.traits = profile.traits ?? defaults.traits;
+                        profile.relationships =
+                            profile.relationships ?? defaults.relationships;
+                        profile.taskHistory =
+                            profile.taskHistory ?? defaults.taskHistory;
+                        profile.evolution = {
+                            ...defaults.evolution,
+                            ...(profile.evolution ?? {}),
+                            unlockedAbilities:
+                                profile.evolution?.unlockedAbilities ??
+                                defaults.evolution.unlockedAbilities,
+                        };
+                    }
+                }
+                return merged;
+            },
             onRehydrateStorage: () => (state) => {
                 if (state) {
                     state._hasHydrated = true;

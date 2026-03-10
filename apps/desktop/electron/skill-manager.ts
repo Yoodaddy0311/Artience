@@ -12,7 +12,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { CHARACTER_SKILLS } from './skill-map';
+import { searchCatalog, type CatalogSkill } from './skill-catalog';
+
+const execFileAsync = promisify(execFile);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -299,4 +304,145 @@ function findAgentForSkill(skillId: string): string | undefined {
         }
     }
     return undefined;
+}
+
+// ── Marketplace Functions ─────────────────────────────────────────────────
+
+export interface MarketplaceSkill extends CatalogSkill {
+    installed: boolean;
+}
+
+/**
+ * Search the skill catalog and mark installed status.
+ */
+export function searchMarketplace(
+    query: string,
+    projectDir: string,
+): MarketplaceSkill[] {
+    const results = searchCatalog(query);
+    const installed = loadSkills(projectDir);
+    const installedIds = new Set(installed.map((s) => s.id));
+
+    return results.map((skill) => ({
+        ...skill,
+        installed: installedIds.has(skill.id),
+    }));
+}
+
+/**
+ * Install a skill from the catalog via Git clone.
+ * Clones the repo into a temp dir, then copies the skill subdir
+ * to .claude/skills/{id}/.
+ */
+export async function installSkillFromCatalog(
+    skillId: string,
+    projectDir: string,
+): Promise<{ success: boolean; error?: string }> {
+    const catalog = searchCatalog('');
+    const entry = catalog.find((s) => s.id === skillId);
+    if (!entry) {
+        return {
+            success: false,
+            error: `Skill "${skillId}" not found in catalog`,
+        };
+    }
+
+    const skillsDir = path.join(projectDir, '.claude', 'skills');
+    const targetDir = path.join(skillsDir, skillId);
+
+    if (fs.existsSync(targetDir)) {
+        return {
+            success: false,
+            error: `Skill "${skillId}" is already installed`,
+        };
+    }
+
+    // Create a temp dir for cloning
+    const tmpDir = path.join(
+        projectDir,
+        '.claude',
+        '.tmp-skill-install-' + Date.now(),
+    );
+
+    try {
+        // Ensure skills directory exists
+        if (!fs.existsSync(skillsDir)) {
+            fs.mkdirSync(skillsDir, { recursive: true });
+        }
+
+        // Shallow clone the repo
+        await execFileAsync('git', [
+            'clone',
+            '--depth',
+            '1',
+            entry.repoUrl,
+            tmpDir,
+        ]);
+
+        // Determine source directory
+        const srcDir = entry.subdir ? path.join(tmpDir, entry.subdir) : tmpDir;
+
+        if (!fs.existsSync(srcDir)) {
+            return {
+                success: false,
+                error: `Subdir "${entry.subdir}" not found in repo`,
+            };
+        }
+
+        // Copy to target
+        copyDirSync(srcDir, targetDir);
+
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    } finally {
+        // Clean up temp dir
+        try {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+            // ignore cleanup errors
+        }
+    }
+}
+
+/**
+ * Uninstall a skill by removing its directory from .claude/skills/.
+ */
+export function uninstallSkill(
+    skillId: string,
+    projectDir: string,
+): { success: boolean; error?: string } {
+    const skillDir = path.join(projectDir, '.claude', 'skills', skillId);
+
+    if (!fs.existsSync(skillDir)) {
+        return { success: false, error: `Skill "${skillId}" is not installed` };
+    }
+
+    try {
+        fs.rmSync(skillDir, { recursive: true, force: true });
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
+// ── Directory copy helper ─────────────────────────────────────────────────
+
+function copyDirSync(src: string, dest: string): void {
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        // Skip .git directory
+        if (entry.name === '.git') continue;
+
+        if (entry.isDirectory()) {
+            copyDirSync(srcPath, destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
 }

@@ -215,6 +215,14 @@ interface DogbaJobApi {
     ): () => void;
 }
 
+interface GitDiffResult {
+    success: boolean;
+    branch?: string;
+    commitHash?: string;
+    diffStats?: { file: string; additions: number; deletions: number }[];
+    error?: string;
+}
+
 interface DogbaMailApi {
     onNewReport(
         callback: (report: {
@@ -226,6 +234,13 @@ interface DogbaMailApi {
             timestamp: number;
         }) => void,
     ): () => void;
+    getGitDiff(cwd?: string): Promise<GitDiffResult>;
+}
+
+interface AgentRecommendation {
+    agentId: string;
+    score: number;
+    reason: string;
 }
 
 interface DogbaAgentApi {
@@ -234,6 +249,7 @@ interface DogbaAgentApi {
         agentName: string,
         task: string,
     ): Promise<{ success: boolean; error?: string }>;
+    recommend(task: string): Promise<AgentRecommendation[]>;
     onTaskResult(callback: (agentId: string, event: any) => void): () => void;
 }
 
@@ -243,6 +259,16 @@ interface SkillInfo {
     description: string;
     path: string;
     agent?: string;
+}
+
+interface MarketplaceSkillInfo {
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+    repoUrl: string;
+    author: string;
+    installed: boolean;
 }
 
 interface DogbaSkillApi {
@@ -259,6 +285,13 @@ interface DogbaSkillApi {
         agentName: string,
         projectDir?: string,
     ): Promise<{ success: boolean; skills: SkillInfo[]; error?: string }>;
+    search(query: string): Promise<{
+        success: boolean;
+        skills: MarketplaceSkillInfo[];
+        error?: string;
+    }>;
+    install(skillId: string): Promise<{ success: boolean; error?: string }>;
+    uninstall(skillId: string): Promise<{ success: boolean; error?: string }>;
 }
 
 interface DogbaWorktreeApi {

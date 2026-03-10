@@ -706,7 +706,7 @@ export const VersionHistory: React.FC = () => {
             {/* Message */}
             {message && (
                 <div
-                    className={`p-2 text-center text-xs font-bold ${message.includes('⚠️') ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}
+                    className={`p-2 text-center text-xs font-bold ${(message ?? '').includes('⚠️') ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}
                 >
                     {message}
                 </div>

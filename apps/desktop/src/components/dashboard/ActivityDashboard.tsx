@@ -516,15 +516,18 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
                                             ] ?? profile.evolution.stage}
                                         </div>
                                         <div>
-                                            기억: {profile.memories.length}개
+                                            기억:{' '}
+                                            {(profile.memories ?? []).length}개
                                         </div>
                                         <div>
-                                            스킬: {profile.skills.length}개 해금
+                                            스킬:{' '}
+                                            {(profile.skills ?? []).length}개
+                                            해금
                                         </div>
                                         <div>
                                             주특기:{' '}
                                             {getTopSkillCategory(
-                                                profile.taskHistory,
+                                                profile.taskHistory ?? [],
                                             )}
                                         </div>
                                     </div>
