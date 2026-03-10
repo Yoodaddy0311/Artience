@@ -111,7 +111,12 @@ export function createUserCharacter(
     // Create otter visual with user-specific name
     const stateColor =
         STATE_COLORS[STATUS_TO_AGENT_STATE[member.status]] || STATE_COLORS.IDLE;
-    const visual = createAnimalVisual(textures, member.username, stateColor, animalType);
+    const visual = createAnimalVisual(
+        textures,
+        member.username,
+        stateColor,
+        animalType,
+    );
 
     // Apply user-specific tint to distinguish from AI
     if (member.avatar_color) {

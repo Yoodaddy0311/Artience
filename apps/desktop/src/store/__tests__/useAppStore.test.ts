@@ -163,7 +163,6 @@ describe('useAppStore', () => {
         });
     });
 
-
     // ── Highlighted Agent ──
 
     describe('setHighlightedAgentId', () => {
@@ -367,12 +366,10 @@ describe('useAppStore', () => {
 
             (window as any).dogbaApi = {
                 project: {
-                    load: vi
-                        .fn()
-                        .mockResolvedValueOnce({
-                            success: true,
-                            data: mockProject,
-                        }),
+                    load: vi.fn().mockResolvedValueOnce({
+                        success: true,
+                        data: mockProject,
+                    }),
                     save: vi.fn(),
                     getDir: vi.fn(),
                     setDir: vi.fn(),

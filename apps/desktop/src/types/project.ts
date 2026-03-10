@@ -162,7 +162,10 @@ export const DEFAULT_PROJECT: ProjectData = {
                     y: 5,
                     width: 6,
                     height: 6,
-                    properties: { asset: '/sprites/iso/room-meeting.png', scale: 0.55 }
+                    properties: {
+                        asset: '/sprites/iso/room-meeting.png',
+                        scale: 0.55,
+                    },
                 },
                 {
                     id: 'room-server-1',
@@ -171,8 +174,11 @@ export const DEFAULT_PROJECT: ProjectData = {
                     y: 19,
                     width: 6,
                     height: 6,
-                    properties: { asset: '/sprites/iso/room-server.png', scale: 0.45 }
-                }
+                    properties: {
+                        asset: '/sprites/iso/room-server.png',
+                        scale: 0.45,
+                    },
+                },
             ],
             spawn: [],
         },

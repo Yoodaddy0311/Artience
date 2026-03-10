@@ -19,9 +19,8 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         const fetchHistory = async () => {
             try {
                 if (window.dogbaApi?.terminal?.readHistory) {
-                    const data = await window.dogbaApi.terminal.readHistory(
-                        agentId,
-                    );
+                    const data =
+                        await window.dogbaApi.terminal.readHistory(agentId);
                     setHistory(data || '기록이 없습니다.');
                 } else {
                     setHistory('API가 연결되지 않았습니다.');
@@ -47,7 +46,12 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div
                 className="bg-[#1e1e1e] border-2 border-gray-600 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-                style={{ width: '800px', height: '600px', maxWidth: '90vw', maxHeight: '90vh' }}
+                style={{
+                    width: '800px',
+                    height: '600px',
+                    maxWidth: '90vw',
+                    maxHeight: '90vh',
+                }}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* 헤더 */}
@@ -75,7 +79,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                         <div
                             ref={scrollRef}
                             className="flex-1 overflow-y-auto font-mono text-sm text-gray-300 pr-2 custom-scrollbar"
-                            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+                            style={{
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                            }}
                         >
                             {/* ANSI 코드를 단순 표시할 수도 있으나, 여기서는 xterm.js 없이 pre-wrap으로 보여주므로 깔끔한 텍스트 뷰를 위해 정제 기능이 필요할 수 있습니다. 
                                 향후 정규식으로 ANSI 색상 코드를 날리는 필터 도입 가능. 일단은 raw 로 출력합니다. */}

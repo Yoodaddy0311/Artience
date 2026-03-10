@@ -3,6 +3,18 @@ import { X } from 'lucide-react';
 import { type AgentProfile, type AgentState } from '../../types/platform';
 import { STATE_COLORS_CSS, STATE_LABELS } from './agent-runtime';
 import { assetPath } from '../../lib/assetPath';
+import { useGrowthStore } from '../../store/useGrowthStore';
+import { AgentLevelBadge, StatRadar } from '../growth';
+import type { EvolutionStage } from '../../types/growth';
+
+const STAGE_LABELS: Record<EvolutionStage, string> = {
+    novice: '초보',
+    apprentice: '견습',
+    journeyman: '숙련',
+    expert: '전문가',
+    master: '마스터',
+    legendary: '전설',
+};
 
 const STATE_BG: Record<AgentState, string> = {
     IDLE: 'bg-gray-100',
@@ -27,6 +39,8 @@ export const InspectorCard: React.FC<InspectorCardProps> = ({
     agent,
     onClose,
 }) => {
+    const profile = useGrowthStore((s) => s.profiles[agent.id]);
+
     return (
         <div className="absolute top-6 left-6 z-30 w-72 bg-white border-4 border-black rounded-2xl shadow-[6px_6px_0_0_#000] overflow-hidden select-none pointer-events-auto animate-in fade-in slide-in-from-left-2 duration-200">
             {/* Header */}
@@ -108,6 +122,29 @@ export const InspectorCard: React.FC<InspectorCardProps> = ({
                     </div>
                 )}
             </div>
+
+            {/* Growth Info */}
+            {profile && (
+                <div className="px-4 py-3 border-t-2 border-black">
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">
+                        성장 정보
+                    </div>
+                    <AgentLevelBadge agentId={agent.id} size="sm" />
+                    <div className="flex justify-center my-2">
+                        <StatRadar
+                            stats={profile.stats}
+                            size={120}
+                            showLabels={false}
+                        />
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                        <div>진화: {STAGE_LABELS[profile.evolution.stage]}</div>
+                        <div>총 EXP: {profile.totalExp.toLocaleString()}</div>
+                        <div>스킬: {profile.skills.length}개 해금</div>
+                        <div>기억: {profile.memories.length}개</div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

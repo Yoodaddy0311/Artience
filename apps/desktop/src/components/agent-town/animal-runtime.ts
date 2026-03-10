@@ -20,7 +20,13 @@ export type CharacterAnimState =
 
 // ── Animal texture bundle ──
 
-export type AnimalType = 'otter' | 'cat' | 'hamster' | 'dog' | 'rabbit' | 'raccoon';
+export type AnimalType =
+    | 'otter'
+    | 'cat'
+    | 'hamster'
+    | 'dog'
+    | 'rabbit'
+    | 'raccoon';
 
 /** Animal sprite textures loaded per direction */
 export interface AnimalTextures {
@@ -28,6 +34,15 @@ export interface AnimalTextures {
     ne: PIXI.Texture;
     sw: PIXI.Texture;
     se: PIXI.Texture;
+}
+
+// ── Desk animation (sprite sheet) ──
+
+/** Desk sprite sheet animation frames */
+export interface DeskAnimationFrames {
+    frames: PIXI.Texture[];
+    frameWidth: number;
+    frameHeight: number;
 }
 
 // ── Per-agent animal visual handle ──
@@ -54,6 +69,9 @@ export interface AnimalVisual {
     bubblePopping: boolean; // true while pop-in is active
     bubbleMinTimer: number; // frames since current bubble was shown (anti-flicker)
     bubblePendingText: string | null; // queued text while min display timer is active
+    // Desk animation
+    deskSprite: PIXI.AnimatedSprite | null;
+    isAtDesk: boolean;
     // Internal animation state
     _lastTickTime: number;
     _prevAnimState: CharacterAnimState;
@@ -68,7 +86,10 @@ export interface AnimalVisual {
 
 const ANIMAL_SPRITE_HEIGHT = 72; // Larger for better visibility in iso view
 
-const ANIMAL_PATHS: Record<Exclude<AnimalType, 'raccoon'>, { nw: string; ne: string; sw: string; se: string }> = {
+const ANIMAL_PATHS: Record<
+    Exclude<AnimalType, 'raccoon'>,
+    { nw: string; ne: string; sw: string; se: string }
+> = {
     otter: {
         nw: '/sprites/iso/otter-nw.png',
         ne: '/sprites/iso/otter-ne.png',
@@ -134,6 +155,9 @@ const THINK_PULSE_INTERVAL = 2000; // Pulse every 2 seconds
 const SUCCESS_BOUNCE_HEIGHTS = [12, 8, 4]; // Decreasing bounce heights
 const SUCCESS_BOUNCE_DURATION = 300; // Duration per bounce in ms
 
+// Desk animation tuning
+const DESK_ANIM_SPEED = 0.12; // ~7fps: 7/60 ≈ 0.12
+
 // Error animation tuning
 const ERROR_SHAKE_AMPLITUDE = 5; // Horizontal shake in pixels
 const ERROR_SHAKE_DURATION = 500; // Total shake duration in ms
@@ -169,7 +193,9 @@ function easeInQuad(t: number): number {
  * Load all animal directional textures for a specific animal type.
  * Call once on mount, reuse across all agents.
  */
-export async function loadAnimalTextures(type: Exclude<AnimalType, 'raccoon'>): Promise<AnimalTextures> {
+export async function loadAnimalTextures(
+    type: Exclude<AnimalType, 'raccoon'>,
+): Promise<AnimalTextures> {
     const paths = ANIMAL_PATHS[type];
     const [nw, ne, sw, se] = await Promise.all([
         PIXI.Assets.load(assetPath(paths.nw)),
@@ -178,6 +204,108 @@ export async function loadAnimalTextures(type: Exclude<AnimalType, 'raccoon'>): 
         PIXI.Assets.load(assetPath(paths.se)),
     ]);
     return { nw, ne, sw, se };
+}
+
+/**
+ * Load the desk sprite sheet and slice into 8 frames (4 cols x 2 rows).
+ * Used for working animation when agents are at their desks.
+ */
+export async function loadDeskAnimation(): Promise<DeskAnimationFrames> {
+    const sheetTexture = await PIXI.Assets.load(
+        assetPath('/sprites/iso/desk-work.png'),
+    );
+
+    const cols = 4;
+    const rows = 2;
+    const frameWidth = sheetTexture.width / cols;
+    const frameHeight = sheetTexture.height / rows;
+
+    const frames: PIXI.Texture[] = [];
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const frame = new PIXI.Texture({
+                source: sheetTexture.source,
+                frame: new PIXI.Rectangle(
+                    col * frameWidth,
+                    row * frameHeight,
+                    frameWidth,
+                    frameHeight,
+                ),
+            });
+            frames.push(frame);
+        }
+    }
+
+    return { frames, frameWidth, frameHeight };
+}
+
+// ── Desk animation show/hide ──
+
+/**
+ * Show desk animation, hiding the walking sprite.
+ * Creates an AnimatedSprite on first call, reuses it afterwards.
+ */
+export function showDeskAnimation(
+    visual: AnimalVisual,
+    deskFrames: DeskAnimationFrames,
+): void {
+    if (visual.isAtDesk) return;
+
+    // Hide the walking sprite
+    visual.sprite.visible = false;
+    visual.shadow.visible = false;
+
+    if (!visual.deskSprite) {
+        const animSprite = new PIXI.AnimatedSprite(deskFrames.frames);
+        animSprite.anchor.set(0.5, 0.78);
+        const targetHeight = 90;
+        const scale = targetHeight / deskFrames.frameHeight;
+        animSprite.scale.set(scale);
+        animSprite.animationSpeed = DESK_ANIM_SPEED;
+        animSprite.loop = true;
+        animSprite.zIndex = 1;
+        animSprite.play();
+        visual.container.addChild(animSprite);
+        visual.deskSprite = animSprite;
+    } else {
+        visual.deskSprite.visible = true;
+        visual.deskSprite.play();
+    }
+
+    visual.isAtDesk = true;
+}
+
+/**
+ * Hide desk animation, restoring the walking sprite.
+ */
+export function hideDeskAnimation(visual: AnimalVisual): void {
+    if (!visual.isAtDesk) return;
+
+    visual.sprite.visible = true;
+    visual.shadow.visible = true;
+
+    if (visual.deskSprite) {
+        visual.deskSprite.visible = false;
+        visual.deskSprite.stop();
+    }
+
+    visual.isAtDesk = false;
+}
+
+/**
+ * Destroy desk animation sprite and clean up resources.
+ */
+export function destroyDeskAnimation(visual: AnimalVisual): void {
+    // Restore walking sprite visibility in case destroyed while at desk
+    visual.sprite.visible = true;
+    visual.shadow.visible = true;
+
+    if (visual.deskSprite) {
+        visual.container.removeChild(visual.deskSprite);
+        visual.deskSprite.destroy();
+        visual.deskSprite = null;
+    }
+    visual.isAtDesk = false;
 }
 
 // ── Visual creation ──
@@ -214,11 +342,11 @@ export function createAnimalVisual(
     // despite different art proportions within each sprite canvas.
     // Otter (1.0) is the reference size — adjust others to visually match.
     const SCALE_CORRECTION: Record<string, number> = {
-        otter: 1.0,       // 500x500 — reference
-        cat: 1.0,         // 268x269 — smaller canvas
-        hamster: 1.0,     // 500x500 — same as otter
-        dog: 0.72,        // 500x500 — art fills more canvas
-        rabbit: 1.0,      // 314x314 — smaller canvas, boost to match otter
+        otter: 1.0, // 500x500 — reference
+        cat: 1.0, // 268x269 — smaller canvas
+        hamster: 1.0, // 500x500 — same as otter
+        dog: 0.72, // 500x500 — art fills more canvas
+        rabbit: 1.0, // 314x314 — smaller canvas, boost to match otter
     };
     const correction = SCALE_CORRECTION[animalType] ?? 1.0;
     const baseScale = (ANIMAL_SPRITE_HEIGHT / textures.se.height) * correction;
@@ -271,6 +399,8 @@ export function createAnimalVisual(
         bubbleMinTimer: 0,
         bubblePendingText: null,
         animalType,
+        deskSprite: null,
+        isAtDesk: false,
         _lastTickTime: now,
         _prevAnimState: 'idle',
         _idleMicroTimer: now + IDLE_MICRO_INTERVAL + Math.random() * 2000,
@@ -518,8 +648,8 @@ export function tickAnimalAnimation(
                 pulseCycle < 0.15
                     ? easeInOutQuad(pulseCycle / 0.15) * 0.05
                     : pulseCycle < 0.3
-                        ? easeInOutQuad(1 - (pulseCycle - 0.15) / 0.15) * 0.05
-                        : 0;
+                      ? easeInOutQuad(1 - (pulseCycle - 0.15) / 0.15) * 0.05
+                      : 0;
 
             sprite.scale.y = visual.baseScale * (1 + pulseAmount);
             sprite.scale.x = visual.baseScale * (1 + pulseAmount);
@@ -678,7 +808,10 @@ export function tickAnimalAnimation(
 /**
  * Update the state dot color.
  */
-export function updateAnimalStateDot(visual: AnimalVisual, color: number): void {
+export function updateAnimalStateDot(
+    visual: AnimalVisual,
+    color: number,
+): void {
     visual.stateDot.clear();
     visual.stateDot.circle(0, 0, 3);
     visual.stateDot.fill(color);
@@ -793,7 +926,7 @@ export function tickAnimalBubble(visual: AnimalVisual): void {
             t < 0.6
                 ? easeInOutQuad(t / 0.6) * BUBBLE_POP_OVERSHOOT
                 : BUBBLE_POP_OVERSHOOT -
-                (BUBBLE_POP_OVERSHOOT - 1) * easeOutQuad((t - 0.6) / 0.4);
+                  (BUBBLE_POP_OVERSHOOT - 1) * easeOutQuad((t - 0.6) / 0.4);
         visual.bubbleContainer.scale.set(eased);
         if (t >= 1) {
             visual.bubbleContainer.scale.set(1);

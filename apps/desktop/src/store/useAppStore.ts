@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware';
 import type { ProjectData, WorldObject } from '../types/project';
 import { DEFAULT_PROJECT } from '../types/project';
 
-
 // ── Toast Notifications ──
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -117,7 +116,6 @@ interface AppState {
     updateRunSettings: (patch: Partial<RunSettings>) => void;
     resetRunSettings: () => void;
 
-
     // Toast Notifications
     toasts: Toast[];
     addToast: (toast: Omit<Toast, 'id'>) => void;
@@ -151,8 +149,14 @@ interface AppState {
     saveProject: () => Promise<void>;
     updateProjectConfig: (patch: Partial<ProjectData>) => void;
     updateWorldObject: (id: string, x: number, y: number) => void;
-    updateWorldObjectProperties: (id: string, properties: Record<string, unknown>) => void;
-    updateWorldObjectCorners: (id: string, corners: { x: number; y: number }[] | undefined) => void;
+    updateWorldObjectProperties: (
+        id: string,
+        properties: Record<string, unknown>,
+    ) => void;
+    updateWorldObjectCorners: (
+        id: string,
+        corners: { x: number; y: number }[] | undefined,
+    ) => void;
 
     // Clipboard
     clipboard: WorldObject | null;
@@ -174,7 +178,9 @@ export const useAppStore = create<AppState>()(
             setClipboard: (obj) => set({ clipboard: obj }),
 
             pushUndoState: () => {
-                const currentConfig = JSON.parse(JSON.stringify(get().projectConfig));
+                const currentConfig = JSON.parse(
+                    JSON.stringify(get().projectConfig),
+                );
                 set((state) => {
                     const newStack = [...state.undoStack, currentConfig];
                     // keep max 50 states
@@ -261,7 +267,6 @@ export const useAppStore = create<AppState>()(
                 })),
             resetRunSettings: () =>
                 set({ runSettings: { ...DEFAULT_RUN_SETTINGS } }),
-
 
             // ── Toast Notifications ──
             toasts: [],
@@ -387,8 +392,12 @@ export const useAppStore = create<AppState>()(
                     const result = await api.load();
                     if (result.success && result.data) {
                         // Hotfix: Inject default objects if empty (for legacy saves)
-                        if (!result.data.world.layers.objects || result.data.world.layers.objects.length === 0) {
-                            result.data.world.layers.objects = DEFAULT_PROJECT.world.layers.objects;
+                        if (
+                            !result.data.world.layers.objects ||
+                            result.data.world.layers.objects.length === 0
+                        ) {
+                            result.data.world.layers.objects =
+                                DEFAULT_PROJECT.world.layers.objects;
                         }
 
                         set({
@@ -445,7 +454,7 @@ export const useAppStore = create<AppState>()(
                 set((state) => {
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
-                        obj.id === id ? { ...obj, x, y } : obj
+                        obj.id === id ? { ...obj, x, y } : obj,
                     );
                     return {
                         projectConfig: {
@@ -465,8 +474,14 @@ export const useAppStore = create<AppState>()(
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
                         obj.id === id
-                            ? { ...obj, properties: { ...obj.properties, ...properties } }
-                            : obj
+                            ? {
+                                  ...obj,
+                                  properties: {
+                                      ...obj.properties,
+                                      ...properties,
+                                  },
+                              }
+                            : obj,
                     );
                     return {
                         projectConfig: {
@@ -486,8 +501,11 @@ export const useAppStore = create<AppState>()(
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
                         obj.id === id
-                            ? { ...obj, properties: { ...obj.properties, corners } }
-                            : obj
+                            ? {
+                                  ...obj,
+                                  properties: { ...obj.properties, corners },
+                              }
+                            : obj,
                     );
                     return {
                         projectConfig: {

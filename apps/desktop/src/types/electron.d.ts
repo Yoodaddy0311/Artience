@@ -154,8 +154,14 @@ interface DogbaStudioApi {
     getAssets(): Promise<{
         assets: { name: string; path: string; type: string; size: number }[];
     }>;
-    uploadAsset(): Promise<{ success: boolean; error?: string; copied: string[] }>;
-    deleteAsset(filename: string): Promise<{ success: boolean; error?: string }>;
+    uploadAsset(): Promise<{
+        success: boolean;
+        error?: string;
+        copied: string[];
+    }>;
+    deleteAsset(
+        filename: string,
+    ): Promise<{ success: boolean; error?: string }>;
     getHistory(): Promise<{
         snapshots: { id: string; message: string; timestamp: string }[];
     }>;
@@ -243,9 +249,7 @@ interface DogbaSkillApi {
     list(
         projectDir?: string,
     ): Promise<{ success: boolean; skills: SkillInfo[]; error?: string }>;
-    installDefaults(
-        projectDir?: string,
-    ): Promise<{
+    installDefaults(projectDir?: string): Promise<{
         success: boolean;
         installed: string[];
         skipped: string[];
@@ -266,9 +270,7 @@ interface DogbaWorktreeApi {
         agentId: string,
         projectDir?: string,
     ): Promise<{ success: boolean; error?: string }>;
-    list(
-        projectDir?: string,
-    ): Promise<{
+    list(projectDir?: string): Promise<{
         worktrees: {
             agentId: string;
             path: string;
@@ -321,4 +323,4 @@ declare global {
     }
 }
 
-export { };
+export {};

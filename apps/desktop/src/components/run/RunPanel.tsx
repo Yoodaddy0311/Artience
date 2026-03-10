@@ -16,10 +16,20 @@ import {
     Package,
 } from 'lucide-react';
 import { assetPath } from '../../lib/assetPath';
+import { TeamOrchestrationView } from '../dashboard/TeamOrchestrationView';
+import { TaskTimeline } from '../dashboard/TaskTimeline';
+import { GrowthPanel } from '../growth';
 
 type SettingsSyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-type RunTab = 'agents' | 'jobs' | 'artifacts' | 'settings';
+type RunTab =
+    | 'agents'
+    | 'jobs'
+    | 'artifacts'
+    | 'team'
+    | 'timeline'
+    | 'growth'
+    | 'settings';
 
 // State color map per .ref/Specs/State_machine.md
 const STATE_COLORS: Record<AgentState, string> = {
@@ -228,6 +238,9 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     [
                         ['agents', `에이전트 (${agents.length})`],
                         ['jobs', 'Jobs'],
+                        ['team', '팀 구조'],
+                        ['timeline', '타임라인'],
+                        ['growth', '성장'],
                         ['artifacts', '산출물'],
                         ['settings', '설정'],
                     ] as [RunTab, string][]
@@ -335,7 +348,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                                 [
                                                                 {new Date(
                                                                     j.startedAt ??
-                                                                    Date.now(),
+                                                                        Date.now(),
                                                                 ).toLocaleTimeString()}
                                                                 ]
                                                             </span>
@@ -417,41 +430,41 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                         {(job.state ===
                                                             'RUNNING' ||
                                                             job.state ===
-                                                            'QUEUED') && (
-                                                                <button
-                                                                    onClick={(
-                                                                        e,
-                                                                    ) => {
-                                                                        e.stopPropagation();
-                                                                        stopJob(
-                                                                            job.id,
-                                                                        );
-                                                                    }}
-                                                                    className="bg-red-400 text-white border-2 border-black rounded-lg px-3 py-1 text-sm font-bold shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
-                                                                >
-                                                                    Stop
-                                                                </button>
-                                                            )}
+                                                                'QUEUED') && (
+                                                            <button
+                                                                onClick={(
+                                                                    e,
+                                                                ) => {
+                                                                    e.stopPropagation();
+                                                                    stopJob(
+                                                                        job.id,
+                                                                    );
+                                                                }}
+                                                                className="bg-red-400 text-white border-2 border-black rounded-lg px-3 py-1 text-sm font-bold shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+                                                            >
+                                                                Stop
+                                                            </button>
+                                                        )}
                                                         {(job.state ===
                                                             'SUCCESS' ||
                                                             job.state ===
-                                                            'ERROR' ||
+                                                                'ERROR' ||
                                                             job.state ===
-                                                            'CANCELED') && (
-                                                                <button
-                                                                    onClick={(
-                                                                        e,
-                                                                    ) => {
-                                                                        e.stopPropagation();
-                                                                        runRecipe(
-                                                                            job.recipeId,
-                                                                        );
-                                                                    }}
-                                                                    className="bg-blue-400 text-white border-2 border-black rounded-lg px-3 py-1 text-sm font-bold shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
-                                                                >
-                                                                    재실행
-                                                                </button>
-                                                            )}
+                                                                'CANCELED') && (
+                                                            <button
+                                                                onClick={(
+                                                                    e,
+                                                                ) => {
+                                                                    e.stopPropagation();
+                                                                    runRecipe(
+                                                                        job.recipeId,
+                                                                    );
+                                                                }}
+                                                                className="bg-blue-400 text-white border-2 border-black rounded-lg px-3 py-1 text-sm font-bold shadow-[2px_2px_0_0_#000] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+                                                            >
+                                                                재실행
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -530,7 +543,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                     >
                                                         <div className="w-10 h-10 rounded-lg border-2 border-black bg-gray-100 flex items-center justify-center text-lg font-black">
                                                             {art.type ===
-                                                                'image' ? (
+                                                            'image' ? (
                                                                 <Image
                                                                     className="w-5 h-5"
                                                                     strokeWidth={
@@ -538,7 +551,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                                     }
                                                                 />
                                                             ) : art.type ===
-                                                                'document' ? (
+                                                              'document' ? (
                                                                 <FileText
                                                                     className="w-5 h-5"
                                                                     strokeWidth={
@@ -581,6 +594,19 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                 ))}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* ─── Team Orchestration Tab ─── */}
+                {tab === 'team' && <TeamOrchestrationView />}
+
+                {/* ─── Timeline Tab ─── */}
+                {tab === 'timeline' && <TaskTimeline />}
+
+                {/* ─── Growth Tab ─── */}
+                {tab === 'growth' && (
+                    <div className="p-4">
+                        <GrowthPanel agentId={selectedAgentId || 'raccoon'} />
                     </div>
                 )}
 

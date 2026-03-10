@@ -48,8 +48,20 @@ interface RoomDef {
 }
 
 const ROOM_ASSETS: RoomDef[] = [
-    { zone: 'meeting', asset: '/sprites/iso/room-meeting.png', gridCol: 27, gridRow: 5, scale: 0.55 },
-    { zone: 'entrance', asset: '/sprites/iso/room-server.png', gridCol: 28, gridRow: 19, scale: 0.45 },
+    {
+        zone: 'meeting',
+        asset: '/sprites/iso/room-meeting.png',
+        gridCol: 27,
+        gridRow: 5,
+        scale: 0.55,
+    },
+    {
+        zone: 'entrance',
+        asset: '/sprites/iso/room-server.png',
+        gridCol: 28,
+        gridRow: 19,
+        scale: 0.45,
+    },
 ];
 
 // ── Isometric Tile Drawing ──
@@ -76,15 +88,19 @@ function drawIsoTile(
     const hw = ISO_TILE_W / 2;
     const hh = ISO_TILE_H / 2;
 
-    g.moveTo(x, y - hh);       // top
-    g.lineTo(x + hw, y);       // right
-    g.lineTo(x, y + hh);       // bottom
-    g.lineTo(x - hw, y);       // left
+    g.moveTo(x, y - hh); // top
+    g.lineTo(x + hw, y); // right
+    g.lineTo(x, y + hh); // bottom
+    g.lineTo(x - hw, y); // left
     g.closePath();
     g.fill({ color: fillColor, alpha: fillAlpha });
 
     if (strokeColor !== undefined) {
-        g.stroke({ width: 0.5, color: strokeColor, alpha: strokeAlpha ?? 0.15 });
+        g.stroke({
+            width: 0.5,
+            color: strokeColor,
+            alpha: strokeAlpha ?? 0.15,
+        });
     }
 }
 
@@ -116,7 +132,15 @@ export function createIsoFloor(
 
             if (cell.wall) {
                 // Wall tile: darker fill with a "height" side-face for 3D effect
-                drawIsoTile(floorGraphics, col, row, 0x94a3b8, 0.5, 0x64748b, 0.3);
+                drawIsoTile(
+                    floorGraphics,
+                    col,
+                    row,
+                    0x94a3b8,
+                    0.5,
+                    0x64748b,
+                    0.3,
+                );
 
                 // Draw wall side faces for 3D depth illusion
                 const { x, y } = gridToIso(col, row);
@@ -141,13 +165,29 @@ export function createIsoFloor(
                 floorGraphics.fill({ color: 0x4b5563, alpha: 0.4 });
             } else if (cell.collision) {
                 // Desk/furniture: medium tone to visually distinguish from floor
-                drawIsoTile(floorGraphics, col, row, 0xd1d5db, 0.6, 0x9ca3af, 0.3);
+                drawIsoTile(
+                    floorGraphics,
+                    col,
+                    row,
+                    0xd1d5db,
+                    0.6,
+                    0x9ca3af,
+                    0.3,
+                );
             } else {
                 // Floor tile: zone-colored with subtle grid stroke
                 const zoneStyle = cell.zone ? ZONE_COLORS[cell.zone] : null;
                 const fill = zoneStyle?.fill ?? 0xf3f4f6;
                 const alpha = zoneStyle?.alpha ?? 0.15;
-                drawIsoTile(floorGraphics, col, row, fill, alpha, 0xd1d5db, 0.1);
+                drawIsoTile(
+                    floorGraphics,
+                    col,
+                    row,
+                    fill,
+                    alpha,
+                    0xd1d5db,
+                    0.1,
+                );
             }
         }
     }
@@ -172,11 +212,18 @@ export async function createRoomSprites(
     parentContainer: PIXI.Container,
     objects: WorldObject[],
     isEditMode: boolean,
-    onObjectMoved?: (id: string, col: number, row: number, offsetX?: number, offsetY?: number, rotation?: number) => void,
+    onObjectMoved?: (
+        id: string,
+        col: number,
+        row: number,
+        offsetX?: number,
+        offsetY?: number,
+        rotation?: number,
+    ) => void,
     onDragStart?: () => boolean,
     onDragCancel?: () => void,
     onObjectSelected?: (id: string | null) => void,
-    onCornersMoved?: (id: string, corners: { x: number, y: number }[]) => void
+    onCornersMoved?: (id: string, corners: { x: number; y: number }[]) => void,
 ): Promise<{ id: string; sprite: PIXI.Container }[]> {
     const sprites: { id: string; sprite: PIXI.Container }[] = [];
 
@@ -187,11 +234,18 @@ export async function createRoomSprites(
             const texture = await PIXI.Assets.load(assetPath(assetStr));
 
             // Build 10x10 sub-divided mesh for smooth bilinear deformation
-            const geometry = new PIXI.PlaneGeometry({ width: texture.width, height: texture.height, verticesX: 10, verticesY: 10 });
+            const geometry = new PIXI.PlaneGeometry({
+                width: texture.width,
+                height: texture.height,
+                verticesX: 10,
+                verticesY: 10,
+            });
             const mesh = new PIXI.Mesh({ geometry, texture });
 
             // Wrap in a container so translation/rotation works similarly to the old Sprite
-            const sprite = new PIXI.Container() as PIXI.Container & { animState?: string };
+            const sprite = new PIXI.Container() as PIXI.Container & {
+                animState?: string;
+            };
             sprite.addChild(mesh);
 
             // Calculate anchor offsets (simulate anchor 0.5, 0.7)
@@ -202,21 +256,31 @@ export async function createRoomSprites(
 
             // Default corners if none are saved
             const baseCorners = [
-                { x: -w * ancX, y: -h * ancY },           // Top-Left
-                { x: w * (1 - ancX), y: -h * ancY },        // Top-Right
-                { x: w * (1 - ancX), y: h * (1 - ancY) },     // Bottom-Right
-                { x: -w * ancX, y: h * (1 - ancY) }         // Bottom-Left
+                { x: -w * ancX, y: -h * ancY }, // Top-Left
+                { x: w * (1 - ancX), y: -h * ancY }, // Top-Right
+                { x: w * (1 - ancX), y: h * (1 - ancY) }, // Bottom-Right
+                { x: -w * ancX, y: h * (1 - ancY) }, // Bottom-Left
             ];
 
-            const currentCorners = (obj.properties.corners as { x: number, y: number }[]) || baseCorners;
+            const currentCorners =
+                (obj.properties.corners as { x: number; y: number }[]) ||
+                baseCorners;
 
             // Save original vertices of the plane for u,v calc
-            const originalVertices = new Float32Array(geometry.getAttribute('aPosition').buffer.data);
+            const originalVertices = new Float32Array(
+                geometry.getAttribute('aPosition').buffer.data,
+            );
 
             // Function to re-map geometry based on current 4 corners
-            const updateMeshVertices = (corners: { x: number, y: number }[]) => {
-                const positions = geometry.getAttribute('aPosition').buffer.data;
-                const p0 = corners[0], p1 = corners[1], p2 = corners[2], p3 = corners[3];
+            const updateMeshVertices = (
+                corners: { x: number; y: number }[],
+            ) => {
+                const positions =
+                    geometry.getAttribute('aPosition').buffer.data;
+                const p0 = corners[0],
+                    p1 = corners[1],
+                    p2 = corners[2],
+                    p3 = corners[3];
 
                 for (let i = 0; i < originalVertices.length; i += 2) {
                     const ox = originalVertices[i];
@@ -246,12 +310,14 @@ export async function createRoomSprites(
             sprite.scale.set((obj.properties.scale as number) || 1);
             sprite.alpha = 0.85;
 
-            // Dynamic depth sorting: Base 100 + grid depth. 
+            // Dynamic depth sorting: Base 100 + grid depth.
             // Characters use a similar formula so they interleve correctly.
             const depth = obj.x + obj.y;
             sprite.zIndex = 100 + depth;
 
-            console.log(`[Room] Loaded ${assetStr} at iso(${sprite.x}, ${sprite.y}), scale=${sprite.scale.x}, zIndex=${sprite.zIndex}`);
+            console.log(
+                `[Room] Loaded ${assetStr} at iso(${sprite.x}, ${sprite.y}), scale=${sprite.scale.x}, zIndex=${sprite.zIndex}`,
+            );
 
             // Add interactivity for Tycoon-style drag & drop ONLY in Edit Mode
             if (isEditMode) {
@@ -274,12 +340,28 @@ export async function createRoomSprites(
 
                 const updateTransformFrame = () => {
                     transformFrame.clear();
-                    transformFrame.moveTo(currentCorners[0].x, currentCorners[0].y);
-                    transformFrame.lineTo(currentCorners[1].x, currentCorners[1].y);
-                    transformFrame.lineTo(currentCorners[2].x, currentCorners[2].y);
-                    transformFrame.lineTo(currentCorners[3].x, currentCorners[3].y);
+                    transformFrame.moveTo(
+                        currentCorners[0].x,
+                        currentCorners[0].y,
+                    );
+                    transformFrame.lineTo(
+                        currentCorners[1].x,
+                        currentCorners[1].y,
+                    );
+                    transformFrame.lineTo(
+                        currentCorners[2].x,
+                        currentCorners[2].y,
+                    );
+                    transformFrame.lineTo(
+                        currentCorners[3].x,
+                        currentCorners[3].y,
+                    );
                     transformFrame.closePath();
-                    transformFrame.stroke({ width: 2, color: 0x3b82f6, alpha: 0.8 }); // Blue outline
+                    transformFrame.stroke({
+                        width: 2,
+                        color: 0x3b82f6,
+                        alpha: 0.8,
+                    }); // Blue outline
                 };
                 updateTransformFrame();
 
@@ -293,12 +375,13 @@ export async function createRoomSprites(
                     handle.x = corner.x;
                     handle.y = corner.y;
                     // Inverse scale so handles don't become tiny if the building is scaled down
-                    const invScale = 1 / ((obj.properties?.scale as number) || 1);
+                    const invScale =
+                        1 / ((obj.properties?.scale as number) || 1);
                     handle.scale.set(invScale * 1.5);
                     handle.alpha = 0; // Hidden by default
 
                     let isDraggingHandle = false;
-                    let startCorners: { x: number, y: number }[] = [];
+                    let startCorners: { x: number; y: number }[] = [];
                     let startCx = 0;
                     let startCy = 0;
                     let startDist = 0;
@@ -310,10 +393,23 @@ export async function createRoomSprites(
                         isTransforming = true;
                         selectedHandleIndex = i;
 
-                        startCorners = currentCorners.map(c => ({ ...c }));
-                        startCx = (startCorners[0].x + startCorners[1].x + startCorners[2].x + startCorners[3].x) / 4;
-                        startCy = (startCorners[0].y + startCorners[1].y + startCorners[2].y + startCorners[3].y) / 4;
-                        startDist = Math.hypot(startCorners[i].x - startCx, startCorners[i].y - startCy);
+                        startCorners = currentCorners.map((c) => ({ ...c }));
+                        startCx =
+                            (startCorners[0].x +
+                                startCorners[1].x +
+                                startCorners[2].x +
+                                startCorners[3].x) /
+                            4;
+                        startCy =
+                            (startCorners[0].y +
+                                startCorners[1].y +
+                                startCorners[2].y +
+                                startCorners[3].y) /
+                            4;
+                        startDist = Math.hypot(
+                            startCorners[i].x - startCx,
+                            startCorners[i].y - startCy,
+                        );
                     });
 
                     handle.on('globalpointermove', (e) => {
@@ -321,25 +417,48 @@ export async function createRoomSprites(
                             const newPos = sprite.toLocal(e.global);
 
                             if (e.shiftKey && startDist > 0) {
-                                const newDist = Math.hypot(newPos.x - startCx, newPos.y - startCy);
+                                const newDist = Math.hypot(
+                                    newPos.x - startCx,
+                                    newPos.y - startCy,
+                                );
                                 const scale = newDist / startDist;
 
                                 startCorners.forEach((sc, idx) => {
-                                    currentCorners[idx].x = startCx + (sc.x - startCx) * scale;
-                                    currentCorners[idx].y = startCy + (sc.y - startCy) * scale;
+                                    currentCorners[idx].x =
+                                        startCx + (sc.x - startCx) * scale;
+                                    currentCorners[idx].y =
+                                        startCy + (sc.y - startCy) * scale;
                                     handles[idx].x = currentCorners[idx].x;
                                     handles[idx].y = currentCorners[idx].y;
                                 });
                             } else {
                                 handle.x = newPos.x;
                                 handle.y = newPos.y;
-                                currentCorners[i] = { x: newPos.x, y: newPos.y };
+                                currentCorners[i] = {
+                                    x: newPos.x,
+                                    y: newPos.y,
+                                };
 
                                 // Update proportional reference constraints for if user later holds Shift
-                                startCorners = currentCorners.map(c => ({ ...c }));
-                                startCx = (startCorners[0].x + startCorners[1].x + startCorners[2].x + startCorners[3].x) / 4;
-                                startCy = (startCorners[0].y + startCorners[1].y + startCorners[2].y + startCorners[3].y) / 4;
-                                startDist = Math.hypot(startCorners[i].x - startCx, startCorners[i].y - startCy);
+                                startCorners = currentCorners.map((c) => ({
+                                    ...c,
+                                }));
+                                startCx =
+                                    (startCorners[0].x +
+                                        startCorners[1].x +
+                                        startCorners[2].x +
+                                        startCorners[3].x) /
+                                    4;
+                                startCy =
+                                    (startCorners[0].y +
+                                        startCorners[1].y +
+                                        startCorners[2].y +
+                                        startCorners[3].y) /
+                                    4;
+                                startDist = Math.hypot(
+                                    startCorners[i].x - startCx,
+                                    startCorners[i].y - startCy,
+                                );
                             }
                             updateMeshVertices(currentCorners);
                             updateTransformFrame();
@@ -369,16 +488,16 @@ export async function createRoomSprites(
 
                 // Listen for custom toggle from parent UI
                 sprite.on('toggleTransformMode', (enabled: boolean) => {
-                    handles.forEach(h => h.alpha = enabled ? 1 : 0);
+                    handles.forEach((h) => (h.alpha = enabled ? 1 : 0));
                     transformFrame.alpha = enabled ? 1 : 0;
                     if (enabled) {
                         // Suppress pointermove on the main sprite to prevent dragging the whole object
                         sprite.eventMode = 'passive';
-                        handles.forEach(h => h.eventMode = 'static');
+                        handles.forEach((h) => (h.eventMode = 'static'));
                         updateTransformFrame();
                     } else {
                         sprite.eventMode = 'static';
-                        handles.forEach(h => h.eventMode = 'none');
+                        handles.forEach((h) => (h.eventMode = 'none'));
                     }
                 });
 
@@ -388,7 +507,7 @@ export async function createRoomSprites(
                     isDragging = true;
                     if (onObjectSelected) onObjectSelected(obj.id);
                     // Provide visual feedback for selection
-                    sprites.forEach(s => {
+                    sprites.forEach((s) => {
                         // reset all others
                         if (s.sprite !== sprite) {
                             s.sprite.tint = 0xffffff;
@@ -424,10 +543,20 @@ export async function createRoomSprites(
                         if (onObjectMoved) {
                             // Extract grid vs fine offset
                             const newGrid = isoToGrid(sprite.x, sprite.y);
-                            const newBaseIso = gridToIso(newGrid.col, newGrid.row);
+                            const newBaseIso = gridToIso(
+                                newGrid.col,
+                                newGrid.row,
+                            );
                             const newOffsetX = sprite.x - newBaseIso.x;
                             const newOffsetY = sprite.y - newBaseIso.y;
-                            onObjectMoved(obj.id, newGrid.col, newGrid.row, newOffsetX, newOffsetY, sprite.rotation);
+                            onObjectMoved(
+                                obj.id,
+                                newGrid.col,
+                                newGrid.row,
+                                newOffsetX,
+                                newOffsetY,
+                                sprite.rotation,
+                            );
                         }
                         if (onDragCancel) onDragCancel();
                     }
@@ -466,7 +595,10 @@ export function createZoneLabels(
     const container = new PIXI.Container();
 
     // Calculate zone bounding boxes in grid coordinates
-    const zoneBounds: Record<string, { minCol: number; minRow: number; maxCol: number; maxRow: number }> = {};
+    const zoneBounds: Record<
+        string,
+        { minCol: number; minRow: number; maxCol: number; maxRow: number }
+    > = {};
 
     for (let row = 0; row < gridRows; row++) {
         for (let col = 0; col < gridCols; col++) {
@@ -474,7 +606,12 @@ export function createZoneLabels(
             if (!cell?.zone || cell.wall || cell.collision) continue;
 
             if (!zoneBounds[cell.zone]) {
-                zoneBounds[cell.zone] = { minCol: col, minRow: row, maxCol: col, maxRow: row };
+                zoneBounds[cell.zone] = {
+                    minCol: col,
+                    minRow: row,
+                    maxCol: col,
+                    maxRow: row,
+                };
             } else {
                 const b = zoneBounds[cell.zone];
                 if (col < b.minCol) b.minCol = col;

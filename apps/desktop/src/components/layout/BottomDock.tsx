@@ -6,6 +6,7 @@ import {
 import { DEFAULT_AGENTS, type AgentProfile } from '../../types/platform';
 import { assetPath } from '../../lib/assetPath';
 import { HistoryModal } from './HistoryModal';
+import { AgentLevelBadge } from '../growth';
 
 // ── AgentSettings → extraArgs 변환 헬퍼 ──
 function buildExtraArgs(settings?: AgentSettings): string[] {
@@ -225,18 +226,21 @@ export const BottomDock: React.FC = () => {
     }, [ctxMenu, tabs, removeTab, removeDockAgent, teamAddedAgents]);
 
     // 즉시 제거 헬퍼 (X 버튼용)
-    const removeAgentDirectly = useCallback((agentId: string) => {
-        if (agentId === CTO_ID) return;
-        if ((teamAddedAgents ?? []).includes(agentId)) return;
-        window.dogbaApi?.chat?.closeSession(agentId);
-        const api = window.dogbaApi?.terminal;
-        const existingTab = tabs.find((t) => t.agentId === agentId);
-        if (existingTab && api) {
-            api.destroy(existingTab.id);
-            removeTab(existingTab.id);
-        }
-        removeDockAgent(agentId);
-    }, [tabs, removeTab, removeDockAgent, teamAddedAgents]);
+    const removeAgentDirectly = useCallback(
+        (agentId: string) => {
+            if (agentId === CTO_ID) return;
+            if ((teamAddedAgents ?? []).includes(agentId)) return;
+            window.dogbaApi?.chat?.closeSession(agentId);
+            const api = window.dogbaApi?.terminal;
+            const existingTab = tabs.find((t) => t.agentId === agentId);
+            if (existingTab && api) {
+                api.destroy(existingTab.id);
+                removeTab(existingTab.id);
+            }
+            removeDockAgent(agentId);
+        },
+        [tabs, removeTab, removeDockAgent, teamAddedAgents],
+    );
 
     // --- 설정 팝업 열기 ---
     const handleOpenSettings = useCallback(() => {
@@ -409,15 +413,23 @@ export const BottomDock: React.FC = () => {
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => handleCharacterClick(CTO_ID)}
-                                onContextMenu={(e) => handleContextMenu(e, CTO_ID)}
-                                onDoubleClick={() => setHistoryModalAgent({ id: CTO_ID, name: dokbaAgent.name })}
+                                onContextMenu={(e) =>
+                                    handleContextMenu(e, CTO_ID)
+                                }
+                                onDoubleClick={() =>
+                                    setHistoryModalAgent({
+                                        id: CTO_ID,
+                                        name: dokbaAgent.name,
+                                    })
+                                }
                                 title={`${dokbaAgent.name} - ${dokbaAgent.role}`}
-                                className={`relative flex flex-col items-center px-4 pt-2 pb-1.5 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[4px_4px_0_0_#000] border-3 border-yellow-500 cursor-pointer ${isActive
-                                    ? 'bg-[#E8DAFF] -translate-y-3'
-                                    : hasTab
-                                        ? 'bg-[#F0F0FF] hover:-translate-y-2'
-                                        : 'hover:-translate-y-2'
-                                    }`}
+                                className={`relative flex flex-col items-center px-4 pt-2 pb-1.5 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[4px_4px_0_0_#000] border-3 border-yellow-500 cursor-pointer ${
+                                    isActive
+                                        ? 'bg-[#E8DAFF] -translate-y-3'
+                                        : hasTab
+                                          ? 'bg-[#F0F0FF] hover:-translate-y-2'
+                                          : 'hover:-translate-y-2'
+                                }`}
                             >
                                 {/* 왕관 */}
                                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-base leading-none">
@@ -432,12 +444,14 @@ export const BottomDock: React.FC = () => {
                                     />
                                     {hasTab && tab && (
                                         <span
-                                            className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${tab.status === 'connected'
-                                                ? 'bg-green-400'
-                                                : tab.status === 'connecting'
-                                                    ? 'bg-yellow-400 animate-pulse'
-                                                    : 'bg-red-400'
-                                                }`}
+                                            className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                                                tab.status === 'connected'
+                                                    ? 'bg-green-400'
+                                                    : tab.status ===
+                                                        'connecting'
+                                                      ? 'bg-yellow-400 animate-pulse'
+                                                      : 'bg-red-400'
+                                            }`}
                                         />
                                     )}
                                     {restoring &&
@@ -447,25 +461,30 @@ export const BottomDock: React.FC = () => {
                                         )}
                                 </div>
                                 <span
-                                    className={`text-[11px] font-black mt-0.5 ${isActive ? 'text-black' : 'text-gray-700'
-                                        }`}
+                                    className={`text-[11px] font-black mt-0.5 ${
+                                        isActive
+                                            ? 'text-black'
+                                            : 'text-gray-700'
+                                    }`}
                                 >
                                     {dokbaAgent.name}
                                 </span>
                                 {/* 활동 상태 표시 */}
                                 {dokbaActivityLabel && (
                                     <span
-                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 ${dokbaActivity === 'working' ||
+                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 ${
+                                            dokbaActivity === 'working' ||
                                             dokbaActivity === 'thinking'
-                                            ? 'bg-[#FFD100] text-black animate-pulse'
-                                            : dokbaActivity === 'success'
-                                                ? 'bg-[#A0E8AF] text-black'
-                                                : 'bg-[#FF6B6B] text-white'
-                                            }`}
+                                                ? 'bg-[#FFD100] text-black animate-pulse'
+                                                : dokbaActivity === 'success'
+                                                  ? 'bg-[#A0E8AF] text-black'
+                                                  : 'bg-[#FF6B6B] text-white'
+                                        }`}
                                     >
                                         {dokbaActivityLabel}
                                     </span>
                                 )}
+                                <AgentLevelBadge agentId={CTO_ID} size="sm" />
                             </div>
                         );
                     })()}
@@ -487,18 +506,27 @@ export const BottomDock: React.FC = () => {
                                 tabIndex={0}
                                 key={agentId}
                                 onClick={() => handleCharacterClick(agentId)}
-                                onContextMenu={(e) => handleContextMenu(e, agentId)}
-                                onDoubleClick={() => setHistoryModalAgent({ id: agentId, name: agent.name })}
+                                onContextMenu={(e) =>
+                                    handleContextMenu(e, agentId)
+                                }
+                                onDoubleClick={() =>
+                                    setHistoryModalAgent({
+                                        id: agentId,
+                                        name: agent.name,
+                                    })
+                                }
                                 title={`${agent.name} - ${agent.role}`}
-                                className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 cursor-pointer ${isTeamMember
-                                    ? 'border-blue-500'
-                                    : 'border-black'
-                                    } ${isActive
+                                className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 cursor-pointer ${
+                                    isTeamMember
+                                        ? 'border-blue-500'
+                                        : 'border-black'
+                                } ${
+                                    isActive
                                         ? 'bg-[#E8DAFF] -translate-y-2'
                                         : hasTab
-                                            ? 'bg-[#F0F0FF] hover:-translate-y-1'
-                                            : 'hover:-translate-y-1'
-                                    }`}
+                                          ? 'bg-[#F0F0FF] hover:-translate-y-1'
+                                          : 'hover:-translate-y-1'
+                                }`}
                             >
                                 {/* 팀 뱃지 */}
                                 {isTeamMember && (
@@ -528,21 +556,27 @@ export const BottomDock: React.FC = () => {
                                     />
                                     {hasTab && tab && (
                                         <span
-                                            className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${tab.status === 'connected'
-                                                ? 'bg-green-400'
-                                                : tab.status === 'connecting'
-                                                    ? 'bg-yellow-400 animate-pulse'
-                                                    : 'bg-red-400'
-                                                }`}
+                                            className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                                tab.status === 'connected'
+                                                    ? 'bg-green-400'
+                                                    : tab.status ===
+                                                        'connecting'
+                                                      ? 'bg-yellow-400 animate-pulse'
+                                                      : 'bg-red-400'
+                                            }`}
                                         />
                                     )}
                                 </div>
                                 <span
-                                    className={`text-[9px] font-bold mt-0.5 ${isActive ? 'text-black' : 'text-gray-500'
-                                        }`}
+                                    className={`text-[9px] font-bold mt-0.5 ${
+                                        isActive
+                                            ? 'text-black'
+                                            : 'text-gray-500'
+                                    }`}
                                 >
                                     {agent.name}
                                 </span>
+                                <AgentLevelBadge agentId={agentId} size="sm" />
                             </div>
                         );
                     })}
@@ -607,7 +641,9 @@ export const BottomDock: React.FC = () => {
                         title="독바 닫기"
                         className="flex items-center justify-center w-[36px] h-[36px] rounded-2xl bg-white/80 backdrop-blur-sm border-2 border-gray-400 hover:border-black hover:bg-gray-100 transition-all duration-200 shadow-[2px_2px_0_0_#0002] mb-1 ml-2"
                     >
-                        <span className="text-xl font-bold text-gray-400 hover:text-black">▼</span>
+                        <span className="text-xl font-bold text-gray-400 hover:text-black">
+                            ▼
+                        </span>
                     </button>
                 </div>
             ) : (
@@ -617,8 +653,12 @@ export const BottomDock: React.FC = () => {
                         className="flex items-center gap-2 px-6 py-1.5 rounded-t-2xl bg-white/90 backdrop-blur-md border-t-2 border-x-2 border-gray-400 hover:border-black hover:bg-white hover:-translate-y-1 transition-all duration-300 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] group-hover:pb-3"
                         title="독바 펼치기"
                     >
-                        <span className="text-xs font-bold text-gray-500 group-hover:text-black">▲</span>
-                        <span className="text-xs font-bold text-gray-500 group-hover:text-black">Team Dock</span>
+                        <span className="text-xs font-bold text-gray-500 group-hover:text-black">
+                            ▲
+                        </span>
+                        <span className="text-xs font-bold text-gray-500 group-hover:text-black">
+                            Team Dock
+                        </span>
                     </button>
                 </div>
             )}

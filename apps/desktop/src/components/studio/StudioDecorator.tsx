@@ -5,7 +5,9 @@ interface StudioDecoratorProps {
     onClose?: () => void;
 }
 
-export const StudioDecorator: React.FC<StudioDecoratorProps> = ({ onClose }) => {
+export const StudioDecorator: React.FC<StudioDecoratorProps> = ({
+    onClose,
+}) => {
     const [assets, setAssets] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAsset, setSelectedAsset] = useState<number | null>(null);
@@ -90,10 +92,11 @@ export const StudioDecorator: React.FC<StudioDecoratorProps> = ({ onClose }) => 
                                 onClick={() =>
                                     setSelectedAsset(isSelected ? null : idx)
                                 }
-                                className={`overflow-hidden transition-all cursor-pointer group ${isSelected
+                                className={`overflow-hidden transition-all cursor-pointer group ${
+                                    isSelected
                                         ? 'rounded-xl border-2 border-black bg-yellow-100 shadow-[4px_4px_0_0_#000] scale-[1.02]'
                                         : 'rounded-3xl border border-cream-200 bg-white shadow-sm hover:shadow-lg hover:scale-105'
-                                    }`}
+                                }`}
                             >
                                 <div className="aspect-square bg-cream-100 flex items-center justify-center p-4 relative overflow-hidden">
                                     <img
@@ -108,10 +111,11 @@ export const StudioDecorator: React.FC<StudioDecoratorProps> = ({ onClose }) => 
                                     )}
                                 </div>
                                 <div
-                                    className={`p-4 border-t flex justify-between items-center ${isSelected
+                                    className={`p-4 border-t flex justify-between items-center ${
+                                        isSelected
                                             ? 'bg-yellow-50 border-black'
                                             : 'bg-white border-cream-100'
-                                        }`}
+                                    }`}
                                 >
                                     <span className="text-sm font-bold text-brown-800 truncate">
                                         에셋_{idx + 1}

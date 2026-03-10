@@ -556,7 +556,7 @@ ipcMain.handle(
                 // Apply permission mode: explicit setting > preset > default
                 const permMode =
                     settings.permissionMode &&
-                        settings.permissionMode !== 'default'
+                    settings.permissionMode !== 'default'
                         ? settings.permissionMode
                         : getDefaultPermissionMode(label);
                 if (permMode && permMode !== 'default') {
@@ -1362,7 +1362,12 @@ ipcMain.handle('studio:uploadAsset', async () => {
     if (!mainWindow) return { success: false, error: 'No window', copied: [] };
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }],
+        filters: [
+            {
+                name: 'Images',
+                extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
+            },
+        ],
     });
     if (result.canceled || result.filePaths.length === 0) {
         return { success: false, error: 'canceled', copied: [] };
@@ -1421,7 +1426,12 @@ ipcMain.handle('studio:getAssets', async () => {
                 ].includes(ext)
                     ? 'image'
                     : 'data';
-                return { name: f.name, path: `/sprites/iso/${f.name}`, type, size: stat.size };
+                return {
+                    name: f.name,
+                    path: `/sprites/iso/${f.name}`,
+                    type,
+                    size: stat.size,
+                };
             });
         return { assets };
     } catch {

@@ -14,6 +14,7 @@ import { assetPath } from '../../lib/assetPath';
 import { ChatInput } from './ChatInput';
 import type { ParsedEvent } from '../../lib/pty-parser';
 import type { ViewMode } from '../../store/useTerminalStore';
+import { useTimelineStore } from '../../store/useTimelineStore';
 
 // ── 상대 시간 포맷 ──
 function relativeTime(ts: number): string {
@@ -411,19 +412,21 @@ const ViewModeToggle: React.FC<{
         <div className="flex items-center bg-gray-100 border-2 border-black rounded-full p-0.5">
             <button
                 onClick={() => onChange('terminal')}
-                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${mode === 'terminal'
-                    ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
-                    : 'text-gray-500 hover:text-black'
-                    }`}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${
+                    mode === 'terminal'
+                        ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
+                        : 'text-gray-500 hover:text-black'
+                }`}
             >
                 터미널
             </button>
             <button
                 onClick={() => onChange('chat')}
-                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${mode === 'chat'
-                    ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
-                    : 'text-gray-500 hover:text-black'
-                    }`}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full transition-all ${
+                    mode === 'chat'
+                        ? 'bg-[#E8DAFF] border border-black shadow-[1px_1px_0_0_#000] text-black'
+                        : 'text-gray-500 hover:text-black'
+                }`}
             >
                 채팅
             </button>
@@ -461,11 +464,11 @@ export const TerminalPanel: React.FC = () => {
     const activeAgent = activeTab?.agentId
         ? activeTab.agentId === 'raccoon'
             ? {
-                id: 'raccoon',
-                name: 'Dokba',
-                role: 'AI 어시스턴트',
-                sprite: '/assets/characters/dokba_profile.png',
-            }
+                  id: 'raccoon',
+                  name: 'Dokba',
+                  role: 'AI 어시스턴트',
+                  sprite: '/assets/characters/dokba_profile.png',
+              }
             : DEFAULT_AGENTS.find((a) => a.id === activeTab.agentId)
         : null;
 
@@ -591,10 +594,39 @@ export const TerminalPanel: React.FC = () => {
                 const state = useTerminalStore.getState();
                 const tab = state.tabs.find((t) => t.id === tabId);
                 if (tab?.agentId) {
-                    state.setAgentActivity(
+                    const typedActivity =
+                        activity as import('../../lib/pty-parser').AgentActivity;
+                    state.setAgentActivity(tab.agentId, typedActivity);
+
+                    // Record timeline entry for Gantt view
+                    const lastToolEvent = (state.parsedMessages[tabId] ?? [])
+                        .slice(-5)
+                        .reverse()
+                        .find(
+                            (e: ParsedEvent) =>
+                                e.type === 'tool_use' && e.toolName,
+                        );
+                    const tls = useTimelineStore.getState();
+                    tls.recordTransition(
                         tab.agentId,
-                        activity as import('../../lib/pty-parser').AgentActivity,
+                        typedActivity,
+                        lastToolEvent?.toolName,
                     );
+
+                    // Propagate timeline to team members
+                    const teamMembers = state.activeTeamMembers;
+                    if (teamMembers && Object.keys(teamMembers).length > 0) {
+                        for (const memberAgentId of Object.values(
+                            teamMembers,
+                        )) {
+                            if (memberAgentId === tab.agentId) continue;
+                            tls.recordTransition(
+                                memberAgentId,
+                                typedActivity,
+                                lastToolEvent?.toolName,
+                            );
+                        }
+                    }
                 }
             },
         );
@@ -875,18 +907,20 @@ export const TerminalPanel: React.FC = () => {
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${tab.id === activeTabId
-                                ? 'bg-[#E8DAFF] border-2 border-black shadow-[2px_2px_0_0_#000] text-black'
-                                : 'bg-white border border-gray-300 text-gray-500 hover:border-black'
-                                }`}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
+                                tab.id === activeTabId
+                                    ? 'bg-[#E8DAFF] border-2 border-black shadow-[2px_2px_0_0_#000] text-black'
+                                    : 'bg-white border border-gray-300 text-gray-500 hover:border-black'
+                            }`}
                         >
                             <span
-                                className={`w-1.5 h-1.5 rounded-full ${tab.status === 'connected'
-                                    ? 'bg-green-400'
-                                    : tab.status === 'connecting'
-                                        ? 'bg-yellow-400'
-                                        : 'bg-red-400'
-                                    }`}
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                    tab.status === 'connected'
+                                        ? 'bg-green-400'
+                                        : tab.status === 'connecting'
+                                          ? 'bg-yellow-400'
+                                          : 'bg-red-400'
+                                }`}
                             />
                             {tab.label}
                             <span

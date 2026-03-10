@@ -100,20 +100,20 @@ export type WsMessage =
 
 // Character profile images — 5 canonical characters (ch0–ch4 from .ref/image)
 const SPRITES = {
-    OTTER: '/assets/characters/dokba_profile.png',    // ch0 — Dokba
-    CAT: '/assets/characters/cat_profile.png',         // ch1 — Marketer
+    OTTER: '/assets/characters/dokba_profile.png', // ch0 — Dokba
+    CAT: '/assets/characters/cat_profile.png', // ch1 — Marketer
     HAMSTER: '/assets/characters/hamster_profile.png', // ch2 — Intern
-    DOG: '/assets/characters/dog_profile.png',         // ch3 — PM
-    RABBIT: '/assets/characters/rabbit_profile.png',   // ch4 — Designer
+    DOG: '/assets/characters/dog_profile.png', // ch3 — PM
+    RABBIT: '/assets/characters/rabbit_profile.png', // ch4 — Designer
 } as const;
 
 // Agent ID → AnimalType mapping (used by AgentTown to pick correct map sprite)
 export const AGENT_ANIMAL_MAP: Record<string, string> = {
-    raccoon: 'otter',   // ch0 — Dokba
-    a01: 'cat',         // ch1 — Cat Marketer (Sera)
-    a02: 'hamster',     // ch2 — Hamster Intern (Rio)
-    a03: 'dog',         // ch3 — Dog PM (Luna)
-    a04: 'rabbit',      // ch4 — Rabbit Designer (Alex)
+    raccoon: 'otter', // ch0 — Dokba
+    a01: 'cat', // ch1 — Cat Marketer (Sera)
+    a02: 'hamster', // ch2 — Hamster Intern (Rio)
+    a03: 'dog', // ch3 — Dog PM (Luna)
+    a04: 'rabbit', // ch4 — Rabbit Designer (Alex)
 };
 
 // Default agents — 4 team members matching ch1-ch4

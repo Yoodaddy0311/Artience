@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { FolderOpen, Image, FileText, RefreshCw, Trash2, Upload } from 'lucide-react';
+import {
+    FolderOpen,
+    Image,
+    FileText,
+    RefreshCw,
+    Trash2,
+    Upload,
+} from 'lucide-react';
 import { useAppStore, type ProjectAsset } from '../../store/useAppStore';
 
 export const AssetsPanel: React.FC = () => {
@@ -19,10 +26,15 @@ export const AssetsPanel: React.FC = () => {
             const data = await studioApi.getAssets();
             if (data.assets && Array.isArray(data.assets)) {
                 // filter out hidden files and character sprite sheets
-                const visibleAssets = data.assets.filter(a => {
+                const visibleAssets = data.assets.filter((a) => {
                     if (a.name.startsWith('.')) return false;
                     // Ignore character directions (e.g. cat-se.png, cat-idle.png)
-                    if (/-(se|sw|ne|nw|idle|walk|sit)\.(png|webp)$/i.test(a.name)) return false;
+                    if (
+                        /-(se|sw|ne|nw|idle|walk|sit)\.(png|webp)$/i.test(
+                            a.name,
+                        )
+                    )
+                        return false;
                     return true;
                 });
                 const mapped: ProjectAsset[] = visibleAssets.map((a, idx) => ({
@@ -69,10 +81,13 @@ export const AssetsPanel: React.FC = () => {
         }
     };
 
-    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, asset: ProjectAsset) => {
+    const handleDragStart = (
+        e: React.DragEvent<HTMLDivElement>,
+        asset: ProjectAsset,
+    ) => {
         e.dataTransfer.setData(
             'application/json',
-            JSON.stringify({ type: 'asset', url: asset.url, name: asset.name })
+            JSON.stringify({ type: 'asset', url: asset.url, name: asset.name }),
         );
         e.dataTransfer.effectAllowed = 'copy';
     };
@@ -129,7 +144,10 @@ export const AssetsPanel: React.FC = () => {
                             className="w-9 h-9 flex items-center justify-center border-2 border-black rounded-lg bg-white shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
                             title="에셋 업로드"
                         >
-                            <Upload className="w-4 h-4 text-black" strokeWidth={2.5} />
+                            <Upload
+                                className="w-4 h-4 text-black"
+                                strokeWidth={2.5}
+                            />
                         </button>
                         <button
                             onClick={fetchAssets}
@@ -219,7 +237,10 @@ export const AssetsPanel: React.FC = () => {
                                     className="w-8 h-8 flex items-center justify-center border-2 border-transparent rounded bg-transparent opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-all text-gray-400 hover:text-red-500"
                                     title="삭제"
                                 >
-                                    <Trash2 className="w-4 h-4" strokeWidth={2.5} />
+                                    <Trash2
+                                        className="w-4 h-4"
+                                        strokeWidth={2.5}
+                                    />
                                 </button>
                             </div>
                         ))}

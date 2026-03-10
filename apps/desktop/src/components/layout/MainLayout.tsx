@@ -38,8 +38,10 @@ import { ToastContainer } from '../ui/Toast';
 import { InspectorCard } from '../agent-town/InspectorCard';
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
-import { MailInbox } from '../mail/MailInbox';
+import { MailCenterModal } from '../mail/MailCenterModal';
 import { useTerminalStore } from '../../store/useTerminalStore';
+import { useGrowthStore } from '../../store/useGrowthStore';
+import { LevelUpNotification } from '../growth';
 
 // ── Feature Flags ──
 
@@ -121,7 +123,10 @@ const StudioActions: React.FC = () => {
         setApplying(true);
         try {
             await saveProject();
-            addToast({ type: 'success', message: '프로젝트가 저장되었습니다.' });
+            addToast({
+                type: 'success',
+                message: '프로젝트가 저장되었습니다.',
+            });
         } catch {
             addToast({ type: 'error', message: 'Failed to apply draft.' });
         }
@@ -207,6 +212,16 @@ export const MainLayout: React.FC = () => {
             unsub?.();
         };
     }, []);
+
+    // Level-up notification queue
+    const levelUpFirst = useGrowthStore((s) => s.levelUpQueue[0] ?? null);
+    const shiftLevelUp = useGrowthStore((s) => s.shiftLevelUp);
+    const levelUpStage = useGrowthStore((s) => {
+        const entry = s.levelUpQueue[0];
+        if (!entry) return undefined;
+        const profile = s.profiles[entry.agentId];
+        return profile?.evolution.stage;
+    });
 
     // Terminal panel visibility (right side, like RunPanel)
     const hasTerminalTabs = useTerminalStore((s) => s.tabs.length > 0);
@@ -301,10 +316,11 @@ export const MainLayout: React.FC = () => {
                                             onClick={() =>
                                                 setStudioTab(tab.key)
                                             }
-                                            className={`flex-1 py-2.5 text-xs font-black transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${studioTab === tab.key
-                                                ? 'bg-[#FFD100] text-black border-b-0'
-                                                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
-                                                }`}
+                                            className={`flex-1 py-2.5 text-xs font-black transition-all focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
+                                                studioTab === tab.key
+                                                    ? 'bg-[#FFD100] text-black border-b-0'
+                                                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                                            }`}
                                         >
                                             {tab.icon} {tab.label}
                                         </button>
@@ -318,13 +334,17 @@ export const MainLayout: React.FC = () => {
                                 >
                                     {studioTab === 'inbox' && <AssetInbox />}
                                     {studioTab === 'builder' && <AssetsPanel />}
-                                    {studioTab === 'history' && <VersionHistory />}
+                                    {studioTab === 'history' && (
+                                        <VersionHistory />
+                                    )}
                                 </div>
                             </div>
                             {/* Right: Asset Gallery (Hidden in Build Mode since canvas handles it) */}
                             {studioTab !== 'builder' && (
                                 <div className="flex-1 ml-4 bg-white rounded-3xl shadow-xl border-4 border-cream-200 overflow-hidden pointer-events-auto">
-                                    <StudioDecorator onClose={() => setActiveView('town')} />
+                                    <StudioDecorator
+                                        onClose={() => setActiveView('town')}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -368,8 +388,6 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             onClick={() => {
                                                 toggleInbox();
-                                                if (!isInboxOpen)
-                                                    setShowRunPanel(false);
                                             }}
                                             className={`relative w-[44px] h-[44px] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-lg flex items-center justify-center hover:-translate-y-1 hover:shadow-[6px_6px_0_0_#000] active:translate-y-1 active:shadow-none transition-all ${isInboxOpen ? 'bg-[#FFD100]' : 'bg-white'}`}
                                         >
@@ -573,32 +591,31 @@ export const MainLayout: React.FC = () => {
             </div>
 
             {/* Terminal/Chat Panel (Right side, like RunPanel) */}
-            {hasTerminalTabs &&
-                panelVisible &&
-                !showRunPanel &&
-                !isInboxOpen && (
-                    <div
-                        className={`w-full ${panelFullscreen ? 'max-w-full' : 'max-w-lg'} h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0`}
+            {hasTerminalTabs && panelVisible && !showRunPanel && (
+                <div
+                    className={`w-full ${panelFullscreen ? 'max-w-full' : 'max-w-lg'} h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0`}
+                >
+                    <Suspense
+                        fallback={
+                            <div className="w-full h-full bg-cream-50 flex items-center justify-center text-black text-sm font-bold">
+                                Loading...
+                            </div>
+                        }
                     >
-                        <Suspense
-                            fallback={
-                                <div className="w-full h-full bg-cream-50 flex items-center justify-center text-black text-sm font-bold">
-                                    Loading...
-                                </div>
-                            }
-                        >
-                            <TerminalPanel />
-                        </Suspense>
-                    </div>
-                )}
+                        <TerminalPanel />
+                    </Suspense>
+                </div>
+            )}
 
             {/* Run Panel (Right) */}
-            {showRunPanel && !isInboxOpen && (
+            {showRunPanel && (
                 <RunPanel onClose={() => setShowRunPanel(false)} />
             )}
 
-            {/* Mail Inbox (Right) */}
-            {isInboxOpen && <MailInbox onClose={() => setInboxOpen(false)} />}
+            {/* Mail Center Modal (Overlay) */}
+            {isInboxOpen && (
+                <MailCenterModal onClose={() => setInboxOpen(false)} />
+            )}
 
             {/* Bottom Dock */}
             <BottomDock />
@@ -608,6 +625,16 @@ export const MainLayout: React.FC = () => {
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
             />
+
+            {/* Level-Up Notification */}
+            {levelUpFirst && levelUpStage && (
+                <LevelUpNotification
+                    agentName={levelUpFirst.agentName}
+                    newLevel={levelUpFirst.newLevel}
+                    evolutionStage={levelUpStage}
+                    onClose={shiftLevelUp}
+                />
+            )}
 
             {/* Toast Notifications */}
             <ToastContainer />

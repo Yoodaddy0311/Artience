@@ -313,7 +313,9 @@ try {
                 error?: string;
                 copied: string[];
             }> => ipcRenderer.invoke('studio:uploadAsset'),
-            deleteAsset: (filename: string): Promise<{
+            deleteAsset: (
+                filename: string,
+            ): Promise<{
                 success: boolean;
                 error?: string;
             }> => ipcRenderer.invoke('studio:deleteAsset', filename),

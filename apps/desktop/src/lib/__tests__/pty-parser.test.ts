@@ -387,8 +387,8 @@ describe('detectActivity', () => {
         expect(detectActivity([makeEvent('thinking')])).toBe('thinking');
     });
 
-    it('returns working when tool_use events present', () => {
-        expect(detectActivity([makeEvent('tool_use', 'Edit')])).toBe('working');
+    it('returns writing when Edit tool_use events present', () => {
+        expect(detectActivity([makeEvent('tool_use', 'Edit')])).toBe('writing');
     });
 
     it('returns error when error events present', () => {
