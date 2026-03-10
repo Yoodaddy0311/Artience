@@ -262,9 +262,12 @@ export async function createRoomSprites(
                 { x: -w * ancX, y: h * (1 - ancY) }, // Bottom-Left
             ];
 
-            const currentCorners =
-                (obj.properties.corners as { x: number; y: number }[]) ||
-                baseCorners;
+            const savedCorners = obj.properties.corners as
+                | { x: number; y: number }[]
+                | undefined;
+            const currentCorners = savedCorners
+                ? savedCorners.map((c) => ({ x: c.x, y: c.y }))
+                : baseCorners.map((c) => ({ x: c.x, y: c.y }));
 
             // Save original vertices of the plane for u,v calc
             const originalVertices = new Float32Array(
@@ -472,7 +475,13 @@ export async function createRoomSprites(
                             isTransforming = false;
                             selectedHandleIndex = -1;
                             if (onCornersMoved) {
-                                onCornersMoved(obj.id, currentCorners);
+                                onCornersMoved(
+                                    obj.id,
+                                    currentCorners.map((c) => ({
+                                        x: c.x,
+                                        y: c.y,
+                                    })),
+                                );
                             }
                         }
                     };
@@ -542,7 +551,11 @@ export async function createRoomSprites(
                         sprite.zIndex = 100 + depth;
                         if (onObjectMoved) {
                             // Extract grid vs fine offset
-                            const newGrid = isoToGrid(sprite.x, sprite.y);
+                            const rawGrid = isoToGrid(sprite.x, sprite.y);
+                            const newGrid = {
+                                col: Math.round(rawGrid.col),
+                                row: Math.round(rawGrid.row),
+                            };
                             const newBaseIso = gridToIso(
                                 newGrid.col,
                                 newGrid.row,

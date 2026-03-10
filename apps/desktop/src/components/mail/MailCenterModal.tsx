@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     X,
     Mail,
@@ -157,10 +157,13 @@ export const MailCenterModal: React.FC<{ onClose: () => void }> = ({
     }, [handleKeyDown]);
 
     // Filter messages
-    const filteredMessages =
-        activeFilter === 'all'
-            ? messages
-            : messages.filter((m) => m.type === activeFilter);
+    const filteredMessages = useMemo(
+        () =>
+            activeFilter === 'all'
+                ? messages
+                : messages.filter((m) => m.type === activeFilter),
+        [messages, activeFilter],
+    );
 
     // Selected message
     const selectedMessage = selectedId
@@ -168,11 +171,12 @@ export const MailCenterModal: React.FC<{ onClose: () => void }> = ({
         : null;
 
     // Auto-select first message
+    const firstFilteredId = filteredMessages[0]?.id ?? null;
     useEffect(() => {
-        if (!selectedMessage && filteredMessages.length > 0) {
-            setSelectedId(filteredMessages[0].id);
+        if (!selectedId && firstFilteredId) {
+            setSelectedId(firstFilteredId);
         }
-    }, [selectedMessage, filteredMessages]);
+    }, [selectedId, firstFilteredId]);
 
     const handleSelect = (msg: MailMessage) => {
         setSelectedId(msg.id);

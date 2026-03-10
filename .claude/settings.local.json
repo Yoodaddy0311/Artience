@@ -1,17 +1,15 @@
 {
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:docs.anthropic.com)",
-      "Bash(git remote:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(pnpm install:*)",
-      "Bash(pnpm run dev:*)"
-    ]
-  },
-  "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "artience"
-  ]
+    "permissions": {
+        "allow": [
+            "WebFetch(domain:docs.anthropic.com)",
+            "Bash(git remote:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git push:*)",
+            "Bash(pnpm install:*)",
+            "Bash(pnpm run dev:*)"
+        ]
+    },
+    "enableAllProjectMcpServers": true,
+    "enabledMcpjsonServers": ["artience"]
 }

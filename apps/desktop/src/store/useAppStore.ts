@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware';
 import type { ProjectData, WorldObject } from '../types/project';
 import { DEFAULT_PROJECT } from '../types/project';
 
+// ── Debounced IPC save ──
+let _saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const SAVE_DEBOUNCE_MS = 300;
+
 // ── Toast Notifications ──
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -156,6 +160,12 @@ interface AppState {
     updateWorldObjectCorners: (
         id: string,
         corners: { x: number; y: number }[] | undefined,
+    ) => void;
+    updateWorldObjectFull: (
+        id: string,
+        x: number,
+        y: number,
+        properties: Record<string, unknown>,
     ) => void;
 
     // Clipboard
@@ -422,24 +432,29 @@ export const useAppStore = create<AppState>()(
             },
 
             saveProject: async () => {
-                const api = window.dogbaApi?.project;
-                if (!api) return;
-                set({ projectLoading: true, projectError: null });
-                try {
-                    const config = get().projectConfig;
-                    const result = await api.save(config);
-                    if (!result.success)
-                        throw new Error(result.error || 'Failed to save');
-                    set({ projectLoading: false });
-                } catch (err) {
-                    set({
-                        projectLoading: false,
-                        projectError:
-                            err instanceof Error
-                                ? err.message
-                                : 'Failed to save project',
-                    });
-                }
+                // Zustand persist (localStorage) writes immediately via middleware.
+                // Debounce only the IPC call to electron-store to avoid flooding.
+                if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
+                _saveDebounceTimer = setTimeout(async () => {
+                    const api = window.dogbaApi?.project;
+                    if (!api) return;
+                    set({ projectLoading: true, projectError: null });
+                    try {
+                        const config = get().projectConfig;
+                        const result = await api.save(config);
+                        if (!result.success)
+                            throw new Error(result.error || 'Failed to save');
+                        set({ projectLoading: false });
+                    } catch (err) {
+                        set({
+                            projectLoading: false,
+                            projectError:
+                                err instanceof Error
+                                    ? err.message
+                                    : 'Failed to save project',
+                        });
+                    }
+                }, SAVE_DEBOUNCE_MS);
             },
 
             updateProjectConfig: (patch) => {
@@ -519,6 +534,35 @@ export const useAppStore = create<AppState>()(
                 });
             },
 
+            updateWorldObjectFull: (id, x, y, properties) => {
+                get().pushUndoState();
+                set((state) => {
+                    const layers = state.projectConfig.world.layers;
+                    const objects = layers.objects.map((obj) =>
+                        obj.id === id
+                            ? {
+                                  ...obj,
+                                  x,
+                                  y,
+                                  properties: {
+                                      ...obj.properties,
+                                      ...properties,
+                                  },
+                              }
+                            : obj,
+                    );
+                    return {
+                        projectConfig: {
+                            ...state.projectConfig,
+                            world: {
+                                ...state.projectConfig.world,
+                                layers: { ...layers, objects },
+                            },
+                        },
+                    };
+                });
+            },
+
             resetProjectConfig: () =>
                 set({
                     projectConfig: { ...DEFAULT_PROJECT },
@@ -532,14 +576,45 @@ export const useAppStore = create<AppState>()(
                 gamification: state.gamification,
                 projectConfig: state.projectConfig,
             }),
+            merge: (persisted: unknown, current: AppState): AppState => {
+                const p = persisted as Partial<AppState> | undefined;
+                if (!p) return current;
+
+                // Validate projectConfig structure, fallback corrupted fields
+                let projectConfig = current.projectConfig;
+                if (p.projectConfig) {
+                    const objects = p.projectConfig.world?.layers?.objects;
+                    projectConfig = {
+                        ...DEFAULT_PROJECT,
+                        ...p.projectConfig,
+                        world: {
+                            ...DEFAULT_PROJECT.world,
+                            ...p.projectConfig.world,
+                            layers: {
+                                ...DEFAULT_PROJECT.world.layers,
+                                ...p.projectConfig.world?.layers,
+                                objects:
+                                    Array.isArray(objects) && objects.length > 0
+                                        ? objects
+                                        : DEFAULT_PROJECT.world.layers.objects,
+                            },
+                        },
+                    };
+                }
+
+                return {
+                    ...current,
+                    appSettings: p.appSettings ?? current.appSettings,
+                    gamification: p.gamification ?? current.gamification,
+                    projectConfig,
+                };
+            },
             onRehydrateStorage: () => (state) => {
-                // Inject default building objects if persisted state has none
-                if (state && state.projectConfig) {
-                    const objects = state.projectConfig.world?.layers?.objects;
-                    if (!objects || objects.length === 0) {
-                        state.projectConfig.world.layers.objects =
-                            DEFAULT_PROJECT.world.layers.objects;
-                    }
+                if (!state) return;
+                // If localStorage had no/empty projectConfig, load from electron-store
+                const objects = state.projectConfig?.world?.layers?.objects;
+                if (!objects || objects.length === 0) {
+                    void state.loadProject();
                 }
             },
         },

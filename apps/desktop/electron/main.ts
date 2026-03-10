@@ -1,6 +1,20 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+
+// ── EPIPE crash prevention (Windows node-pty pipe teardown) ──
+// When a PTY process exits, stdout/stderr pipes may break, causing
+// EPIPE on console.log which crashes the Electron main process.
+process.stdout?.on?.('error', () => {});
+process.stderr?.on?.('error', () => {});
+process.on('uncaughtException', (err) => {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') return;
+    // Let Electron handle non-pipe errors normally
+    if (app.isReady()) {
+        dialog.showErrorBox('Error', `${err.name}: ${err.message}`);
+    }
+});
 import * as os from 'os';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -230,16 +244,10 @@ function processParsedEvents(
 
     // Detect activity change
     const newActivity = detectActivity(state.events);
-    console.log(
-        `[PTY - DEBUG] activity: ${state.lastActivity} → ${newActivity} (events = ${state.events.length})`,
-    );
     if (newActivity !== state.lastActivity) {
         const prevActivity = state.lastActivity;
         state.lastActivity = newActivity;
 
-        console.log(
-            `[PTY - DEBUG] *** ACTIVITY CHANGED: ${prevActivity} → ${newActivity} for tab ${tabId}`,
-        );
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
                 'terminal:activity-change',
@@ -336,12 +344,6 @@ function processPtyForParser(tabId: string, rawData: string): void {
     // Prepend any buffered partial line from previous chunk
     const data = state.lineBuffer + rawData;
 
-    // DEBUG: log raw data info
-    const hasNewline = data.includes('\n') || data.includes('\r');
-    console.log(
-        `[PTY - DEBUG] tabId = ${tabId} rawLen = ${rawData.length} bufLen = ${state.lineBuffer.length} hasNewline = ${hasNewline} `,
-    );
-
     // If the chunk does not end with a newline, the last segment is incomplete
     let dataToParse: string;
     if (data.length > 0 && !data.endsWith('\n') && !data.endsWith('\r')) {
@@ -352,21 +354,12 @@ function processPtyForParser(tabId: string, rawData: string): void {
         if (lastNewline === -1) {
             // Entire chunk is a partial line — buffer it, schedule flush
             state.lineBuffer = data;
-            console.log(
-                `[PTY - DEBUG] BUFFERED(no newline) bufLen = ${state.lineBuffer.length} `,
-            );
             state.flushTimer = setTimeout(() => {
                 state.flushTimer = null;
                 if (state.lineBuffer.length === 0) return;
                 const buffered = state.lineBuffer;
                 state.lineBuffer = '';
-                console.log(
-                    `[PTY - DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`,
-                );
                 const parsed = parsePtyChunk(buffered);
-                console.log(
-                    `[PTY - DEBUG] flush parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
-                );
                 processParsedEvents(tabId, state, parsed);
             }, LINE_BUFFER_FLUSH_MS);
             return;
@@ -382,13 +375,7 @@ function processPtyForParser(tabId: string, rawData: string): void {
                 if (state.lineBuffer.length === 0) return;
                 const buffered = state.lineBuffer;
                 state.lineBuffer = '';
-                console.log(
-                    `[PTY - DEBUG] FLUSH TIMER fired for tab ${tabId}, flushing ${buffered.length} bytes`,
-                );
                 const parsed = parsePtyChunk(buffered);
-                console.log(
-                    `[PTY - DEBUG] flush parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
-                );
                 processParsedEvents(tabId, state, parsed);
             }, LINE_BUFFER_FLUSH_MS);
         }
@@ -398,9 +385,6 @@ function processPtyForParser(tabId: string, rawData: string): void {
     }
 
     const parsed = parsePtyChunk(dataToParse);
-    console.log(
-        `[PTY - DEBUG] parsed ${parsed.length} events: ${parsed.map((e) => e.type).join(', ')} `,
-    );
     processParsedEvents(tabId, state, parsed);
 }
 

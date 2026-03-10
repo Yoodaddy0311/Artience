@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { EvolutionStage } from '../../types/growth';
 
 const STAGE_COLORS: Record<EvolutionStage, string> = {
@@ -33,6 +33,8 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
     onClose,
 }) => {
     const [visible, setVisible] = useState(false);
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
     useEffect(() => {
         // Trigger slide-in
@@ -41,14 +43,14 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
         // Auto-dismiss after 5 seconds
         const dismissTimer = setTimeout(() => {
             setVisible(false);
-            setTimeout(onClose, 300);
+            setTimeout(() => onCloseRef.current(), 300);
         }, 5000);
 
         return () => {
             cancelAnimationFrame(showTimer);
             clearTimeout(dismissTimer);
         };
-    }, [onClose]);
+    }, []); // stable — onClose tracked via ref
 
     const color = STAGE_COLORS[evolutionStage];
 

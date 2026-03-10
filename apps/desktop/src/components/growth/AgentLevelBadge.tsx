@@ -26,8 +26,9 @@ export const AgentLevelBadge: React.FC<AgentLevelBadgeProps> = ({
     agentId,
     size = 'md',
 }) => {
+    const hydrated = useGrowthStore((s) => s._hasHydrated);
     const profile = useGrowthStore((s) => s.profiles[agentId]);
-    if (!profile) return null;
+    if (!hydrated || !profile) return null;
 
     const { level, exp, expToNext, evolution } = profile;
     const color = STAGE_COLORS[evolution.stage];

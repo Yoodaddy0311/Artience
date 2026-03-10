@@ -286,9 +286,13 @@ export const AgentTown: React.FC = () => {
                     id: string,
                     corners: { x: number; y: number }[],
                 ) => {
+                    const clonedCorners = corners.map((c) => ({
+                        x: c.x,
+                        y: c.y,
+                    }));
                     useAppStore
                         .getState()
-                        .updateWorldObjectCorners(id, corners);
+                        .updateWorldObjectCorners(id, clonedCorners);
                     saveProject(); // 즉시 저장
                 };
 
@@ -824,9 +828,13 @@ export const AgentTown: React.FC = () => {
                                     });
                                 },
                                 (oid, corners) => {
+                                    const cloned = corners.map((c) => ({
+                                        x: c.x,
+                                        y: c.y,
+                                    }));
                                     useAppStore
                                         .getState()
-                                        .updateWorldObjectCorners(oid, corners);
+                                        .updateWorldObjectCorners(oid, cloned);
                                     useAppStore.getState().saveProject();
                                 },
                             ).then((newSprites) => {
@@ -941,9 +949,13 @@ export const AgentTown: React.FC = () => {
                                     });
                                 },
                                 (oid, corners) => {
+                                    const cloned = corners.map((c) => ({
+                                        x: c.x,
+                                        y: c.y,
+                                    }));
                                     useAppStore
                                         .getState()
-                                        .updateWorldObjectCorners(oid, corners);
+                                        .updateWorldObjectCorners(oid, cloned);
                                     useAppStore.getState().saveProject();
                                 },
                             ).then((newSprites) => {

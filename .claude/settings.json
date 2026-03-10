@@ -17,7 +17,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "echo [%date% %time%] STOP >> \"%USERPROFILE%\\.claude\\activity.log\""
+                        "command": "echo \"[$(date '+%Y-%m-%d %H:%M:%S')] STOP\" >> \"$HOME/.claude/activity.log\""
                     }
                 ]
             }
