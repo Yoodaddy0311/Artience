@@ -2,7 +2,8 @@
  * MCP Artience Server — Artience 전용 MCP 도구 서버.
  *
  * stdio 기반으로 Claude Code가 spawn하며 JSON-RPC 2.0 프로토콜을 사용.
- * 도구 4개: artience_notify, artience_agent_status, artience_send_mail, artience_project_info
+ * 도구 6개: artience_notify, artience_agent_status, artience_send_mail, artience_project_info,
+ *           artience_messenger_send, artience_messenger_receive
  *
  * 두 가지 모드:
  * 1. In-process: Electron main에서 startMcpServer(bridge) 호출 — bridge 직접 사용
@@ -107,6 +108,48 @@ const TOOLS: McpToolDefinition[] = [
             properties: {},
         },
     },
+    {
+        name: 'artience_messenger_send',
+        description: '연결된 메신저(Discord/Slack)로 메시지를 전송합니다.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                adapter: {
+                    type: 'string',
+                    description: '메신저 ID (discord/slack)',
+                    enum: ['discord', 'slack'],
+                },
+                channel: {
+                    type: 'string',
+                    description: '채널 ID 또는 이름',
+                },
+                message: {
+                    type: 'string',
+                    description: '전송할 메시지',
+                },
+            },
+            required: ['adapter', 'channel', 'message'],
+        },
+    },
+    {
+        name: 'artience_messenger_receive',
+        description: '연결된 메신저에서 최근 수신 메시지를 조회합니다.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                adapter: {
+                    type: 'string',
+                    description: '메신저 ID (discord/slack)',
+                    enum: ['discord', 'slack'],
+                },
+                limit: {
+                    type: 'number',
+                    description: '조회할 메시지 수 (기본 10)',
+                },
+            },
+            required: ['adapter'],
+        },
+    },
 ];
 
 // ── State Bridge (main process에서 주입) ────────────────────────────────────
@@ -131,6 +174,17 @@ export interface McpBridge {
         agents: string[];
         activeSessions: string[];
     };
+    sendMessengerMessage(
+        adapter: string,
+        channel: string,
+        message: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    getMessengerMessages(
+        adapter: string,
+        limit?: number,
+    ): Promise<{
+        messages: { sender: string; content: string; timestamp: number }[];
+    }>;
 }
 
 // ── File-based IPC Bridge (standalone mode) ─────────────────────────────────
@@ -271,6 +325,45 @@ class FileBridge implements McpBridge {
             activeSessions: [],
         }) as any;
     }
+
+    async sendMessengerMessage(
+        adapter: string,
+        channel: string,
+        message: string,
+    ): Promise<{ success: boolean; error?: string }> {
+        const result = this.sendRequest('sendMessengerMessage', {
+            adapter,
+            channel,
+            message,
+        });
+        return (
+            (result as { success: boolean; error?: string }) || {
+                success: false,
+                error: 'Bridge timeout',
+            }
+        );
+    }
+
+    async getMessengerMessages(
+        adapter: string,
+        limit?: number,
+    ): Promise<{
+        messages: { sender: string; content: string; timestamp: number }[];
+    }> {
+        const result = this.sendRequest('getMessengerMessages', {
+            adapter,
+            limit: limit ?? 10,
+        });
+        return (
+            (result as {
+                messages: {
+                    sender: string;
+                    content: string;
+                    timestamp: number;
+                }[];
+            }) || { messages: [] }
+        );
+    }
 }
 
 // ── MCP Server (stdio) ─────────────────────────────────────────────────────
@@ -282,11 +375,11 @@ class FileBridge implements McpBridge {
 export function startMcpServer(bridge: McpBridge): void {
     const rl = readline.createInterface({ input: process.stdin });
 
-    rl.on('line', (line) => {
+    rl.on('line', async (line) => {
         if (!line.trim()) return;
         try {
             const req = JSON.parse(line) as JsonRpcRequest;
-            const response = handleRequest(req, bridge);
+            const response = await handleRequest(req, bridge);
             if (response) {
                 process.stdout.write(JSON.stringify(response) + '\n');
             }
@@ -305,10 +398,10 @@ export function startMcpServer(bridge: McpBridge): void {
     });
 }
 
-function handleRequest(
+async function handleRequest(
     req: JsonRpcRequest,
     bridge: McpBridge,
-): JsonRpcResponse {
+): Promise<JsonRpcResponse> {
     switch (req.method) {
         case 'initialize':
             return {
@@ -347,10 +440,10 @@ function handleRequest(
     }
 }
 
-function handleToolCall(
+async function handleToolCall(
     req: JsonRpcRequest,
     bridge: McpBridge,
-): JsonRpcResponse {
+): Promise<JsonRpcResponse> {
     const params = req.params as
         | { name: string; arguments?: Record<string, unknown> }
         | undefined;
@@ -437,6 +530,56 @@ function handleToolCall(
                             {
                                 type: 'text',
                                 text: JSON.stringify(info, null, 2),
+                            },
+                        ],
+                    },
+                };
+            }
+
+            case 'artience_messenger_send': {
+                const adapter = (args.adapter as string) || '';
+                const channel = (args.channel as string) || '';
+                const msgText = (args.message as string) || '';
+                const sendResult = await bridge.sendMessengerMessage(
+                    adapter,
+                    channel,
+                    msgText,
+                );
+                return {
+                    jsonrpc: '2.0',
+                    id: req.id,
+                    result: {
+                        content: [
+                            {
+                                type: 'text',
+                                text: sendResult.success
+                                    ? `Message sent to ${adapter}/${channel}`
+                                    : `Failed: ${sendResult.error}`,
+                            },
+                        ],
+                    },
+                };
+            }
+
+            case 'artience_messenger_receive': {
+                const recvAdapter = (args.adapter as string) || '';
+                const limit = (args.limit as number) || 10;
+                const recvResult = await bridge.getMessengerMessages(
+                    recvAdapter,
+                    limit,
+                );
+                return {
+                    jsonrpc: '2.0',
+                    id: req.id,
+                    result: {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(
+                                    recvResult.messages,
+                                    null,
+                                    2,
+                                ),
                             },
                         ],
                     },

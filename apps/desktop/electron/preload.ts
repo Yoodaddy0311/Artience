@@ -575,6 +575,171 @@ try {
                 ipcRenderer.invoke('hooks:init-project', projectDir),
         },
 
+        // ── Provider Registry ──
+        provider: {
+            list: (): Promise<{
+                providers: {
+                    id: string;
+                    name: string;
+                    command: string;
+                    installed: boolean;
+                }[];
+            }> => ipcRenderer.invoke('provider:list'),
+            check: (
+                id: string,
+            ): Promise<{ installed: boolean; authenticated: boolean }> =>
+                ipcRenderer.invoke('provider:check', id),
+            setDefault: (
+                id: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('provider:set-default', id),
+        },
+
+        // ── Workflow Pack ──
+        workflow: {
+            list: (): Promise<{ packs: any[] }> =>
+                ipcRenderer.invoke('workflow:list'),
+            apply: (
+                packId: string,
+            ): Promise<{
+                success: boolean;
+                agentsAdded: string[];
+                skillsActivated: string[];
+                error?: string;
+            }> => ipcRenderer.invoke('workflow:apply', packId),
+            detect: (projectDir?: string): Promise<{ packId: string | null }> =>
+                ipcRenderer.invoke('workflow:detect', projectDir),
+        },
+
+        // ── Report Generator ──
+        report: {
+            generate: (
+                data: any,
+                projectDir?: string,
+            ): Promise<{
+                success: boolean;
+                filePath?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('report:generate', data, projectDir),
+            list: (projectDir?: string): Promise<{ reports: any[] }> =>
+                ipcRenderer.invoke('report:list', projectDir),
+            get: (
+                filePath: string,
+            ): Promise<{
+                success: boolean;
+                content?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('report:get', filePath),
+        },
+
+        // ── Meeting Manager ──
+        meeting: {
+            create: (
+                topic: string,
+                participantIds: string[],
+            ): Promise<{
+                success: boolean;
+                meetingId?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('meeting:create', topic, participantIds),
+            start: (
+                meetingId: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('meeting:start', meetingId),
+            stop: (
+                meetingId: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('meeting:stop', meetingId),
+            onRoundUpdate: (
+                callback: (meetingId: string, round: any) => void,
+            ) => {
+                const listener = (
+                    _e: Electron.IpcRendererEvent,
+                    meetingId: string,
+                    round: any,
+                ) => callback(meetingId, round);
+                ipcRenderer.on('meeting:round-update', listener);
+                return () =>
+                    ipcRenderer.removeListener(
+                        'meeting:round-update',
+                        listener,
+                    );
+            },
+            onMeetingEnd: (
+                callback: (meetingId: string, result: any) => void,
+            ) => {
+                const listener = (
+                    _e: Electron.IpcRendererEvent,
+                    meetingId: string,
+                    result: any,
+                ) => callback(meetingId, result);
+                ipcRenderer.on('meeting:end', listener);
+                return () =>
+                    ipcRenderer.removeListener('meeting:end', listener);
+            },
+        },
+
+        // ── Messenger Bridge ──
+        messenger: {
+            connect: (
+                adapterId: string,
+                config: Record<string, string>,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('messenger:connect', adapterId, config),
+            disconnect: (
+                adapterId: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('messenger:disconnect', adapterId),
+            send: (
+                adapterId: string,
+                channel: string,
+                message: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke(
+                    'messenger:send',
+                    adapterId,
+                    channel,
+                    message,
+                ),
+            list: (): Promise<{
+                adapters: {
+                    id: string;
+                    name: string;
+                    connected: boolean;
+                }[];
+            }> => ipcRenderer.invoke('messenger:list'),
+            onMessage: (callback: (msg: any) => void) => {
+                const listener = (_e: Electron.IpcRendererEvent, msg: any) =>
+                    callback(msg);
+                ipcRenderer.on('messenger:message', listener);
+                return () =>
+                    ipcRenderer.removeListener('messenger:message', listener);
+            },
+        },
+
+        // ── Agent DB ──
+        agentDb: {
+            list: (includeInactive?: boolean): Promise<{ agents: any[] }> =>
+                ipcRenderer.invoke('agent-db:list', includeInactive),
+            get: (id: string): Promise<{ agent?: any; error?: string }> =>
+                ipcRenderer.invoke('agent-db:get', id),
+            create: (
+                agent: any,
+            ): Promise<{
+                success: boolean;
+                agent?: any;
+                error?: string;
+            }> => ipcRenderer.invoke('agent-db:create', agent),
+            update: (
+                id: string,
+                patch: any,
+            ): Promise<{
+                success: boolean;
+                agent?: any;
+                error?: string;
+            }> => ipcRenderer.invoke('agent-db:update', id, patch),
+        },
+
         // ── App Notifications (from MCP server / main process) ──
         notification: {
             onToast: (

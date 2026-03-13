@@ -417,7 +417,47 @@ Parallelizable:
   Phase 3: Step 3.1-3.5 // Step 3.6 // Step 3.7-3.8 (3개 병렬)
 
 Success Criteria:
-  [ ] Phase 1: 외부 스킬 설치/삭제 + 리포트에 git diff 포함
-  [ ] Phase 2: CTO 미팅 모드 동작 + 2개 이상 프로바이더 지원
-  [ ] Phase 3: Discord/Slack 양방향 통신 + 에이전트 동적 CRUD
+  [x] Phase 1: 외부 스킬 설치/삭제 + 리포트에 git diff 포함 (2026-03-11 완료)
+  [x] Phase 2: CTO 미팅 모드 동작 + 2개 이상 프로바이더 지원 (2026-03-13 완료)
+  [x] Phase 3: Discord/Slack 양방향 통신 + 에이전트 동적 CRUD (2026-03-13 완료)
+  [ ] Phase 4: CEO Directive 라우팅 + 에이전트 상태 머신 + 성과 메트릭
 ```
+
+---
+
+## 8. Phase 4 로드맵 (벤치마킹 2차 분석 기반)
+
+> 추가일: 2026-03-13
+> claw-empire 심층 분석에서 발견된 16개 신규 GAP 아이템 기반
+
+### P0: 핵심 UX 개선 (Risk: Medium)
+
+| Step | 기능                                             | 파일                                                              | 의존 |
+| ---- | ------------------------------------------------ | ----------------------------------------------------------------- | ---- |
+| 4.1  | CEO Directive 라우팅 (`$`/`#` prefix)            | `electron/main.ts` + `src/lib/directive-parser.ts` 신규           | 없음 |
+| 4.2  | 에이전트 상태 머신 (idle→working→reviewing→done) | `src/store/useTerminalStore.ts` + `src/types/agent-state.ts` 신규 | 없음 |
+| 4.3  | 태스크 큐 우선순위 스케줄링                      | `electron/task-scheduler.ts` 신규                                 | 4.2  |
+
+### P1: 운영 효율화 (Risk: Medium)
+
+| Step | 기능                                    | 파일                                                                  | 의존      |
+| ---- | --------------------------------------- | --------------------------------------------------------------------- | --------- |
+| 4.4  | 세션 히스토리 검색                      | `electron/main.ts` + `src/components/terminal/HistorySearch.tsx` 신규 | 없음      |
+| 4.5  | 에이전트 성과 메트릭 (완료율/속도/품질) | `electron/agent-metrics.ts` 신규 + `src/store/useGrowthStore.ts`      | 4.2       |
+| 4.6  | 팀 구성 템플릿                          | `electron/team-template.ts` 신규                                      | Phase 3.6 |
+
+### P2: 협업 강화 (Risk: High)
+
+| Step | 기능                            | 파일                                              | 의존      |
+| ---- | ------------------------------- | ------------------------------------------------- | --------- |
+| 4.7  | 에이전트 간 P2P 메시징          | `electron/agent-p2p.ts` 신규                      | Phase 2.1 |
+| 4.8  | 실시간 대시보드 (상태 모니터링) | `src/components/dashboard/LiveDashboard.tsx` 신규 | 4.2       |
+
+### P3: 자동화 고도화 (Risk: High)
+
+| Step | 기능                             | 파일                                                  | 의존      |
+| ---- | -------------------------------- | ----------------------------------------------------- | --------- |
+| 4.9  | 자동 회고 리포트 (스프린트/주간) | `electron/retro-generator.ts` 신규                    | Phase 2.7 |
+| 4.10 | 에이전트 학습 피드백 루프        | `src/lib/feedback-loop.ts` 신규 + `useGrowthStore.ts` | 4.5       |
+
+**검증**: CEO Directive로 전사 지시 → 에이전트 자동 배정 → 상태 머신 전이 → 성과 메트릭 기록

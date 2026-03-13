@@ -325,10 +325,117 @@ interface DogbaHooksApi {
     ): Promise<{ hooks: boolean; claudeMd: boolean }>;
 }
 
+interface ReportSummary {
+    id: string;
+    agentName: string;
+    taskDescription: string;
+    date: string;
+    filePath: string;
+}
+
+interface DogbaReportApi {
+    generate(
+        data: any,
+        projectDir?: string,
+    ): Promise<{ success: boolean; filePath?: string; error?: string }>;
+    list(projectDir?: string): Promise<{ reports: ReportSummary[] }>;
+    get(
+        filePath: string,
+    ): Promise<{ success: boolean; content?: string; error?: string }>;
+}
+
 interface DogbaNotificationApi {
     onToast(
         callback: (data: { message: string; type: string }) => void,
     ): () => void;
+}
+
+interface MeetingRoundData {
+    roundNumber: number;
+    opinions: {
+        agentId: string;
+        opinion: string;
+        vote: 'approve' | 'hold' | 'revise';
+    }[];
+    consensus: 'approved' | 'hold' | 'revision' | 'pending';
+}
+
+interface MeetingEndResult {
+    status: 'completed' | 'cancelled';
+    rounds: MeetingRoundData[];
+    finalConsensus: 'approved' | 'hold' | 'revision' | 'pending';
+}
+
+interface DogbaMeetingApi {
+    create(
+        topic: string,
+        participantIds: string[],
+    ): Promise<{ success: boolean; meetingId?: string; error?: string }>;
+    start(meetingId: string): Promise<{ success: boolean; error?: string }>;
+    stop(meetingId: string): Promise<{ success: boolean; error?: string }>;
+    onRoundUpdate(
+        callback: (meetingId: string, round: MeetingRoundData) => void,
+    ): () => void;
+    onMeetingEnd(
+        callback: (meetingId: string, result: MeetingEndResult) => void,
+    ): () => void;
+}
+
+interface DogbaProviderApi {
+    list(): Promise<{
+        providers: {
+            id: string;
+            name: string;
+            command: string;
+            installed: boolean;
+        }[];
+    }>;
+    check(id: string): Promise<{ installed: boolean; authenticated: boolean }>;
+    setDefault(id: string): Promise<{ success: boolean; error?: string }>;
+}
+
+interface WorkflowPackInfo {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    agents: string[];
+    skills: string[];
+}
+
+interface DogbaWorkflowApi {
+    list(): Promise<{ packs: WorkflowPackInfo[] }>;
+    apply(packId: string): Promise<{
+        success: boolean;
+        agentsAdded: string[];
+        skillsActivated: string[];
+        error?: string;
+    }>;
+    detect(projectDir?: string): Promise<{ packId: string | null }>;
+}
+
+interface AgentRecord {
+    id: string;
+    name: string;
+    role: string;
+    personality: string;
+    department?: string;
+    provider?: string;
+    active: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+interface DogbaAgentDbApi {
+    list(includeInactive?: boolean): Promise<{ agents: AgentRecord[] }>;
+    get(id: string): Promise<{ agent?: AgentRecord; error?: string }>;
+    create(
+        agent: Omit<AgentRecord, 'createdAt' | 'updatedAt'>,
+    ): Promise<{ success: boolean; agent?: AgentRecord; error?: string }>;
+    update(
+        id: string,
+        patch: Partial<AgentRecord>,
+    ): Promise<{ success: boolean; agent?: AgentRecord; error?: string }>;
 }
 
 interface DogbaApi {
@@ -348,6 +455,39 @@ interface DogbaApi {
     worktree: DogbaWorktreeApi;
     hooks: DogbaHooksApi;
     notification: DogbaNotificationApi;
+    provider: DogbaProviderApi;
+    report: DogbaReportApi;
+    workflow: DogbaWorkflowApi;
+    meeting: DogbaMeetingApi;
+    messenger: DogbaMessengerApi;
+    agentDb: DogbaAgentDbApi;
+}
+
+interface IncomingMessengerMessage {
+    adapterId: string;
+    channel: string;
+    sender: string;
+    content: string;
+    timestamp: number;
+}
+
+interface DogbaMessengerApi {
+    connect(
+        adapterId: string,
+        config: Record<string, string>,
+    ): Promise<{ success: boolean; error?: string }>;
+    disconnect(
+        adapterId: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    send(
+        adapterId: string,
+        channel: string,
+        message: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    list(): Promise<{
+        adapters: { id: string; name: string; connected: boolean }[];
+    }>;
+    onMessage(callback: (msg: IncomingMessengerMessage) => void): () => void;
 }
 
 declare global {

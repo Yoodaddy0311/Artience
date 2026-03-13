@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import {
+    app,
+    BrowserWindow,
+    dialog,
+    ipcMain,
+    Tray,
+    Menu,
+    nativeImage,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -38,6 +46,12 @@ import {
 import { worktreeManager } from './worktree-manager';
 import { hooksManager } from './hooks-manager';
 import { recommendAgents } from './agent-recommender';
+import { providerRegistry } from './provider-registry';
+import { reportGenerator } from './report-generator';
+import { workflowPackManager } from './workflow-pack';
+import { meetingManager } from './meeting-manager';
+import { agentDB } from './agent-db';
+import { messengerBridge } from './messenger-bridge';
 import {
     registerMcpServer,
     MCP_BRIDGE_DIR,
@@ -112,10 +126,12 @@ function getDefaultPermissionMode(agentLabel: string): string {
 const execFileAsync = promisify(execFile);
 
 let mainWindow: BrowserWindow;
+let tray: Tray | null = null;
 
 // ── ChatSessionManager (stream-json 기반 세션) ──────────────────────────────
 const chatSessionManager = new ChatSessionManager();
 ctoController.init(chatSessionManager);
+meetingManager.init(chatSessionManager);
 
 // ── Persistent store (electron-store) ──────────────────────────────────────
 
@@ -392,6 +408,24 @@ function processPtyForParser(tabId: string, rawData: string): void {
     processParsedEvents(tabId, state, parsed);
 }
 
+// ── Tray ──────────────────────────────────────────────────────────────────
+
+function createTray(): void {
+    const icon = nativeImage.createEmpty();
+    tray = new Tray(icon);
+    tray.setToolTip('Artience');
+    tray.setContextMenu(
+        Menu.buildFromTemplate([
+            {
+                label: 'Artience 열기',
+                click: () => mainWindow?.show(),
+            },
+            { type: 'separator' },
+            { label: '종료', click: () => app.quit() },
+        ]),
+    );
+}
+
 // ── Window ─────────────────────────────────────────────────────────────────
 
 async function createWindow() {
@@ -539,9 +573,10 @@ ipcMain.handle(
 
         if (options?.autoCommand) {
             // Build the actual command with agent settings flags
+            const defaultCmd = providerRegistry.getDefault().command;
             let cmd = options.autoCommand;
             const settings = options.agentSettings;
-            if (settings && cmd === 'claude') {
+            if (settings && cmd === defaultCmd) {
                 const flags: string[] = [];
                 if (settings.model) flags.push(`--model ${settings.model} `);
                 // Apply permission mode: explicit setting > preset > default
@@ -560,7 +595,7 @@ ipcMain.handle(
                 if (settings.maxTurns)
                     flags.push(`--max - turns ${settings.maxTurns} `);
                 if (flags.length > 0) {
-                    cmd = `claude ${flags.join(' ')} `;
+                    cmd = `${defaultCmd} ${flags.join(' ')} `;
                 }
             }
 
@@ -1163,6 +1198,38 @@ ipcMain.handle(
 
 // ── MCP Bridge (Artience MCP Server ↔ main process) ────────────────────────
 
+// Ring buffer for incoming messenger messages (used by getMessengerMessages)
+const MAX_MESSENGER_BUFFER = 100;
+const messengerMessageBuffer: {
+    sender: string;
+    content: string;
+    timestamp: number;
+    adapterId: string;
+}[] = [];
+
+messengerBridge.on(
+    'message:received',
+    (msg: {
+        adapterId: string;
+        sender: string;
+        content: string;
+        timestamp: number;
+    }) => {
+        messengerMessageBuffer.push({
+            sender: msg.sender,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            adapterId: msg.adapterId,
+        });
+        if (messengerMessageBuffer.length > MAX_MESSENGER_BUFFER) {
+            messengerMessageBuffer.splice(
+                0,
+                messengerMessageBuffer.length - MAX_MESSENGER_BUFFER,
+            );
+        }
+    },
+);
+
 const mcpBridge: McpBridge = {
     getAgentStatuses() {
         return Array.from(terminals.entries()).map(([id, proc]) => {
@@ -1210,6 +1277,27 @@ const mcpBridge: McpBridge = {
             return meta?.label || id;
         });
         return { dir: projectDir, agents, activeSessions };
+    },
+
+    async sendMessengerMessage(
+        adapter: string,
+        channel: string,
+        message: string,
+    ) {
+        return messengerBridge.send(adapter, channel, message);
+    },
+
+    async getMessengerMessages(adapter: string, limit?: number) {
+        const count = limit ?? 10;
+        const filtered = messengerMessageBuffer.filter(
+            (m) => m.adapterId === adapter,
+        );
+        const messages = filtered.slice(-count).map((m) => ({
+            sender: m.sender,
+            content: m.content,
+            timestamp: m.timestamp,
+        }));
+        return { messages };
     },
 };
 
@@ -1278,6 +1366,19 @@ function startMcpBridgeWatcher(): void {
                                 break;
                             case 'getProjectInfo':
                                 result = mcpBridge.getProjectInfo();
+                                break;
+                            case 'sendMessengerMessage':
+                                result = await mcpBridge.sendMessengerMessage(
+                                    request.args.adapter as string,
+                                    request.args.channel as string,
+                                    request.args.message as string,
+                                );
+                                break;
+                            case 'getMessengerMessages':
+                                result = await mcpBridge.getMessengerMessages(
+                                    request.args.adapter as string,
+                                    request.args.limit as number | undefined,
+                                );
                                 break;
                             default:
                                 result = null;
@@ -1374,6 +1475,22 @@ ipcMain.handle('skill:install', async (_e, skillId: string) => {
 ipcMain.handle('skill:uninstall', (_e, skillId: string) => {
     const dir = getProjectDir();
     return uninstallSkill(skillId, dir);
+});
+
+// ── Workflow Pack IPC ──────────────────────────────────────────────────────
+
+ipcMain.handle('workflow:list', () => {
+    return { packs: workflowPackManager.list() };
+});
+
+ipcMain.handle('workflow:apply', (_e, packId: string) => {
+    return workflowPackManager.apply(packId);
+});
+
+ipcMain.handle('workflow:detect', async (_e, projectDir?: string) => {
+    const dir = projectDir || getProjectDir();
+    const packId = await workflowPackManager.detect(dir);
+    return { packId };
 });
 
 // ── Studio IPC (Agent Manager) ─────────────────────────────────────────────
@@ -1851,6 +1968,111 @@ ipcMain.handle('agent:recommend', async (_e, taskDescription: string) => {
     return recommendAgents(taskDescription);
 });
 
+// ── Meeting Manager IPC ─────────────────────────────────────────────────────
+
+ipcMain.handle(
+    'meeting:create',
+    (_e, topic: string, participantIds: string[]) => {
+        return meetingManager.createMeeting(topic, participantIds);
+    },
+);
+
+ipcMain.handle('meeting:start', async (_e, meetingId: string) => {
+    return meetingManager.startMeeting(meetingId);
+});
+
+ipcMain.handle('meeting:stop', (_e, meetingId: string) => {
+    return meetingManager.stopMeeting(meetingId);
+});
+
+// MeetingManager → Renderer event forwarding
+meetingManager.on('consensus:reached', (meetingId: string, round: unknown) => {
+    mainWindow?.webContents?.send('meeting:round-update', meetingId, round);
+});
+
+meetingManager.on('opinion:received', (meetingId: string, opinion: unknown) => {
+    // Forward individual opinions as partial round updates
+    const meeting = meetingManager.getMeeting(meetingId);
+    if (meeting && meeting.rounds.length > 0) {
+        const currentRound = meeting.rounds[meeting.rounds.length - 1];
+        mainWindow?.webContents?.send(
+            'meeting:round-update',
+            meetingId,
+            currentRound,
+        );
+    }
+});
+
+meetingManager.on('meeting:end', (meetingId: string, result: unknown) => {
+    mainWindow?.webContents?.send('meeting:end', meetingId, result);
+});
+
+meetingManager.on('mail:report', (report: unknown) => {
+    mainWindow?.webContents?.send('mail:new-report', report);
+});
+
+// ── Messenger Bridge IPC ─────────────────────────────────────────────────────
+
+ipcMain.handle(
+    'messenger:connect',
+    async (_e, adapterId: string, config: Record<string, string>) => {
+        return messengerBridge.connect(adapterId, config);
+    },
+);
+
+ipcMain.handle('messenger:disconnect', async (_e, adapterId: string) => {
+    return messengerBridge.disconnect(adapterId);
+});
+
+ipcMain.handle(
+    'messenger:send',
+    async (_e, adapterId: string, channel: string, message: string) => {
+        return messengerBridge.send(adapterId, channel, message);
+    },
+);
+
+ipcMain.handle('messenger:list', () => {
+    return { adapters: messengerBridge.listAdapters() };
+});
+
+// MessengerBridge → Renderer event forwarding
+messengerBridge.on('message:received', (msg: unknown) => {
+    mainWindow?.webContents?.send('messenger:message', msg);
+});
+
+// ── Provider Registry IPC ───────────────────────────────────────────────────
+
+ipcMain.handle('provider:list', async () => {
+    const all = providerRegistry.list();
+    const available = await providerRegistry.checkAvailability();
+    const availableIds = new Set(available.map((p) => p.id));
+    return {
+        providers: all.map((p) => ({
+            id: p.id,
+            name: p.name,
+            command: p.command,
+            installed: availableIds.has(p.id),
+        })),
+    };
+});
+
+ipcMain.handle('provider:check', async (_e, id: string) => {
+    const provider = providerRegistry.get(id);
+    if (!provider) return { installed: false, authenticated: false };
+    const installed = await provider.isInstalled();
+    const authenticated = installed ? await provider.authCheck() : false;
+    return { installed, authenticated };
+});
+
+ipcMain.handle('provider:set-default', (_e, id: string) => {
+    try {
+        providerRegistry.setDefault(id);
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
 // ── Artibot Registry IPC ────────────────────────────────────────────────────
 
 ipcMain.handle('artibot:get-registry', () => {
@@ -1898,10 +2120,80 @@ ipcMain.handle(
     },
 );
 
+// ── Report IPC ──────────────────────────────────────────────────────────────
+
+ipcMain.handle(
+    'report:generate',
+    async (_e, data: any, projectDir?: string) => {
+        const dir = projectDir || getProjectDir();
+        return reportGenerator.generateReport(data, dir);
+    },
+);
+
+ipcMain.handle('report:list', async (_e, projectDir?: string) => {
+    const dir = projectDir || getProjectDir();
+    const reports = await reportGenerator.getReports(dir);
+    return { reports };
+});
+
+ipcMain.handle('report:get', async (_e, filePath: string) => {
+    try {
+        const content = await reportGenerator.getReport(filePath);
+        return { success: true, content };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+// ── Agent DB IPC ────────────────────────────────────────────────────────────
+
+ipcMain.handle('agent-db:list', (_e, includeInactive?: boolean) => {
+    return { agents: agentDB.getAll(includeInactive ?? false) };
+});
+
+ipcMain.handle('agent-db:get', (_e, id: string) => {
+    const agent = agentDB.get(id);
+    if (!agent) return { error: `Agent '${id}' not found` };
+    return { agent };
+});
+
+ipcMain.handle('agent-db:create', (_e, agent: any) => {
+    try {
+        const created = agentDB.create(agent);
+        return { success: true, agent: created };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('agent-db:update', (_e, id: string, patch: any) => {
+    const updated = agentDB.update(id, patch);
+    if (!updated) return { success: false, error: `Agent '${id}' not found` };
+    return { success: true, agent: updated };
+});
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
     await createWindow();
+    createTray();
+
+    // Initialize agent DB and seed default personas
+    agentDB.init();
+    agentDB.seed();
+
+    // Listen for messenger messages → tray balloon + forward to renderer
+    messengerBridge.on('message:received', (msg: any) => {
+        if (tray) {
+            tray.displayBalloon({
+                title: `${msg.adapterId}: ${msg.sender}`,
+                content: (msg.content || '').slice(0, 200),
+            });
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('messenger:message', msg);
+        }
+    });
 
     // Start MCP bridge file watcher (serves standalone MCP server requests)
     startMcpBridgeWatcher();
@@ -1953,4 +2245,6 @@ app.on('before-quit', () => {
     tabParserState.clear();
     // Clean up chat sessions
     chatSessionManager.closeAll();
+    // Clean up messenger adapters
+    messengerBridge.disconnectAll().catch(() => {});
 });

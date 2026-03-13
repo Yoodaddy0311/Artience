@@ -16,6 +16,7 @@ export interface AgentSettings {
     model?: 'opus' | 'sonnet' | 'haiku';
     permissionMode?: 'default' | 'plan' | 'bypassPermissions';
     maxTurns?: number;
+    provider?: string; // 'claude' | 'codex' | 'gemini' (default: undefined = claude)
 }
 
 export type ViewMode = 'terminal' | 'chat';
