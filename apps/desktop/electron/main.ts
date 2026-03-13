@@ -46,6 +46,10 @@ import {
 import { worktreeManager } from './worktree-manager';
 import { hooksManager } from './hooks-manager';
 import { recommendAgents } from './agent-recommender';
+import {
+    parseDirective,
+    type DirectiveType,
+} from '../src/lib/directive-parser';
 import { providerRegistry } from './provider-registry';
 import { reportGenerator } from './report-generator';
 import { workflowPackManager } from './workflow-pack';
@@ -1967,6 +1971,87 @@ ipcMain.handle(
 ipcMain.handle('agent:recommend', async (_e, taskDescription: string) => {
     return recommendAgents(taskDescription);
 });
+
+// ── Directive Routing IPC ───────────────────────────────────────────────────
+
+ipcMain.handle(
+    'directive:route',
+    async (
+        _e,
+        input: string,
+        currentTabId: string,
+    ): Promise<{
+        success: boolean;
+        type: DirectiveType;
+        routedTo?: string;
+        error?: string;
+    }> => {
+        const directive = parseDirective(input);
+
+        if (directive.type === 'normal') {
+            return { success: true, type: 'normal' };
+        }
+
+        if (directive.type === 'ceo') {
+            const dir = getProjectDir();
+            const teamResult = await ctoController.createTeamSession(dir);
+            if (!teamResult.success) {
+                return {
+                    success: false,
+                    type: 'ceo',
+                    error: teamResult.error,
+                };
+            }
+
+            if (directive.targetAgent) {
+                await ctoController.delegateTask(
+                    directive.targetAgent,
+                    directive.content,
+                );
+            } else {
+                ctoController.sendMessage(directive.content);
+            }
+
+            return {
+                success: true,
+                type: 'ceo',
+                routedTo: directive.targetAgent ?? 'dokba',
+            };
+        }
+
+        // type === 'task'
+        if (directive.targetAgent) {
+            // Direct agent specified — write to that agent's PTY
+            const proc = terminals.get(currentTabId);
+            if (proc) {
+                proc.write(directive.content);
+                setTimeout(() => proc.write('\r'), 50);
+            }
+            return {
+                success: true,
+                type: 'task',
+                routedTo: directive.targetAgent,
+            };
+        }
+
+        // Auto-recommend best agent
+        const recommendations = recommendAgents(directive.content, 1);
+        if (recommendations.length === 0) {
+            return {
+                success: false,
+                type: 'task',
+                error: 'No suitable agent found for this task',
+            };
+        }
+
+        const bestAgent = recommendations[0];
+        return {
+            success: true,
+            type: 'task',
+            routedTo: bestAgent.agentId,
+        };
+    },
+);
 
 // ── Meeting Manager IPC ─────────────────────────────────────────────────────
 

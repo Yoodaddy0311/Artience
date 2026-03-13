@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ParsedEvent, AgentActivity } from '../lib/pty-parser';
 import { resolveTeamMembers } from '../lib/team-character-map';
+import type { AgentState, AgentStateMachine } from '../types/agent-state';
+import {
+    isValidTransition,
+    createTransition,
+    appendTransition,
+    createAgentStateMachine,
+} from '../types/agent-state';
 
 export interface TerminalTab {
     id: string; // pty ID from main process
@@ -55,6 +62,18 @@ interface TerminalState {
     agentActivity: Record<string, AgentActivity>;
     setAgentActivity: (agentId: string, status: AgentActivity) => void;
 
+    // 공식 에이전트 상태 머신 (태스크 배정/추적용, 메모리 only)
+    agentStates: Record<string, AgentStateMachine>;
+    initAgentState: (agentId: string) => void;
+    transitionAgent: (
+        agentId: string,
+        to: AgentState,
+        trigger: string,
+    ) => boolean;
+    getAvailableAgents: () => string[];
+    getAgentState: (agentId: string) => AgentStateMachine | undefined;
+    resetAgentState: (agentId: string) => void;
+
     // 캐릭터별 Claude 설정 (persist)
     agentSettings: Record<string, AgentSettings>; // agentId → settings
     setAgentSettings: (
@@ -94,6 +113,7 @@ export const useTerminalStore = create<TerminalState>()(
             characterDirMap: {},
             dockAgents: ['raccoon'],
             agentActivity: {},
+            agentStates: {},
             agentSettings: {},
             inputHistory: {},
             activeTeamMembers: {},
@@ -137,9 +157,114 @@ export const useTerminalStore = create<TerminalState>()(
                 })),
 
             setAgentActivity: (agentId, status) =>
-                set((s) => ({
-                    agentActivity: { ...s.agentActivity, [agentId]: status },
-                })),
+                set((s) => {
+                    // Bridge: PTY activity → state machine transition
+                    const machine = s.agentStates[agentId];
+                    let nextStates = s.agentStates;
+                    if (machine) {
+                        let targetState: AgentState | null = null;
+                        if (
+                            (status === 'thinking' || status === 'working') &&
+                            machine.currentState !== 'working'
+                        ) {
+                            targetState = 'working';
+                        } else if (
+                            status === 'success' &&
+                            machine.currentState !== 'done'
+                        ) {
+                            targetState = 'done';
+                        } else if (
+                            status === 'error' &&
+                            machine.currentState !== 'error'
+                        ) {
+                            targetState = 'error';
+                        }
+                        if (
+                            targetState &&
+                            isValidTransition(machine.currentState, targetState)
+                        ) {
+                            const transition = createTransition(
+                                machine.currentState,
+                                targetState,
+                                `pty-${status}`,
+                            );
+                            nextStates = {
+                                ...s.agentStates,
+                                [agentId]: appendTransition(
+                                    machine,
+                                    transition,
+                                ),
+                            };
+                        }
+                    }
+                    return {
+                        agentActivity: {
+                            ...s.agentActivity,
+                            [agentId]: status,
+                        },
+                        agentStates: nextStates,
+                    };
+                }),
+
+            initAgentState: (agentId) =>
+                set((s) => {
+                    if (s.agentStates[agentId]) return s;
+                    return {
+                        agentStates: {
+                            ...s.agentStates,
+                            [agentId]: createAgentStateMachine(agentId),
+                        },
+                    };
+                }),
+
+            transitionAgent: (agentId, to, trigger) => {
+                let success = false;
+                set((s) => {
+                    const machine =
+                        s.agentStates[agentId] ??
+                        createAgentStateMachine(agentId);
+                    if (!isValidTransition(machine.currentState, to)) {
+                        success = false;
+                        return s;
+                    }
+                    const transition = createTransition(
+                        machine.currentState,
+                        to,
+                        trigger,
+                    );
+                    success = true;
+                    return {
+                        agentStates: {
+                            ...s.agentStates,
+                            [agentId]: appendTransition(machine, transition),
+                        },
+                    };
+                });
+                return success;
+            },
+
+            getAvailableAgents: () => {
+                const states = useTerminalStore.getState().agentStates;
+                return Object.keys(states).filter(
+                    (id) => states[id].currentState === 'idle',
+                );
+            },
+
+            getAgentState: (agentId) => {
+                return useTerminalStore.getState().agentStates[agentId];
+            },
+
+            resetAgentState: (agentId) =>
+                set((s) => {
+                    const machine = s.agentStates[agentId];
+                    if (!machine) return s;
+                    return {
+                        agentStates: {
+                            ...s.agentStates,
+                            [agentId]: createAgentStateMachine(agentId),
+                        },
+                    };
+                }),
 
             addInputHistory: (tabId, text) =>
                 set((s) => {

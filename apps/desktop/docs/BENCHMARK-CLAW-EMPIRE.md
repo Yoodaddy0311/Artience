@@ -382,7 +382,7 @@ Artience는 CLI 환경의 강점(PTY 직접 제어, Git worktree 격리, MCP 도
 | ------------------------------ | --------------------------------------------- | ----------------------------------------------- |
 | 26명 하드코딩                  | 에이전트 추가/수정에 코드 변경 필요           | Phase 3.6에서 SQLite 기반 동적 관리 전환        |
 | Zustand persist (localStorage) | 대용량 데이터 부적합                          | electron-store 이미 사용 중, 필요시 SQLite 전환 |
-| IPC 43채널                     | 채널 추가 시 preload/types/main 3곳 동시 수정 | IPC 채널 레지스트리 패턴 도입 검토              |
+| IPC 75+채널 (21개 API 그룹)    | 채널 추가 시 preload/types/main 3곳 동시 수정 | IPC 채널 레지스트리 패턴 도입 검토              |
 | MCP 서버 FileBridge            | 동기 busy-wait                                | 비동기 개선 (기존 TODO)                         |
 
 ### 7.3 리스크 매트릭스
@@ -432,11 +432,11 @@ Success Criteria:
 
 ### P0: 핵심 UX 개선 (Risk: Medium)
 
-| Step | 기능                                             | 파일                                                              | 의존 |
-| ---- | ------------------------------------------------ | ----------------------------------------------------------------- | ---- |
-| 4.1  | CEO Directive 라우팅 (`$`/`#` prefix)            | `electron/main.ts` + `src/lib/directive-parser.ts` 신규           | 없음 |
-| 4.2  | 에이전트 상태 머신 (idle→working→reviewing→done) | `src/store/useTerminalStore.ts` + `src/types/agent-state.ts` 신규 | 없음 |
-| 4.3  | 태스크 큐 우선순위 스케줄링                      | `electron/task-scheduler.ts` 신규                                 | 4.2  |
+| Step | 기능                                                                      | 파일                                                              | 의존 |
+| ---- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---- |
+| 4.1  | CEO Directive 라우팅 (`$`/`#` prefix)                                     | `electron/main.ts` + `src/lib/directive-parser.ts` 신규           | 없음 |
+| 4.2  | 에이전트 상태 머신 (idle→assigned→working→reviewing→done→error, 6개 상태) | `src/store/useTerminalStore.ts` + `src/types/agent-state.ts` 신규 | 없음 |
+| 4.3  | 태스크 큐 우선순위 스케줄링                                               | `electron/task-scheduler.ts` 신규                                 | 4.2  |
 
 ### P1: 운영 효율화 (Risk: Medium)
 

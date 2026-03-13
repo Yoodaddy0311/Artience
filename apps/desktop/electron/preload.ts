@@ -740,6 +740,19 @@ try {
             }> => ipcRenderer.invoke('agent-db:update', id, patch),
         },
 
+        // ── Directive Routing ──
+        directive: {
+            route: (
+                input: string,
+                currentTabId: string,
+            ): Promise<{
+                success: boolean;
+                type: string;
+                routedTo?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('directive:route', input, currentTabId),
+        },
+
         // ── App Notifications (from MCP server / main process) ──
         notification: {
             onToast: (

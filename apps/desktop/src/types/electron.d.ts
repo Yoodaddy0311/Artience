@@ -105,6 +105,16 @@ interface DogbaChatApi {
     ): () => void;
 }
 
+interface DogbaArtibotApi {
+    getRegistry(): Promise<unknown>;
+    rescan(projectDir?: string): Promise<unknown>;
+    executeCommand(
+        command: string,
+        args: string,
+    ): Promise<{ success: boolean; error?: string; text?: string }>;
+    onRegistryUpdated(callback: (registry: unknown) => void): () => void;
+}
+
 interface DogbaCliApi {
     authStatus(): Promise<{ authenticated: boolean }>;
     authLogin(): Promise<{ success: boolean; error?: string }>;
@@ -438,10 +448,24 @@ interface DogbaAgentDbApi {
     ): Promise<{ success: boolean; agent?: AgentRecord; error?: string }>;
 }
 
+type DirectiveType = 'ceo' | 'task' | 'normal';
+
+interface DirectiveRouteResult {
+    success: boolean;
+    type: DirectiveType;
+    routedTo?: string;
+    error?: string;
+}
+
+interface DogbaDirectiveApi {
+    route(input: string, currentTabId: string): Promise<DirectiveRouteResult>;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
     };
+    artibot: DogbaArtibotApi;
     terminal: DogbaTerminalApi;
     chat: DogbaChatApi;
     cli: DogbaCliApi;
@@ -454,6 +478,7 @@ interface DogbaApi {
     skill: DogbaSkillApi;
     worktree: DogbaWorktreeApi;
     hooks: DogbaHooksApi;
+    directive: DogbaDirectiveApi;
     notification: DogbaNotificationApi;
     provider: DogbaProviderApi;
     report: DogbaReportApi;

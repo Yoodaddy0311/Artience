@@ -2,7 +2,7 @@
 
 > 작성일: 2026-03-01
 > 작성자: architect (팀 team-chat-pty-v2)
-> 상태: Proposal
+> 상태: Implemented (Option D — stream-json 양방향, 2026-03-13 구현 완료)
 
 ---
 

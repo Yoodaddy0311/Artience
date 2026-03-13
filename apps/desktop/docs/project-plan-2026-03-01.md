@@ -124,26 +124,26 @@
 
 ### 취소
 
-| 항목                           | 이유                                      |
-| ------------------------------ | ----------------------------------------- |
-| Firebase Hosting 웹 배포       | exe 전용으로 전환                         |
-| Service Worker (sw.js)         | file:// 프로토콜에서 미지원               |
-| PWA 매니페스트 (manifest.json) | 웹앱 불필요                               |
-| GCP Cloud Run API 필수 의존    | 로컬 퍼스트로 전환                        |
-| node-pty 네이티브 모듈         | 빌드 문제로 child_process.spawn 대체 완료 |
+| 항목                           | 이유                                                                  |
+| ------------------------------ | --------------------------------------------------------------------- |
+| Firebase Hosting 웹 배포       | exe 전용으로 전환                                                     |
+| Service Worker (sw.js)         | file:// 프로토콜에서 미지원                                           |
+| PWA 매니페스트 (manifest.json) | 웹앱 불필요                                                           |
+| GCP Cloud Run API 필수 의존    | 로컬 퍼스트로 전환                                                    |
+| node-pty 네이티브 모듈 복원됨  | node-pty 복원됨 — Windows ConPTY 환경에서 정상 동작 확인 (2026-03-13) |
 
 ### 변경
 
-| 항목        | AS-IS                    | TO-BE                                    |
-| ----------- | ------------------------ | ---------------------------------------- |
-| 캐릭터 채팅 | WS/API fallback          | Claude CLI 전용 (Electron IPC)           |
-| 터미널      | node-pty (PTY)           | child_process.spawn (pipe 기반)          |
-| 데이터 저장 | Cloud API (fetch)        | 로컬 (Zustand persist → 향후 SQLite)     |
-| 에셋 경로   | 절대 경로 (/sprites/...) | 상대 경로 (./sprites/...)                |
-| Vite base   | `/` (웹 서버)            | `./` (file:// 호환)                      |
-| API 호출    | 항상 시도                | localhost이면 skip                       |
-| WebSocket   | 항상 연결                | localhost이면 skip + exponential backoff |
-| 코드 서명   | 미설정                   | forceCodeSigning: false, sign: null      |
+| 항목        | AS-IS                    | TO-BE                                                            |
+| ----------- | ------------------------ | ---------------------------------------------------------------- |
+| 캐릭터 채팅 | WS/API fallback          | Claude CLI 전용 (Electron IPC)                                   |
+| 터미널      | child_process.spawn      | node-pty (PTY) 복원 — Windows ConPTY 정상 동작 확인 (2026-03-13) |
+| 데이터 저장 | Cloud API (fetch)        | 로컬 (Zustand persist → 향후 SQLite)                             |
+| 에셋 경로   | 절대 경로 (/sprites/...) | 상대 경로 (./sprites/...)                                        |
+| Vite base   | `/` (웹 서버)            | `./` (file:// 호환)                                              |
+| API 호출    | 항상 시도                | localhost이면 skip                                               |
+| WebSocket   | 항상 연결                | localhost이면 skip + exponential backoff                         |
+| 코드 서명   | 미설정                   | forceCodeSigning: false, sign: null                              |
 
 ---
 
@@ -220,7 +220,7 @@
 2. [x] ~~Service Worker (sw.js) 캐싱~~ — file:// 미지원
 3. [x] ~~PWA 매니페스트~~ — 웹앱 불필요
 4. [x] ~~GCP Cloud Run API 필수 의존~~ — 선택적으로 전환
-5. [x] ~~node-pty 네이티브 모듈~~ — child_process.spawn으로 대체 완료
+5. [x] ~~node-pty 제거 시도~~ — node-pty 복원됨, Windows ConPTY 환경에서 정상 동작 확인 (2026-03-13)
 6. [x] ~~웹 전용 WS 채팅 fallback~~ — Claude CLI 전용
 
 ---

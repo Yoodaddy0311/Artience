@@ -104,18 +104,61 @@ const CTO_PROFILE: AgentProfile = {
 
 ## 5. TO-BE Architecture Diagram
 
+> 2026-03-13 업데이트: Electron Main Process 모듈 목록 현행화 (14개+)
+
 ```
 +--------------------------------------------------------------+
 |                        Electron Main Process                  |
-|  +--------------+  +--------------+  +-------------------+   |
-|  | TerminalMgr  |  | AgentManager |  |   ReportManager   |   |
-|  | (Multi PTY)  |  | (Chat/SDK)   |  |  (Mail/Summary)   |   |
-|  +------+-------+  +------+-------+  +--------+----------+   |
-|         | IPC             | IPC                | IPC          |
-+---------+-----------------+--------------------+--------------+
-          |                 |                    |
-+---------+-----------------+--------------------+--------------+
-|         v                 v                    v   Renderer   |
+|                                                               |
+|  채팅/세션 관련                                               |
+|  +-----------------------+  +---------------------------+    |
+|  | ChatSessionManager    |  | CTO Controller            |    |
+|  | (stream-json 양방향)  |  | (--agents 서브에이전트)   |    |
+|  +-----------+-----------+  +-------------+-------------+    |
+|              |                             |                  |
+|  에이전트/스킬 관련                                           |
+|  +-----------------------+  +---------------------------+    |
+|  | AgentManager          |  | ArtibotRegistry           |    |
+|  | (SDK + spawn fallback)|  | (26개 에이전트 레지스트리)|    |
+|  +-----------------------+  +---------------------------+    |
+|  +-----------------------+  +---------------------------+    |
+|  | AgentRecommender      |  | SkillManager              |    |
+|  | (태스크 기반 추천)    |  | (스킬 설치/삭제/마켓)    |    |
+|  +-----------------------+  +---------------------------+    |
+|  +-----------------------+                                    |
+|  | SkillCatalog          |                                    |
+|  | (10개 외부 스킬 목록) |                                    |
+|  +-----------------------+                                    |
+|                                                               |
+|  인프라/환경 관련                                             |
+|  +-----------------------+  +---------------------------+    |
+|  | HooksManager          |  | WorktreeManager           |    |
+|  | (settings.json 관리)  |  | (Git worktree 격리)       |    |
+|  +-----------------------+  +---------------------------+    |
+|  +-----------------------+  +---------------------------+    |
+|  | McpArtienceServer     |  | ReportManager (계획)      |    |
+|  | (4개 도구+FileBridge) |  | (Mail/Summary)            |    |
+|  +-----------+-----------+  +-------------+-------------+    |
+|              |                             |                  |
+|  미래 계획 (Phase 2/3)                                        |
+|  +-----------------------+  +---------------------------+    |
+|  | MeetingManager        |  | MessengerBridge           |    |
+|  | (멀티에이전트 합의)   |  | (Discord/Slack 연동)      |    |
+|  +-----------------------+  +---------------------------+    |
+|  +-----------------------+  +---------------------------+    |
+|  | ProviderRegistry      |  | AgentDB                   |    |
+|  | (멀티 CLI 추상화)     |  | (SQLite 동적 관리)        |    |
+|  +-----------------------+  +---------------------------+    |
+|  +-----------------------+                                    |
+|  | WorkflowPackManager   |                                    |
+|  | (dev/report/etc 팩)   |                                    |
+|  +-----------------------+                                    |
+|                                                               |
+|         | IPC (75+개 핸들러, 21개 API 그룹)                  |
++---------+-----------------------------------------------------+
+          |
++---------+-----------------------------------------------------+
+|         v                                         Renderer    |
 |  +---------------------------------------------------------+  |
 |  |                    useTerminalStore                      |  |
 |  |  tabs: TerminalTab[], activeTabId: string | null         |  |
@@ -131,9 +174,33 @@ const CTO_PROFILE: AgentProfile = {
 +-----------------------------------------------------------------------+
 ```
 
+### Electron 모듈 목록 (14개 구현 완료 + 7개 계획)
+
+| 모듈                | 파일                               | 설명                                         | 상태         |
+| ------------------- | ---------------------------------- | -------------------------------------------- | ------------ |
+| ChatSessionManager  | `electron/chat-session-manager.ts` | stream-json 양방향 채팅 세션 관리 (CTO 전용) | 구현 완료    |
+| CTO Controller      | `electron/cto-controller.ts`       | DI 패턴, --agents 서브에이전트 위임          | 구현 완료    |
+| AgentManager        | `electron/agent-manager.ts`        | SDK query / spawn fallback (CTO 대안)        | 구현 완료    |
+| ArtibotRegistry     | `electron/artibot-registry.ts`     | 26개 에이전트 등록 및 조회 레지스트리        | 구현 완료    |
+| AgentRecommender    | `electron/agent-recommender.ts`    | 태스크 키워드 기반 에이전트 자동 추천        | 구현 완료    |
+| SkillManager        | `electron/skill-manager.ts`        | 스킬 설치/삭제 + 마켓플레이스 검색           | 구현 완료    |
+| SkillCatalog        | `electron/skill-catalog.ts`        | 10개 외부 스킬 카탈로그 (한/영 태그)         | 구현 완료    |
+| HooksManager        | `electron/hooks-manager.ts`        | .claude/settings.json + CLAUDE.md 자동 생성  | 구현 완료    |
+| WorktreeManager     | `electron/worktree-manager.ts`     | 에이전트별 Git worktree 격리                 | 구현 완료    |
+| McpArtienceServer   | `electron/mcp-artience-server.ts`  | MCP 도구 4개 + FileBridge                    | 구현 완료    |
+| SkillMap            | `electron/skill-map.ts`            | 캐릭터별 스킬 프로필 매핑                    | 구현 완료    |
+| MeetingManager      | `electron/meeting-manager.ts`      | 멀티 에이전트 합의 로직                      | Phase 2 계획 |
+| MessengerBridge     | `electron/messenger-bridge.ts`     | Discord/Slack 외부 메신저 연동               | Phase 3 계획 |
+| ProviderRegistry    | `electron/provider-registry.ts`    | 멀티 CLI 프로바이더 추상화 레이어            | Phase 2 계획 |
+| ReportGenerator     | `electron/report-generator.ts`     | 구조화된 MD 리포트 자동 생성                 | Phase 2 계획 |
+| WorkflowPackManager | `electron/workflow-pack.ts`        | 프로젝트 유형별 워크플로 팩                  | Phase 2 계획 |
+| AgentDB             | `electron/agent-db.ts`             | SQLite 기반 에이전트 동적 관리               | Phase 3 계획 |
+
 ---
 
 ## 6. IPC Channel Reference (Before/After)
+
+> 2026-03-13 업데이트: 실제 구현 기준 75+개 IPC 핸들러, 21개 API 그룹으로 갱신
 
 | Channel            | Direction | Before               | After                                        |
 | ------------------ | --------- | -------------------- | -------------------------------------------- |
@@ -149,6 +216,13 @@ const CTO_PROFILE: AgentProfile = {
 
 - `terminal:create` gains an optional `options` parameter (`{ agentId?, label?, cwd?, autoCommand? }`)
 - `terminal:list` is a new IPC channel for querying active terminal sessions
+
+**현재 IPC 규모 (2026-03-13 기준):**
+
+총 **75+개 IPC 핸들러**, **21개 API 그룹** (preload.ts 기준):
+
+- terminal(5), chat(6), cli(2), project(3), file(4), studio(5), job(7), agent(3), skill(6), worktree(3), hooks(3), mail(2), 기타
+- 신규 추가: `agent:recommend`, `skill:search/install/uninstall`, `mail:getGitDiff` 등
 
 ---
 
