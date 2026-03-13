@@ -8,6 +8,7 @@ import {
     getZoneCells,
     getNearestWalkable,
     getRandomWalkableNear,
+    syncObjectCollision,
 } from '../../systems/grid-world';
 import { DEFAULT_AGENTS, AGENT_ANIMAL_MAP } from '../../types/platform';
 import { useAppStore } from '../../store/useAppStore';
@@ -221,23 +222,22 @@ export const AgentTown: React.FC = () => {
                 const gridWorld = createDefaultWorld();
 
                 // ── Mark building footprints as collision-blocked (with 1-cell padding) ──
-                for (const obj of projectConfig.world.layers.objects) {
-                    const pad = 1; // Extra cells around footprint
-                    for (let dx = -pad; dx < obj.width + pad; dx++) {
-                        for (let dy = -pad; dy < obj.height + pad; dy++) {
-                            const cx = obj.x + dx;
-                            const cy = obj.y + dy;
-                            if (
-                                cx >= 0 &&
-                                cx < gridWorld.cols &&
-                                cy >= 0 &&
-                                cy < gridWorld.rows
-                            ) {
-                                gridWorld.cells[cy][cx].collision = true;
-                            }
-                        }
+                syncObjectCollision(
+                    gridWorld,
+                    projectConfig.world.layers.objects,
+                );
+
+                // Helper to re-sync collision from latest store objects and invalidate zone cache
+                const refreshCollision = () => {
+                    const currentObjects =
+                        useAppStore.getState().projectConfig.world.layers
+                            .objects;
+                    syncObjectCollision(gridWorld, currentObjects);
+                    // Invalidate zone cells cache so pathfinding picks up changes
+                    for (const key of Object.keys(zoneCellsCache)) {
+                        delete zoneCellsCache[key];
                     }
-                }
+                };
 
                 // Pre-compute zone cells for performance
                 const zoneCellsCache: Record<
@@ -280,6 +280,7 @@ export const AgentTown: React.FC = () => {
                         });
                     }
                     saveProject(); // 즉시 저장
+                    refreshCollision(); // Update collision map after object move
                 };
 
                 const handleCornersMoved = (
@@ -686,6 +687,7 @@ export const AgentTown: React.FC = () => {
 
                         // Instantly save after drop
                         state.saveProject();
+                        refreshCollision(); // Update collision map for new object
 
                         // Dynamically render the new sprite into the PIXI scene without requiring a refresh
                         createRoomSprites(
@@ -756,6 +758,7 @@ export const AgentTown: React.FC = () => {
 
                         selectedBuildingId.current = null;
                         state.saveProject();
+                        refreshCollision(); // Update collision map after object delete
                         return;
                     }
 
@@ -780,6 +783,7 @@ export const AgentTown: React.FC = () => {
                         const state = useAppStore.getState();
                         if (state.undoStack.length > 0) {
                             state.undo();
+                            refreshCollision(); // Update collision map after undo
 
                             // Immediately rebuild PIXI sprites to visually match undone State
                             buildingSpritesMap.forEach((sprite) => {
@@ -810,6 +814,7 @@ export const AgentTown: React.FC = () => {
                                             });
                                     }
                                     useAppStore.getState().saveProject();
+                                    refreshCollision();
                                     isDraggingBuilding = false;
                                 },
                                 () => {
@@ -911,6 +916,7 @@ export const AgentTown: React.FC = () => {
                                 },
                             });
                             state.saveProject();
+                            refreshCollision(); // Update collision map for pasted object
 
                             // Render immediately
                             createRoomSprites(
@@ -931,6 +937,7 @@ export const AgentTown: React.FC = () => {
                                             });
                                     }
                                     useAppStore.getState().saveProject();
+                                    refreshCollision();
                                     isDraggingBuilding = false;
                                 },
                                 () => {
@@ -1795,7 +1802,14 @@ export const AgentTown: React.FC = () => {
 
             if (appRef.current) {
                 try {
-                    appRef.current.destroy();
+                    const app = appRef.current as PIXI.Application;
+                    // Guard: only destroy if stage still exists (prevents double-destroy)
+                    if (app.stage) {
+                        app.destroy(true, {
+                            children: true,
+                            texture: true,
+                        });
+                    }
                 } catch (_) {
                     /* HMR safe: _cancelResize etc. */
                 }

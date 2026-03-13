@@ -9,12 +9,7 @@ import { assetPath } from '../../lib/assetPath';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useAppStore } from '../../store/useAppStore';
 import { MemoizedAgentRecommendPanel } from '../agent/AgentRecommendPanel';
-
-interface AgentRecommendation {
-    agentId: string;
-    score: number;
-    reason: string;
-}
+import type { AgentRecommendation } from '../../types/agent-state';
 
 // ── Types ──
 

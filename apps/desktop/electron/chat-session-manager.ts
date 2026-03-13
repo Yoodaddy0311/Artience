@@ -24,7 +24,7 @@ export { AGENT_PERSONAS, buildSystemPrompt };
 export interface ChatSession {
     agentId: string;
     agentName: string;
-    proc: ChildProcess;
+    proc: ChildProcess | null;
     sessionId?: string; // Claude session ID for --resume
     status: 'idle' | 'busy' | 'closed';
     promptFilePath: string; // temp file for system prompt
@@ -141,7 +141,7 @@ export class ChatSessionManager extends EventEmitter {
                 const fallbackSession: ChatSession = {
                     agentId,
                     agentName,
-                    proc: null as any,
+                    proc: null,
                     status: 'idle',
                     promptFilePath: promptPath,
                     cwd,
@@ -170,7 +170,7 @@ export class ChatSessionManager extends EventEmitter {
             const fallbackSession: ChatSession = {
                 agentId,
                 agentName,
-                proc: null as any,
+                proc: null,
                 status: 'idle',
                 promptFilePath: promptPath,
                 cwd,
@@ -261,6 +261,7 @@ export class ChatSessionManager extends EventEmitter {
             message: { content: [{ type: 'text', text: message }] },
         });
 
+        if (!session.proc) return;
         session.proc.stdin!.write(input + '\n');
     }
 
@@ -351,6 +352,7 @@ export class ChatSessionManager extends EventEmitter {
     // ── stdout JSON stream parser ──────────────────────────────────────────
 
     private setupOutputParser(session: ChatSession): void {
+        if (!session.proc) return;
         let buffer = '';
 
         session.proc.stdout?.on('data', (data: Buffer) => {
@@ -369,7 +371,7 @@ export class ChatSessionManager extends EventEmitter {
             }
         });
 
-        session.proc.stderr?.on('data', (data: Buffer) => {
+        session.proc!.stderr?.on('data', (data: Buffer) => {
             const text = data.toString().trim();
             if (text) {
                 console.log(
@@ -379,7 +381,7 @@ export class ChatSessionManager extends EventEmitter {
             }
         });
 
-        session.proc.on('error', (err) => {
+        session.proc!.on('error', (err) => {
             console.error(
                 `[ChatSessionManager] Process error for ${session.agentId}:`,
                 err.message,
@@ -393,7 +395,7 @@ export class ChatSessionManager extends EventEmitter {
             this.emit('session:closed', session.agentId, -1);
         });
 
-        session.proc.on('exit', (code) => {
+        session.proc!.on('exit', (code) => {
             // Flush remaining buffer
             if (buffer.trim()) {
                 try {
@@ -407,7 +409,8 @@ export class ChatSessionManager extends EventEmitter {
             // Downgrade to fallback mode instead of closing entirely
             session.mode = 'fallback';
             session.status = 'idle';
-            session.proc = null as any;
+            session.proc = null;
+            this.cleanupPromptFile(session.promptFilePath);
             this.emit('response:end', session.agentId);
 
             console.log(

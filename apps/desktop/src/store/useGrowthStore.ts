@@ -431,16 +431,18 @@ export const useGrowthStore = create<GrowthStore>()(
             partialize: (state) => ({
                 profiles: state.profiles,
             }),
-            merge: (persisted: any, current) => {
-                const merged = {
-                    ...current,
-                    ...(persisted as Partial<GrowthStore>),
-                };
+            merge: (persisted: unknown, current: GrowthStore): GrowthStore => {
+                const p = persisted as Partial<GrowthStore> | undefined;
+                if (!p) return current;
+                // Only pick partialized key (profiles) to avoid overwriting
+                // action functions with stale/undefined values from localStorage.
+                const profiles = p.profiles ?? current.profiles;
                 // Patch profiles with missing array fields from schema evolution
-                if (merged.profiles) {
-                    for (const [id, profile] of Object.entries(
-                        merged.profiles,
-                    ) as [string, any][]) {
+                if (profiles) {
+                    for (const [id, profile] of Object.entries(profiles) as [
+                        string,
+                        any,
+                    ][]) {
                         if (!profile) continue;
                         const defaults = createDefaultGrowthProfile(id);
                         profile.skills = profile.skills ?? defaults.skills;
@@ -460,7 +462,10 @@ export const useGrowthStore = create<GrowthStore>()(
                         };
                     }
                 }
-                return merged;
+                return {
+                    ...current,
+                    profiles,
+                };
             },
             onRehydrateStorage: () => (state) => {
                 if (state) {

@@ -510,6 +510,38 @@ export function getNearestWalkable(
     return { x: Math.floor(world.cols / 2), y: Math.floor(world.rows / 2) };
 }
 
+// ── Helper: sync collision map from world objects ──
+// Marks footprint cells (with 1-cell padding) as collision for each object.
+// Call after any object add/move/delete to keep the grid in sync.
+export function syncObjectCollision(
+    world: GridWorld,
+    objects: readonly { x: number; y: number; width: number; height: number }[],
+): void {
+    // 1. Clear all object-sourced collision (preserve walls & built-in furniture)
+    for (let y = 0; y < world.rows; y++) {
+        for (let x = 0; x < world.cols; x++) {
+            const cell = world.cells[y][x];
+            // Keep wall collision and built-in furniture (desks, meeting table)
+            if (cell.wall || cell.objectId) continue;
+            cell.collision = false;
+        }
+    }
+
+    // 2. Re-apply collision for each object with 1-cell padding
+    const pad = 1;
+    for (const obj of objects) {
+        for (let dx = -pad; dx < obj.width + pad; dx++) {
+            for (let dy = -pad; dy < obj.height + pad; dy++) {
+                const cx = obj.x + dx;
+                const cy = obj.y + dy;
+                if (cx >= 0 && cx < world.cols && cy >= 0 && cy < world.rows) {
+                    world.cells[cy][cx].collision = true;
+                }
+            }
+        }
+    }
+}
+
 // ── Helper: get a random walkable cell within Manhattan radius of a point ──
 export function getRandomWalkableNear(
     world: GridWorld,

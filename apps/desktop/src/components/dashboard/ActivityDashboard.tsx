@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import { Activity, Eye, TrendingUp } from 'lucide-react';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useGrowthStore } from '../../store/useGrowthStore';
@@ -7,6 +13,7 @@ import type { AgentActivity, ParsedEvent } from '../../lib/pty-parser';
 import { assetPath } from '../../lib/assetPath';
 import { AgentLevelBadge } from '../growth';
 import type { EvolutionStage, SkillCategory } from '../../types/growth';
+import { formatDuration } from '../../lib/format-utils';
 
 // ── Status Configuration ──
 
@@ -96,14 +103,6 @@ function getTopSkillCategory(
 }
 
 // ── Helpers ──
-
-function formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainSec = seconds % 60;
-    return `${minutes}m ${remainSec}s`;
-}
 
 function getRecentToolEvents(
     events: ParsedEvent[],
@@ -289,10 +288,35 @@ interface ActivityDashboardProps {
 export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
     onClose,
 }) => {
+    // Selective subscriptions — derive only IDs/keys to minimize re-renders
+    const agentActivityIds = useTerminalStore(
+        useCallback(
+            (s: { agentActivity: Record<string, AgentActivity> }) =>
+                Object.keys(s.agentActivity).join(','),
+            [],
+        ),
+    );
     const agentActivity = useTerminalStore((s) => s.agentActivity);
+    const teamMemberKeys = useTerminalStore(
+        useCallback(
+            (s: { activeTeamMembers: Record<string, string> }) =>
+                Object.entries(s.activeTeamMembers)
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join(','),
+            [],
+        ),
+    );
     const activeTeamMembers = useTerminalStore((s) => s.activeTeamMembers);
-    const parsedMessages = useTerminalStore((s) => s.parsedMessages);
-    const tabs = useTerminalStore((s) => s.tabs);
+    const tabAgentMap = useTerminalStore(
+        useCallback(
+            (s: { tabs: Array<{ id: string; agentId?: string }> }) =>
+                s.tabs
+                    .filter((t) => t.agentId)
+                    .map((t) => `${t.agentId}:${t.id}`)
+                    .join(','),
+            [],
+        ),
+    );
     const growthProfiles = useGrowthStore((s) => s.profiles);
 
     // Track when each agent's activity status last changed
@@ -301,7 +325,9 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
 
     useEffect(() => {
         const now = Date.now();
-        for (const [agentId, status] of Object.entries(agentActivity)) {
+        for (const [agentId, status] of Object.entries(
+            agentActivity as Record<string, AgentActivity>,
+        )) {
             if (prevActivity.current[agentId] !== status) {
                 activityTimestamps.current[agentId] = now;
                 prevActivity.current[agentId] = status;
@@ -309,57 +335,64 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
         }
     }, [agentActivity]);
 
-    // Build the list of agents to display:
-    // All DEFAULT_AGENTS that have activity or active team mapping, fallback to all
-    const displayAgents: Array<{
-        agent: AgentProfile;
-        teamMemberName?: string;
-        tabId?: string;
-    }> = [];
-
-    // Reverse team member mapping: agentId -> teamMemberName
-    const agentToTeamName: Record<string, string> = {};
-    for (const [memberName, agentId] of Object.entries(activeTeamMembers)) {
-        agentToTeamName[agentId] = memberName;
-    }
-
-    // Map agentId -> tabId for event lookup
-    const agentToTabId: Record<string, string> = {};
-    for (const tab of tabs) {
-        if (tab.agentId) {
-            agentToTabId[tab.agentId] = tab.id;
+    // Build derived data using memoized key strings to avoid recalculation
+    const { displayAgents, agentToTabId, statusCounts } = useMemo(() => {
+        // Reverse team member mapping: agentId -> teamMemberName
+        const _agentToTeamName: Record<string, string> = {};
+        for (const [memberName, agentId] of Object.entries(
+            activeTeamMembers as Record<string, string>,
+        )) {
+            _agentToTeamName[agentId] = memberName;
         }
-    }
 
-    // Add default agents that have activity or team mapping
-    for (const agent of DEFAULT_AGENTS) {
-        const hasActivity = agentActivity[agent.id] !== undefined;
-        const hasTeamMapping = agentToTeamName[agent.id] !== undefined;
-        if (hasActivity || hasTeamMapping) {
-            displayAgents.push({
-                agent,
-                teamMemberName: agentToTeamName[agent.id],
-                tabId: agentToTabId[agent.id],
-            });
+        // Map agentId -> tabId from serialized key
+        const _agentToTabId: Record<string, string> = {};
+        for (const pair of tabAgentMap.split(',')) {
+            if (!pair) continue;
+            const [aid, tid] = pair.split(':');
+            _agentToTabId[aid] = tid;
         }
-    }
 
-    // If no agents have activity, show all default agents as idle
-    if (displayAgents.length === 0) {
+        const _displayAgents: Array<{
+            agent: AgentProfile;
+            teamMemberName?: string;
+            tabId?: string;
+        }> = [];
+
         for (const agent of DEFAULT_AGENTS) {
-            displayAgents.push({ agent });
+            const hasActivity = agentActivity[agent.id] !== undefined;
+            const hasTeamMapping = _agentToTeamName[agent.id] !== undefined;
+            if (hasActivity || hasTeamMapping) {
+                _displayAgents.push({
+                    agent,
+                    teamMemberName: _agentToTeamName[agent.id],
+                    tabId: _agentToTabId[agent.id],
+                });
+            }
         }
-    }
 
-    // Status summary counts
-    const statusCounts = displayAgents.reduce(
-        (acc, { agent }) => {
-            const status = agentActivity[agent.id] ?? 'idle';
-            acc[status] = (acc[status] ?? 0) + 1;
-            return acc;
-        },
-        {} as Record<string, number>,
-    );
+        if (_displayAgents.length === 0) {
+            for (const agent of DEFAULT_AGENTS) {
+                _displayAgents.push({ agent });
+            }
+        }
+
+        const _statusCounts = _displayAgents.reduce(
+            (acc, { agent }) => {
+                const status = agentActivity[agent.id] ?? 'idle';
+                acc[status] = (acc[status] ?? 0) + 1;
+                return acc;
+            },
+            {} as Record<string, number>,
+        );
+
+        return {
+            displayAgents: _displayAgents,
+            agentToTabId: _agentToTabId,
+            statusCounts: _statusCounts,
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentActivityIds, teamMemberKeys, tabAgentMap, agentActivity]);
 
     // Growth section: agents with growth profiles
     const agentNameMap = useMemo(() => {
@@ -450,7 +483,11 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 {displayAgents.map(({ agent, teamMemberName, tabId }) => {
                     const status = agentActivity[agent.id] ?? 'idle';
-                    const events = tabId ? (parsedMessages[tabId] ?? []) : [];
+                    // Read events on-demand from store to avoid subscribing to parsedMessages
+                    const events = tabId
+                        ? (useTerminalStore.getState().parsedMessages[tabId] ??
+                          [])
+                        : [];
                     const startTime = activityTimestamps.current[agent.id] ?? 0;
 
                     return (

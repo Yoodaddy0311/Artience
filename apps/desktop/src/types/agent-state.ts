@@ -1,3 +1,10 @@
+/** Agent recommendation result from keyword-based scoring */
+export interface AgentRecommendation {
+    agentId: string;
+    score: number;
+    reason: string;
+}
+
 export type AgentState =
     | 'idle'
     | 'assigned'

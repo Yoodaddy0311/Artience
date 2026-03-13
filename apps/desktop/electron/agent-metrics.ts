@@ -40,13 +40,20 @@ class AgentMetricsTracker {
         });
     }
 
+    private getStore(): Store<MetricsSchema> {
+        this.ensureInit();
+        if (!this.store)
+            throw new Error('AgentMetrics store failed to initialize');
+        return this.store;
+    }
+
     recordTaskStart(
         agentId: string,
         taskId: string,
         description: string,
     ): void {
-        this.ensureInit();
-        const agents = this.store!.get('agents');
+        const store = this.getStore();
+        const agents = store.get('agents');
         const metrics = agents[agentId] ?? this.emptyMetrics(agentId);
 
         const task: TaskMetric = {
@@ -66,7 +73,7 @@ class AgentMetricsTracker {
         metrics.totalTasks++;
         metrics.lastActive = Date.now();
         agents[agentId] = metrics;
-        this.store!.set('agents', agents);
+        store.set('agents', agents);
     }
 
     recordTaskComplete(
@@ -74,8 +81,8 @@ class AgentMetricsTracker {
         taskId: string,
         status: 'success' | 'failure' | 'timeout',
     ): void {
-        this.ensureInit();
-        const agents = this.store!.get('agents');
+        const store = this.getStore();
+        const agents = store.get('agents');
         const metrics = agents[agentId];
         if (!metrics) return;
 
@@ -113,23 +120,20 @@ class AgentMetricsTracker {
 
         metrics.lastActive = Date.now();
         agents[agentId] = metrics;
-        this.store!.set('agents', agents);
+        store.set('agents', agents);
     }
 
     getMetrics(agentId: string): AgentMetrics {
-        this.ensureInit();
-        const agents = this.store!.get('agents');
+        const agents = this.getStore().get('agents');
         return agents[agentId] ?? this.emptyMetrics(agentId);
     }
 
     getAllMetrics(): Record<string, AgentMetrics> {
-        this.ensureInit();
-        return this.store!.get('agents');
+        return this.getStore().get('agents');
     }
 
     getTopPerformers(limit = 10): AgentMetrics[] {
-        this.ensureInit();
-        const all = Object.values(this.store!.get('agents'));
+        const all = Object.values(this.getStore().get('agents'));
         return all
             .filter((m) => m.totalTasks > 0)
             .sort((a, b) => b.completionRate - a.completionRate)

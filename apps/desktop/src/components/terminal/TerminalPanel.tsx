@@ -29,12 +29,20 @@ function relativeTime(ts: number): string {
 // ── 복사 버튼 ──
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
     const [copied, setCopied] = useState(false);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleCopy = useCallback(() => {
         navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            if (timerRef.current) clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setCopied(false), 1500);
         });
     }, [text]);
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, []);
 
     return (
         <button
@@ -697,10 +705,9 @@ export const TerminalPanel: React.FC = () => {
         [updateTab],
     );
 
-    // Re-fit active tab when it changes, and refocus
+    // Re-fit & refocus active tab when tab or view mode changes
     useEffect(() => {
         if (!activeTabId) return;
-        // 터미널 모드일 때만 fit
         const mode = viewMode[activeTabId] || 'terminal';
         if (mode !== 'terminal') return;
         const entry = xtermMapRef.current.get(activeTabId);
@@ -709,21 +716,6 @@ export const TerminalPanel: React.FC = () => {
                 entry.fitAddon.fit();
                 entry.terminal.focus();
             });
-        }
-    }, [activeTabId, viewMode]);
-
-    // 뷰 모드 전환 시 터미널 refit
-    useEffect(() => {
-        if (!activeTabId) return;
-        const mode = viewMode[activeTabId] || 'terminal';
-        if (mode === 'terminal') {
-            const entry = xtermMapRef.current.get(activeTabId);
-            if (entry) {
-                requestAnimationFrame(() => {
-                    entry.fitAddon.fit();
-                    entry.terminal.focus();
-                });
-            }
         }
     }, [activeTabId, viewMode]);
 

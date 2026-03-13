@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useAppStore } from '../useAppStore';
 import type { ProjectAsset } from '../useAppStore';
 import { DEFAULT_PROJECT } from '../../types/project';
@@ -389,8 +389,17 @@ describe('useAppStore', () => {
     });
 
     describe('saveProject', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+            delete (window as any).dogbaApi;
+        });
+
         it('should do nothing when no IPC is available', async () => {
             await useAppStore.getState().saveProject();
+            await vi.advanceTimersByTimeAsync(400);
             // Should not throw or set error
         });
 
@@ -408,6 +417,7 @@ describe('useAppStore', () => {
             };
 
             await useAppStore.getState().saveProject();
+            await vi.advanceTimersByTimeAsync(400);
 
             expect(saveFn).toHaveBeenCalled();
             const savedData = saveFn.mock.calls[0][0];
@@ -415,8 +425,6 @@ describe('useAppStore', () => {
 
             expect(useAppStore.getState().projectLoading).toBe(false);
             expect(useAppStore.getState().projectError).toBeNull();
-
-            delete (window as any).dogbaApi;
         });
 
         it('should set projectError on save failure', async () => {
@@ -432,11 +440,10 @@ describe('useAppStore', () => {
             };
 
             await useAppStore.getState().saveProject();
+            await vi.advanceTimersByTimeAsync(400);
 
             expect(useAppStore.getState().projectLoading).toBe(false);
             expect(useAppStore.getState().projectError).toBe('Save failed');
-
-            delete (window as any).dogbaApi;
         });
     });
 });

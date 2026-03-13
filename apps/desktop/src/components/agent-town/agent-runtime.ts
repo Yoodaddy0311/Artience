@@ -76,7 +76,7 @@ export const ZONE_LABEL_COLORS: Record<ZoneType, number> = {
 
 // ── Agent movement constants ──
 
-export const AGENT_SPEED_TILES_PER_SEC = 2; // 2 tiles per second
+export const AGENT_SPEED_TILES_PER_SEC = 1.0; // 1 tile per second
 export const IDLE_WANDER_RADIUS = 5; // tiles
 export const IDLE_PAUSE_MIN_MS = 2000;
 export const IDLE_PAUSE_MAX_MS = 5000;

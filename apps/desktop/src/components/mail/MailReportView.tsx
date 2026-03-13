@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import {
     FileText,
-    FilePlus,
     FileEdit,
-    Trash2,
     Clock,
     Wrench,
     CheckCircle2,
@@ -18,10 +16,11 @@ import { MailReportDetail } from './MailReportDetail';
 import type {
     MailMessage,
     MailReport,
-    MailChangedFile,
     MailStatus,
 } from '../../store/useMailStore';
 import { useMailStore } from '../../store/useMailStore';
+import { FILE_ACTION_ICON } from './mail-icons';
+import { formatDuration } from '../../lib/format-utils';
 
 // ── Status Badge (Neobrutalism) ──
 
@@ -38,25 +37,6 @@ const STATUS_LABELS: Record<MailStatus, string> = {
     changes_requested: 'Changes Requested',
     acknowledged: 'Acknowledged',
 };
-
-// ── File Action Icon ──
-
-const FILE_ACTION_ICON: Record<MailChangedFile['action'], React.ReactNode> = {
-    created: <FilePlus className="w-3.5 h-3.5 text-green-600" />,
-    modified: <FileEdit className="w-3.5 h-3.5 text-yellow-600" />,
-    deleted: <Trash2 className="w-3.5 h-3.5 text-red-600" />,
-};
-
-// ── Format Duration ──
-
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainSec = seconds % 60;
-    return `${minutes}m ${remainSec}s`;
-}
 
 // ── Main Component ──
 

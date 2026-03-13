@@ -98,6 +98,8 @@ interface TerminalState {
     updateTab: (id: string, patch: Partial<TerminalTab>) => void;
 }
 
+const MAX_PARSED_EVENTS = 500;
+
 export const useTerminalStore = create<TerminalState>()(
     persist(
         (set) => ({
@@ -125,12 +127,24 @@ export const useTerminalStore = create<TerminalState>()(
                 })),
 
             addParsedEvent: (tabId, event) =>
-                set((s) => ({
-                    parsedMessages: {
-                        ...s.parsedMessages,
-                        [tabId]: [...(s.parsedMessages[tabId] || []), event],
-                    },
-                })),
+                set((s) => {
+                    const prev = s.parsedMessages[tabId] || [];
+                    const next =
+                        prev.length >= MAX_PARSED_EVENTS
+                            ? [
+                                  ...prev.slice(
+                                      prev.length - MAX_PARSED_EVENTS + 1,
+                                  ),
+                                  event,
+                              ]
+                            : [...prev, event];
+                    return {
+                        parsedMessages: {
+                            ...s.parsedMessages,
+                            [tabId]: next,
+                        },
+                    };
+                }),
 
             clearParsedMessages: (tabId) =>
                 set((s) => ({
@@ -243,15 +257,23 @@ export const useTerminalStore = create<TerminalState>()(
                 return success;
             },
 
-            getAvailableAgents: () => {
-                const states = useTerminalStore.getState().agentStates;
+            getAvailableAgents: (): string[] => {
+                const states = (
+                    useTerminalStore as unknown as {
+                        getState: () => TerminalState;
+                    }
+                ).getState().agentStates;
                 return Object.keys(states).filter(
                     (id) => states[id].currentState === 'idle',
                 );
             },
 
-            getAgentState: (agentId) => {
-                return useTerminalStore.getState().agentStates[agentId];
+            getAgentState: (agentId): AgentStateMachine | undefined => {
+                return (
+                    useTerminalStore as unknown as {
+                        getState: () => TerminalState;
+                    }
+                ).getState().agentStates[agentId];
             },
 
             resetAgentState: (agentId) =>
@@ -342,19 +364,24 @@ export const useTerminalStore = create<TerminalState>()(
                 dockAgents: state.dockAgents,
                 agentSettings: state.agentSettings,
             }),
-            merge: (persisted: any, current: TerminalState) => ({
-                ...current,
-                ...(persisted as Partial<TerminalState>),
-                // 영속 데이터가 손상된 경우 기본값으로 폴백
-                dockAgents: Array.isArray((persisted as any)?.dockAgents)
-                    ? (persisted as any).dockAgents
-                    : current.dockAgents,
-                characterDirMap:
-                    (persisted as any)?.characterDirMap ??
-                    current.characterDirMap,
-                agentSettings:
-                    (persisted as any)?.agentSettings ?? current.agentSettings,
-            }),
+            merge: (
+                persisted: unknown,
+                current: TerminalState,
+            ): TerminalState => {
+                const p = persisted as Partial<TerminalState> | undefined;
+                if (!p) return current;
+                // Only pick partialized keys — never spread raw persisted to avoid
+                // overwriting action functions or non-persisted state with stale values.
+                return {
+                    ...current,
+                    dockAgents: Array.isArray(p.dockAgents)
+                        ? p.dockAgents
+                        : current.dockAgents,
+                    characterDirMap:
+                        p.characterDirMap ?? current.characterDirMap,
+                    agentSettings: p.agentSettings ?? current.agentSettings,
+                };
+            },
         },
     ),
 );

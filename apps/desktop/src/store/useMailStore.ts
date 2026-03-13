@@ -148,21 +148,25 @@ export const useMailStore = create<MailState>()(
             partialize: (state) => ({
                 messages: state.messages,
             }),
-            merge: (persisted, current) => {
-                const merged = {
-                    ...current,
-                    ...(persisted as Partial<MailState>),
-                };
+            merge: (persisted: unknown, current: MailState): MailState => {
+                const p = persisted as Partial<MailState> | undefined;
+                if (!p) return current;
+                // Only pick partialized keys (messages) to avoid overwriting
+                // action functions with stale/undefined values from localStorage.
+                let messages = Array.isArray(p.messages)
+                    ? p.messages
+                    : current.messages;
                 // Patch old messages missing new fields (actions, status)
-                if (Array.isArray(merged.messages)) {
-                    merged.messages = merged.messages.map((m: any) => ({
-                        ...m,
-                        actions: m.actions ?? [],
-                        status: m.status ?? 'pending',
-                    }));
-                }
-                merged.unreadCount = computeUnread(merged.messages);
-                return merged;
+                messages = messages.map((m: any) => ({
+                    ...m,
+                    actions: m.actions ?? [],
+                    status: m.status ?? 'pending',
+                }));
+                return {
+                    ...current,
+                    messages,
+                    unreadCount: computeUnread(messages),
+                };
             },
         },
     ),

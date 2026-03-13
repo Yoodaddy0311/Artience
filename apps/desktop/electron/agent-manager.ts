@@ -256,10 +256,10 @@ class AgentManager {
         let resolve: (() => void) | null = null;
         let done = false;
 
-        // shell: false로 실행하여 한국어/특수문자 쉘 이스케이프 문제 방지
+        // shell: true required on Windows to resolve claude.cmd wrapper
         const proc: ChildProcess = spawn('claude', args, {
             env,
-            shell: false,
+            shell: process.platform === 'win32',
             cwd: session.projectDir,
         });
 

@@ -3,8 +3,11 @@ import {
     createDefaultWorld,
     findPath,
     getWalkableCells,
+    getZoneCells,
     getRandomWalkableNear,
     getNearestWalkable,
+    syncObjectCollision,
+    validateWorld,
     GRID_COLS,
     GRID_ROWS,
     TileType,
@@ -361,6 +364,236 @@ describe('grid-world', () => {
 
             // Manhattan distance = 18, path length = 19 nodes
             expect(path).toHaveLength(19);
+        });
+    });
+
+    // ── validateWorld ──
+
+    describe('validateWorld', () => {
+        it('validates the default world as fully connected', () => {
+            const world = createDefaultWorld();
+            const result = validateWorld(world);
+            expect(result.valid).toBe(true);
+            expect(result.unreachable).toHaveLength(0);
+        });
+
+        it('detects unreachable zones when fully walled off', () => {
+            const world = createDefaultWorld();
+            // Block all door gaps in the work zone bottom wall (row 12)
+            world.cells[12][8] = {
+                floor: TileType.WALL,
+                wall: true,
+                collision: true,
+            };
+            world.cells[12][9] = {
+                floor: TileType.WALL,
+                wall: true,
+                collision: true,
+            };
+            // Also block the side door gaps (col 19, rows 5-6)
+            world.cells[5][19] = {
+                floor: TileType.WALL,
+                wall: true,
+                collision: true,
+            };
+            world.cells[6][19] = {
+                floor: TileType.WALL,
+                wall: true,
+                collision: true,
+            };
+
+            const result = validateWorld(world);
+            // Work zone should now be unreachable from the entrance
+            expect(result.unreachable).toContain('work');
+        });
+
+        it('reports valid for a simple open grid with no zones', () => {
+            const world = createTestGrid(5, 5);
+            const result = validateWorld(world);
+            // No zones defined, so all zones are "unreachable"
+            expect(result.unreachable).toHaveLength(5);
+        });
+    });
+
+    // ── getZoneCells ──
+
+    describe('getZoneCells', () => {
+        it('returns work zone cells from default world', () => {
+            const world = createDefaultWorld();
+            const workCells = getZoneCells(world, 'work');
+            expect(workCells.length).toBeGreaterThan(0);
+            for (const cell of workCells) {
+                expect(world.cells[cell.y][cell.x].zone).toBe('work');
+                expect(world.cells[cell.y][cell.x].collision).toBe(false);
+            }
+        });
+
+        it('returns hallway cells from default world', () => {
+            const world = createDefaultWorld();
+            const hallwayCells = getZoneCells(world, 'hallway');
+            expect(hallwayCells.length).toBeGreaterThan(0);
+        });
+
+        it('returns empty array for zone with no cells', () => {
+            const world = createTestGrid(3, 3);
+            const result = getZoneCells(world, 'work');
+            expect(result).toHaveLength(0);
+        });
+
+        it('excludes collision cells within the zone', () => {
+            const world = createDefaultWorld();
+            const workCells = getZoneCells(world, 'work');
+            // Desks in work zone should not appear in walkable zone cells
+            for (const cell of workCells) {
+                expect(world.cells[cell.y][cell.x].collision).toBe(false);
+                expect(world.cells[cell.y][cell.x].wall).toBe(false);
+            }
+        });
+    });
+
+    // ── createDefaultWorld ──
+
+    describe('createDefaultWorld', () => {
+        it('creates a world with correct dimensions', () => {
+            const world = createDefaultWorld();
+            expect(world.cols).toBe(GRID_COLS);
+            expect(world.rows).toBe(GRID_ROWS);
+            expect(world.cells).toHaveLength(GRID_ROWS);
+            expect(world.cells[0]).toHaveLength(GRID_COLS);
+        });
+
+        it('has outer walls on all edges', () => {
+            const world = createDefaultWorld();
+            for (let x = 0; x < GRID_COLS; x++) {
+                expect(world.cells[0][x].wall).toBe(true);
+                expect(world.cells[GRID_ROWS - 1][x].wall).toBe(true);
+            }
+            for (let y = 0; y < GRID_ROWS; y++) {
+                expect(world.cells[y][0].wall).toBe(true);
+                expect(world.cells[y][GRID_COLS - 1].wall).toBe(true);
+            }
+        });
+
+        it('has desks as collision objects in work zone', () => {
+            const world = createDefaultWorld();
+            expect(world.cells[3][3].collision).toBe(true);
+            expect(world.cells[3][3].objectId).toBe('desk-3-3');
+        });
+
+        it('has meeting table as collision objects', () => {
+            const world = createDefaultWorld();
+            expect(world.cells[5][27].collision).toBe(true);
+            expect(world.cells[5][27].objectId).toBe('meeting-table');
+        });
+    });
+
+    // ── syncObjectCollision ──
+
+    describe('syncObjectCollision', () => {
+        it('should block cells within object footprint plus 1-cell padding', () => {
+            const world = createTestGrid(10, 10);
+            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+
+            syncObjectCollision(world, objects);
+
+            // Object footprint cells (3,3), (4,3), (3,4), (4,4) should be blocked
+            expect(world.cells[3][3].collision).toBe(true);
+            expect(world.cells[3][4].collision).toBe(true);
+            expect(world.cells[4][3].collision).toBe(true);
+            expect(world.cells[4][4].collision).toBe(true);
+
+            // Padding cells should also be blocked (1 cell around)
+            expect(world.cells[2][3].collision).toBe(true); // above
+            expect(world.cells[5][3].collision).toBe(true); // below
+            expect(world.cells[3][2].collision).toBe(true); // left
+            expect(world.cells[3][5].collision).toBe(true); // right
+
+            // Far cells should remain walkable
+            expect(world.cells[0][0].collision).toBe(false);
+            expect(world.cells[9][9].collision).toBe(false);
+        });
+
+        it('should clear old object collision when objects are removed', () => {
+            const world = createTestGrid(10, 10);
+            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+
+            // First sync: block cells
+            syncObjectCollision(world, objects);
+            expect(world.cells[3][3].collision).toBe(true);
+
+            // Second sync: empty objects list should clear
+            syncObjectCollision(world, []);
+            expect(world.cells[3][3].collision).toBe(false);
+            expect(world.cells[2][3].collision).toBe(false);
+        });
+
+        it('should preserve wall collision when clearing object collision', () => {
+            const world = createTestGrid(10, 10);
+            // Manually set a wall
+            world.cells[5][5].wall = true;
+            world.cells[5][5].collision = true;
+
+            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+            syncObjectCollision(world, objects);
+
+            // Wall should still be collision-blocked
+            expect(world.cells[5][5].collision).toBe(true);
+            expect(world.cells[5][5].wall).toBe(true);
+        });
+
+        it('should preserve built-in furniture (objectId) collision', () => {
+            const world = createTestGrid(10, 10);
+            // Simulate a desk
+            world.cells[7][7].objectId = 'desk-7-7';
+            world.cells[7][7].collision = true;
+
+            // Sync with no external objects
+            syncObjectCollision(world, []);
+
+            // Desk collision should be preserved
+            expect(world.cells[7][7].collision).toBe(true);
+        });
+
+        it('should update collision when object moves', () => {
+            const world = createTestGrid(10, 10);
+
+            // Place object at (2,2)
+            syncObjectCollision(world, [{ x: 2, y: 2, width: 1, height: 1 }]);
+            expect(world.cells[2][2].collision).toBe(true);
+
+            // Move object to (6,6)
+            syncObjectCollision(world, [{ x: 6, y: 6, width: 1, height: 1 }]);
+            expect(world.cells[2][2].collision).toBe(false); // old position cleared
+            expect(world.cells[6][6].collision).toBe(true); // new position blocked
+        });
+
+        it('should prevent pathfinding through object footprints', () => {
+            const world = createTestGrid(10, 10);
+
+            // Place a wide object blocking the middle
+            syncObjectCollision(world, [{ x: 0, y: 4, width: 9, height: 1 }]);
+
+            // Path from top to bottom should be blocked (wall spans almost entire width)
+            // Only cells at x=9 y=3..5 area might be passable due to padding
+            const path = findPath(world, 0, 0, 0, 9);
+            // Should either be empty (blocked) or go around
+            if (path.length > 0) {
+                // If a path exists, verify no cell in the path is collision-blocked
+                for (const cell of path) {
+                    expect(world.cells[cell.y][cell.x].collision).toBe(false);
+                }
+            }
+        });
+
+        it('should clamp collision to grid bounds for edge objects', () => {
+            const world = createTestGrid(10, 10);
+
+            // Object at edge of grid — padding should not go out of bounds
+            syncObjectCollision(world, [{ x: 0, y: 0, width: 1, height: 1 }]);
+            expect(world.cells[0][0].collision).toBe(true);
+            expect(world.cells[1][0].collision).toBe(true);
+            expect(world.cells[0][1].collision).toBe(true);
+            // Should not throw for negative indices
         });
     });
 });

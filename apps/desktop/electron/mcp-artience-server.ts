@@ -155,25 +155,40 @@ const TOOLS: McpToolDefinition[] = [
 // ── State Bridge (main process에서 주입) ────────────────────────────────────
 
 export interface McpBridge {
-    getAgentStatuses(): Array<{
-        id: string;
-        label: string;
-        activity: string;
-        pid?: number;
-    }>;
+    getAgentStatuses():
+        | Promise<
+              Array<{
+                  id: string;
+                  label: string;
+                  activity: string;
+                  pid?: number;
+              }>
+          >
+        | Array<{
+              id: string;
+              label: string;
+              activity: string;
+              pid?: number;
+          }>;
     sendMail(
         from: string,
         to: string,
         subject: string,
         body: string,
         type: 'report' | 'error',
-    ): void;
-    notify(message: string, type: string): void;
-    getProjectInfo(): {
-        dir: string;
-        agents: string[];
-        activeSessions: string[];
-    };
+    ): void | Promise<void>;
+    notify(message: string, type: string): void | Promise<void>;
+    getProjectInfo():
+        | {
+              dir: string;
+              agents: string[];
+              activeSessions: string[];
+          }
+        | Promise<{
+              dir: string;
+              agents: string[];
+              activeSessions: string[];
+          }>;
     sendMessengerMessage(
         adapter: string,
         channel: string,
@@ -215,10 +230,10 @@ interface BridgeResponse {
 class FileBridge implements McpBridge {
     private requestCounter = 0;
 
-    private sendRequest(
+    private async sendRequest(
         method: string,
         args: Record<string, unknown>,
-    ): unknown {
+    ): Promise<unknown> {
         const reqId = `req-${Date.now()}-${++this.requestCounter}`;
         const reqFile = path.join(MCP_BRIDGE_DIR, `${reqId}.req.json`);
         const resFile = path.join(MCP_BRIDGE_DIR, `${reqId}.res.json`);
@@ -262,11 +277,8 @@ class FileBridge implements McpBridge {
                         throw err;
                 }
             }
-            // Synchronous sleep ~20ms via busy-wait (no native sleep in Node)
-            const sleepEnd = Date.now() + 20;
-            while (Date.now() < sleepEnd) {
-                /* spin */
-            }
+            // Async sleep ~20ms
+            await new Promise((resolve) => setTimeout(resolve, 20));
         }
 
         // Timeout — clean up request file
@@ -291,35 +303,37 @@ class FileBridge implements McpBridge {
         }
     }
 
-    getAgentStatuses(): Array<{
-        id: string;
-        label: string;
-        activity: string;
-        pid?: number;
-    }> {
-        return (this.sendRequest('getAgentStatuses', {}) || []) as any;
+    async getAgentStatuses(): Promise<
+        Array<{
+            id: string;
+            label: string;
+            activity: string;
+            pid?: number;
+        }>
+    > {
+        return ((await this.sendRequest('getAgentStatuses', {})) || []) as any;
     }
 
-    sendMail(
+    async sendMail(
         from: string,
         to: string,
         subject: string,
         body: string,
         type: 'report' | 'error',
-    ): void {
-        this.sendRequest('sendMail', { from, to, subject, body, type });
+    ): Promise<void> {
+        await this.sendRequest('sendMail', { from, to, subject, body, type });
     }
 
-    notify(message: string, type: string): void {
-        this.sendRequest('notify', { message, type });
+    async notify(message: string, type: string): Promise<void> {
+        await this.sendRequest('notify', { message, type });
     }
 
-    getProjectInfo(): {
+    async getProjectInfo(): Promise<{
         dir: string;
         agents: string[];
         activeSessions: string[];
-    } {
-        return (this.sendRequest('getProjectInfo', {}) || {
+    }> {
+        return ((await this.sendRequest('getProjectInfo', {})) || {
             dir: '.',
             agents: [],
             activeSessions: [],
@@ -331,7 +345,7 @@ class FileBridge implements McpBridge {
         channel: string,
         message: string,
     ): Promise<{ success: boolean; error?: string }> {
-        const result = this.sendRequest('sendMessengerMessage', {
+        const result = await this.sendRequest('sendMessengerMessage', {
             adapter,
             channel,
             message,
@@ -350,7 +364,7 @@ class FileBridge implements McpBridge {
     ): Promise<{
         messages: { sender: string; content: string; timestamp: number }[];
     }> {
-        const result = this.sendRequest('getMessengerMessages', {
+        const result = await this.sendRequest('getMessengerMessages', {
             adapter,
             limit: limit ?? 10,
         });
@@ -462,7 +476,7 @@ async function handleToolCall(
             case 'artience_notify': {
                 const message = (args.message as string) || '';
                 const type = (args.type as string) || 'info';
-                bridge.notify(message, type);
+                await bridge.notify(message, type);
                 return {
                     jsonrpc: '2.0',
                     id: req.id,
@@ -479,7 +493,7 @@ async function handleToolCall(
 
             case 'artience_agent_status': {
                 const agentId = args.agentId as string | undefined;
-                const statuses = bridge.getAgentStatuses();
+                const statuses = await bridge.getAgentStatuses();
                 const filtered = agentId
                     ? statuses.filter(
                           (s) =>
@@ -505,7 +519,13 @@ async function handleToolCall(
                 const to = (args.to as string) || '';
                 const subject = (args.subject as string) || '';
                 const body = (args.body as string) || '';
-                bridge.sendMail('mcp-server', to, subject, body, 'report');
+                await bridge.sendMail(
+                    'mcp-server',
+                    to,
+                    subject,
+                    body,
+                    'report',
+                );
                 return {
                     jsonrpc: '2.0',
                     id: req.id,
@@ -521,7 +541,7 @@ async function handleToolCall(
             }
 
             case 'artience_project_info': {
-                const info = bridge.getProjectInfo();
+                const info = await bridge.getProjectInfo();
                 return {
                     jsonrpc: '2.0',
                     id: req.id,

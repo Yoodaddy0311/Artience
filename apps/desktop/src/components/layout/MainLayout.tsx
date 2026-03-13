@@ -205,11 +205,12 @@ export const MainLayout: React.FC = () => {
 
     // Subscribe to mail:new-report IPC → feed into useMailStore
     useEffect(() => {
-        const unsub = window.dogbaApi?.mail?.onNewReport((report) => {
+        if (!window.dogbaApi?.mail?.onNewReport) return;
+        const unsub = window.dogbaApi.mail.onNewReport((report) => {
             useMailStore.getState().addMessage(report);
         });
         return () => {
-            unsub?.();
+            unsub();
         };
     }, []);
 
@@ -416,7 +417,11 @@ export const MainLayout: React.FC = () => {
                                                 <span className="font-bold text-black text-[20px] leading-[1.48] px-4 min-w-[120px] text-right">
                                                     {gamification.coins.toLocaleString()}
                                                 </span>
-                                                <button className="w-[44px] h-[44px] bg-[#FFD100] border-4 border-black rounded-lg font-bold text-black text-[20px] leading-[1.48] flex items-center justify-center hover:bg-black hover:text-white transition-colors">
+                                                <button
+                                                    disabled
+                                                    title="준비 중"
+                                                    className="w-[44px] h-[44px] bg-[#FFD100] border-4 border-black rounded-lg font-bold text-black text-[20px] leading-[1.48] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
                                                     +
                                                 </button>
                                             </div>
@@ -431,7 +436,11 @@ export const MainLayout: React.FC = () => {
                                                 <span className="font-bold text-black text-[20px] leading-[1.48] px-4 min-w-[120px] text-right">
                                                     {gamification.diamonds.toLocaleString()}
                                                 </span>
-                                                <button className="w-[44px] h-[44px] bg-[#A0E8AF] border-4 border-black rounded-lg font-bold text-black text-[20px] leading-[1.48] flex items-center justify-center hover:bg-black hover:text-white transition-colors">
+                                                <button
+                                                    disabled
+                                                    title="준비 중"
+                                                    className="w-[44px] h-[44px] bg-[#A0E8AF] border-4 border-black rounded-lg font-bold text-black text-[20px] leading-[1.48] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
                                                     +
                                                 </button>
                                             </div>
@@ -515,8 +524,12 @@ export const MainLayout: React.FC = () => {
                                             팀 관리
                                         </span>
                                     </button>
-                                    <button className="group flex flex-col items-center gap-3 hover:-translate-y-2 transition-transform">
-                                        <div className="w-[68px] h-[68px] bg-[#E8DAFF] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all group-active:translate-y-1 group-active:shadow-none">
+                                    <button
+                                        disabled
+                                        title="준비 중"
+                                        className="group flex flex-col items-center gap-3 opacity-50 cursor-not-allowed"
+                                    >
+                                        <div className="w-[68px] h-[68px] bg-[#E8DAFF] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all">
                                             <img
                                                 src={assetPath(
                                                     '/assets/ui/achievements.png',
@@ -529,8 +542,12 @@ export const MainLayout: React.FC = () => {
                                             업적도감
                                         </span>
                                     </button>
-                                    <button className="group flex flex-col items-center gap-3 hover:-translate-y-2 transition-transform">
-                                        <div className="w-[68px] h-[68px] bg-[#9DE5DC] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all group-active:translate-y-1 group-active:shadow-none">
+                                    <button
+                                        disabled
+                                        title="준비 중"
+                                        className="group flex flex-col items-center gap-3 opacity-50 cursor-not-allowed"
+                                    >
+                                        <div className="w-[68px] h-[68px] bg-[#9DE5DC] border-4 border-black shadow-[4px_4px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all">
                                             <img
                                                 src={assetPath(
                                                     '/assets/ui/delivery.png',
@@ -543,8 +560,12 @@ export const MainLayout: React.FC = () => {
                                             스케줄
                                         </span>
                                     </button>
-                                    <button className="group flex flex-col items-center gap-3 hover:-translate-y-2 transition-transform origin-bottom ml-2">
-                                        <div className="w-[88px] h-[88px] bg-[#FF7D7D] border-4 border-black shadow-[6px_6px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all group-active:translate-y-2 group-active:shadow-none">
+                                    <button
+                                        disabled
+                                        title="준비 중"
+                                        className="group flex flex-col items-center gap-3 opacity-50 cursor-not-allowed origin-bottom ml-2"
+                                    >
+                                        <div className="w-[88px] h-[88px] bg-[#FF7D7D] border-4 border-black shadow-[6px_6px_0_0_#000] rounded-2xl flex items-center justify-center overflow-hidden transition-all">
                                             <img
                                                 src={assetPath(
                                                     '/assets/ui/shop.png',

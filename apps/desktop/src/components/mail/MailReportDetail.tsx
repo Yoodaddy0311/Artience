@@ -9,9 +9,7 @@ import {
     CheckCircle2,
     XCircle,
     MinusCircle,
-    FilePlus,
     FileEdit,
-    Trash2,
 } from 'lucide-react';
 import type {
     MailMessage,
@@ -19,16 +17,8 @@ import type {
     DiffStat,
 } from '../../store/useMailStore';
 
-// ── Format Duration ──
-
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainSec = seconds % 60;
-    return `${minutes}m ${remainSec}s`;
-}
+import { formatDuration } from '../../lib/format-utils';
+import { FILE_ACTION_ICON } from './mail-icons';
 
 // ── Diff Bar Chart ──
 
@@ -66,14 +56,6 @@ const DiffBar: React.FC<{ stat: DiffStat; maxLines: number }> = ({
             </span>
         </div>
     );
-};
-
-// ── File Action Icon ──
-
-const FILE_ACTION_ICON = {
-    created: <FilePlus className="w-3.5 h-3.5 text-green-600" />,
-    modified: <FileEdit className="w-3.5 h-3.5 text-yellow-600" />,
-    deleted: <Trash2 className="w-3.5 h-3.5 text-red-600" />,
 };
 
 // ── Main Component ──

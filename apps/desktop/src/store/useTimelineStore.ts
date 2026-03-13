@@ -40,7 +40,7 @@ interface TimelineState {
     clearAgentEntries: (agentId: string) => void;
 }
 
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 200;
 
 export const useTimelineStore = create<TimelineState>()((set) => ({
     entries: [],
@@ -72,9 +72,9 @@ export const useTimelineStore = create<TimelineState>()((set) => ({
 
             // Don't create entries for 'idle' if the agent was already idle
             // (avoids flooding the timeline with idle entries)
-            const lastEntry = [...updatedEntries]
-                .reverse()
-                .find((e) => e.agentId === agentId);
+            const lastEntry = updatedEntries.findLast(
+                (e) => e.agentId === agentId,
+            );
             if (activity === 'idle' && lastEntry?.activity === 'idle') {
                 return { entries: updatedEntries };
             }

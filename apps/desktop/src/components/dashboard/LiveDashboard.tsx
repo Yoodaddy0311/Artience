@@ -4,6 +4,7 @@ import { DEFAULT_AGENTS } from '../../types/platform';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import type { AgentState } from '../../types/agent-state';
+import { formatDuration } from '../../lib/format-utils';
 
 // ── State badge config ──
 
@@ -57,15 +58,6 @@ function resolveAgentName(agentId: string): string {
     if (agentId === 'raccoon') return 'Dokba';
     const profile = DEFAULT_AGENTS.find((a) => a.id === agentId);
     return profile?.name ?? agentId;
-}
-
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    const secs = Math.floor(ms / 1000);
-    if (secs < 60) return `${secs}s`;
-    const mins = Math.floor(secs / 60);
-    const rem = secs % 60;
-    return `${mins}m ${rem}s`;
 }
 
 function formatElapsed(since: number): string {

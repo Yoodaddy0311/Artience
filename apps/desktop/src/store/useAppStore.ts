@@ -193,8 +193,8 @@ export const useAppStore = create<AppState>()(
                 );
                 set((state) => {
                     const newStack = [...state.undoStack, currentConfig];
-                    // keep max 50 states
-                    if (newStack.length > 50) newStack.shift();
+                    // keep max 20 states (each is a deep clone of projectConfig)
+                    if (newStack.length > 20) newStack.shift();
                     return { undoStack: newStack };
                 });
             },

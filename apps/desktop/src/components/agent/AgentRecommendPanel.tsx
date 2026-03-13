@@ -1,12 +1,7 @@
 import React from 'react';
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { assetPath } from '../../lib/assetPath';
-
-interface AgentRecommendation {
-    agentId: string;
-    score: number;
-    reason: string;
-}
+import type { AgentRecommendation } from '../../types/agent-state';
 
 interface AgentRecommendPanelProps {
     recommendations: AgentRecommendation[];

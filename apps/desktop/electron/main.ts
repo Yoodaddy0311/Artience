@@ -23,6 +23,9 @@ process.on('uncaughtException', (err) => {
         dialog.showErrorBox('Error', `${err.name}: ${err.message}`);
     }
 });
+process.on('unhandledRejection', (reason) => {
+    console.error('[Electron] Unhandled rejection:', reason);
+});
 import * as os from 'os';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -361,7 +364,7 @@ function processParsedEvents(
 function processPtyForParser(tabId: string, rawData: string): void {
     const meta = terminalMeta.get(tabId);
     const agentLabel = meta?.label || tabId;
-    const logFile = path.join(LOGS_DIR, `${agentLabel} _history.log`);
+    const logFile = path.join(LOGS_DIR, `${agentLabel}_history.log`);
 
     // 백그라운드에서 로그 파일 기록
     fs.appendFile(logFile, rawData, (err) => {
@@ -522,7 +525,9 @@ async function createWindow() {
         mainWindow.loadFile(indexPath);
     }
 
-    mainWindow.webContents.openDevTools();
+    if (process.env.VITE_DEV_SERVER_URL) {
+        mainWindow.webContents.openDevTools();
+    }
 
     mainWindow.webContents.on('did-finish-load', async () => {
         try {
@@ -563,7 +568,7 @@ ipcMain.handle(
             };
         },
     ) => {
-        const id = `term - ${++terminalIdCounter} `;
+        const id = `term-${++terminalIdCounter}`;
         const shell =
             options?.shell ||
             (process.platform === 'win32' ? 'powershell.exe' : 'bash');
@@ -593,7 +598,7 @@ ipcMain.handle(
             const settings = options.agentSettings;
             if (settings && cmd === defaultCmd) {
                 const flags: string[] = [];
-                if (settings.model) flags.push(`--model ${settings.model} `);
+                if (settings.model) flags.push(`--model ${settings.model}`);
                 // Apply permission mode: explicit setting > preset > default
                 const permMode =
                     settings.permissionMode &&
@@ -604,11 +609,11 @@ ipcMain.handle(
                     if (permMode === 'bypassPermissions') {
                         flags.push('--dangerously-skip-permissions');
                     } else {
-                        flags.push(`--permission - mode ${permMode} `);
+                        flags.push(`--permission-mode ${permMode}`);
                     }
                 }
                 if (settings.maxTurns)
-                    flags.push(`--max - turns ${settings.maxTurns} `);
+                    flags.push(`--max-turns ${settings.maxTurns}`);
                 if (flags.length > 0) {
                     cmd = `${defaultCmd} ${flags.join(' ')} `;
                 }
@@ -702,7 +707,7 @@ ipcMain.handle('terminal:list', () => {
 });
 
 ipcMain.handle('history:read', async (_event, agentId: string) => {
-    const logFile = path.join(LOGS_DIR, `${agentId} _history.log`);
+    const logFile = path.join(LOGS_DIR, `${agentId}_history.log`);
     try {
         if (fs.existsSync(logFile)) {
             // 최대 마지막 5MB만 읽기 등 제한을 둘 수 있으나, 일단 심플하게 전체/직접 읽기로 시작
@@ -807,13 +812,17 @@ ipcMain.handle(
         userMessage: string,
         skillId?: string,
     ) => {
-        const gen = agentManager.chat(
-            agentName,
-            userMessage,
-            getProjectDir(),
-            skillId,
-        );
-        return drainChat(agentName, gen);
+        try {
+            const gen = agentManager.chat(
+                agentName,
+                userMessage,
+                getProjectDir(),
+                skillId,
+            );
+            return drainChat(agentName, gen);
+        } catch (err: any) {
+            return { success: false, text: err.message || 'chat:send failed' };
+        }
     },
 );
 
@@ -937,7 +946,18 @@ ipcMain.handle('cli:auth-status', async () => {
             shell: true,
         });
         console.log('[cli:auth-status] stdout:', stdout);
-        const data = JSON.parse(stdout);
+        let data: any;
+        try {
+            data = JSON.parse(stdout);
+        } catch (parseErr: any) {
+            console.error(
+                '[cli:auth-status] parse error:',
+                parseErr.message,
+                '| raw:',
+                stdout.slice(0, 200),
+            );
+            return { authenticated: false };
+        }
         const authenticated = !!data.loggedIn;
         console.log('[cli:auth-status] authenticated:', authenticated);
         return { authenticated };
@@ -1064,8 +1084,6 @@ ipcMain.handle('worktree:list', async (_e, projectDir?: string) => {
 
 // ── Mail IPC ─────────────────────────────────────────────────────────────────
 
-const execFileAsync = promisify(execFile);
-
 ipcMain.handle(
     'mail:getGitDiff',
     async (
@@ -1110,7 +1128,15 @@ ipcMain.handle(
 
             return { success: true, branch, commitHash, diffStats };
         } catch (err: any) {
-            return { success: false, error: err.message };
+            const msg = err.message || '';
+            const isInitialCommit =
+                msg.includes('unknown revision') || msg.includes('HEAD~1');
+            return {
+                success: false,
+                error: isInitialCommit
+                    ? 'Initial commit — no previous commit to diff against'
+                    : msg,
+            };
         }
     },
 );
@@ -1200,7 +1226,7 @@ ipcMain.handle(
                 .replace(/[^a-zA-Z0-9._-]/g, '_');
             const dest = path.join(
                 os.tmpdir(),
-                `artience - ${Date.now()} -${sanitized} `,
+                `artience-${Date.now()}-${sanitized}`,
             );
             const data = base64.replace(/^data:[^;]+;base64,/, '');
             fs.writeFileSync(dest, Buffer.from(data, 'base64'));
@@ -1328,7 +1354,7 @@ function startMcpBridgeWatcher(): void {
         fs.mkdirSync(MCP_BRIDGE_DIR, { recursive: true });
     }
 
-    mcpBridgeWatcher = setInterval(() => {
+    mcpBridgeWatcher = setInterval(async () => {
         try {
             const files = fs.readdirSync(MCP_BRIDGE_DIR);
             const reqFiles = files.filter((f) => f.endsWith('.req.json'));
@@ -1420,7 +1446,7 @@ function startMcpBridgeWatcher(): void {
         } catch {
             // Bridge dir not readable — skip this cycle
         }
-    }, 100); // Poll every 100ms
+    }, 1000); // Poll every 1s
 }
 
 function stopMcpBridgeWatcher(): void {
@@ -1570,13 +1596,14 @@ ipcMain.handle(
         }
 
         // Save to history
-        const snapId = `snap - ${Date.now()} `;
+        const snapId = `snap-${Date.now()}`;
         historySnapshots.unshift({
             id: snapId,
             message: prompt.slice(0, 100),
             timestamp: new Date().toISOString(),
             data: fullText,
         });
+        if (historySnapshots.length > 50) historySnapshots.length = 50;
 
         return { success: true, result: fullText, text: fullText, sessionId };
     },
@@ -1597,7 +1624,7 @@ ipcMain.handle('studio:uploadAsset', async () => {
         return { success: false, error: 'canceled', copied: [] };
     }
 
-    const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+    const isoDir = path.join(getProjectDir(), 'public', 'sprites', 'iso');
     if (!fs.existsSync(isoDir)) fs.mkdirSync(isoDir, { recursive: true });
 
     const copied: string[] = [];
@@ -1616,7 +1643,7 @@ ipcMain.handle('studio:uploadAsset', async () => {
 
 ipcMain.handle('studio:deleteAsset', async (_e, filename: string) => {
     try {
-        const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+        const isoDir = path.join(getProjectDir(), 'public', 'sprites', 'iso');
         const filePath = path.join(isoDir, filename);
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -1630,7 +1657,7 @@ ipcMain.handle('studio:deleteAsset', async (_e, filename: string) => {
 
 ipcMain.handle('studio:getAssets', async () => {
     try {
-        const isoDir = path.join(process.cwd(), 'public', 'sprites', 'iso');
+        const isoDir = path.join(getProjectDir(), 'public', 'sprites', 'iso');
         if (!fs.existsSync(isoDir)) return { assets: [] };
 
         const files = fs.readdirSync(isoDir, { withFileTypes: true });
@@ -1739,13 +1766,14 @@ ipcMain.handle('studio:rollback', async (_e, snapshotId: string) => {
     const projectDir = getProjectDir();
     try {
         // Save current state as a new snapshot before rollback
-        const backupId = `snap - ${Date.now()} `;
+        const backupId = `snap-${Date.now()}`;
         historySnapshots.unshift({
             id: backupId,
-            message: `[backup] before rollback to ${snap.message} `,
+            message: `[backup] before rollback to ${snap.message}`,
             timestamp: new Date().toISOString(),
             data: historySnapshots[0]?.data,
         });
+        if (historySnapshots.length > 50) historySnapshots.length = 50;
 
         // If the snapshot has generated data, write it back to draft.json
         if (snap.data) {
@@ -1764,7 +1792,7 @@ ipcMain.handle('studio:rollback', async (_e, snapshotId: string) => {
         try {
             await execFileAsync(
                 'git',
-                ['stash', 'push', '-m', `artience - rollback - ${snapshotId} `],
+                ['stash', 'push', '-m', `artience-rollback-${snapshotId}`],
                 {
                     cwd: projectDir,
                     timeout: 10000,
@@ -1827,7 +1855,7 @@ ipcMain.handle(
     ) => {
         const dir =
             projectDir || (store.get('projectData') as any)?.meta?.dir || '.';
-        const jobId = `job - ${++jobIdCounter} `;
+        const jobId = `job-${++jobIdCounter}`;
 
         const record: JobRecord = {
             id: jobId,
@@ -2231,10 +2259,7 @@ ipcMain.handle('messenger:list', () => {
     return { adapters: messengerBridge.listAdapters() };
 });
 
-// MessengerBridge → Renderer event forwarding
-messengerBridge.on('message:received', (msg: unknown) => {
-    mainWindow?.webContents?.send('messenger:message', msg);
-});
+// MessengerBridge → Renderer forwarding handled in app.whenReady (with tray balloon)
 
 // ── Provider Registry IPC ───────────────────────────────────────────────────
 
@@ -2594,6 +2619,7 @@ agentP2P.on('message', (_from: string, _to: string, msg: P2PMessage) => {
 // ── Feedback Loop IPC ──────────────────────────────────────────────────────
 
 const FEEDBACK_MAX_HISTORY = 20;
+const MAX_FEEDBACK_AGENTS = 50;
 const feedbackHistory = new Map<string, FeedbackResult[]>();
 
 ipcMain.handle('feedback:process', async (_e, event: FeedbackEvent) => {
@@ -2611,6 +2637,12 @@ ipcMain.handle('feedback:process', async (_e, event: FeedbackEvent) => {
         agentHistory.length = FEEDBACK_MAX_HISTORY;
     }
     feedbackHistory.set(event.agentId, agentHistory);
+
+    // Cap number of tracked agents to prevent unbounded Map growth
+    if (feedbackHistory.size > MAX_FEEDBACK_AGENTS) {
+        const oldest = feedbackHistory.keys().next().value;
+        if (oldest) feedbackHistory.delete(oldest);
+    }
 
     return result;
 });

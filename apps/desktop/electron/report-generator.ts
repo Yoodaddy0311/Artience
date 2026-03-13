@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { formatDuration } from './format-utils';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,17 +33,6 @@ export interface ReportSummary {
     taskDescription: string;
     date: string;
     filePath: string;
-}
-
-function formatDuration(ms: number): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    if (totalSeconds < 60) return `${totalSeconds}초`;
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    if (hours > 0) {
-        return minutes > 0 ? `${hours}시간 ${minutes}분` : `${hours}시간`;
-    }
-    return `${minutes}분`;
 }
 
 function toTaskSlug(description: string): string {

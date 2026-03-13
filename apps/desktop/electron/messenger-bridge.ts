@@ -38,14 +38,25 @@ export interface IncomingMessage {
     raw?: unknown;
 }
 
-// ── Electron-store for adapter configs ─────────────────────────────────────
+// ── Electron-store for adapter configs (lazy init — must not run before app.ready) ──
+// SECURITY: tokens stored in plaintext. Consider electron.safeStorage for production.
 
-const messengerStore = new Store({
-    name: 'messenger-configs',
-    defaults: {
-        configs: {} as Record<string, Record<string, string>>,
-    },
-});
+interface MessengerStoreSchema {
+    configs: Record<string, Record<string, string>>;
+}
+
+let _messengerStore: Store<MessengerStoreSchema> | null = null;
+function getMessengerStore(): Store<MessengerStoreSchema> {
+    if (!_messengerStore) {
+        _messengerStore = new Store<MessengerStoreSchema>({
+            name: 'messenger-configs',
+            defaults: {
+                configs: {} as Record<string, Record<string, string>>,
+            },
+        });
+    }
+    return _messengerStore;
+}
 
 // ── Helper: HTTP request via Electron net ──────────────────────────────────
 
@@ -543,12 +554,12 @@ class MessengerBridge extends EventEmitter {
             await adapter.connect(config);
 
             // Persist config (redact tokens for logging, but store full config)
-            const configs = messengerStore.get('configs') as Record<
+            const configs = getMessengerStore().get('configs') as Record<
                 string,
                 Record<string, string>
             >;
             configs[adapterId] = config;
-            messengerStore.set('configs', configs);
+            getMessengerStore().set('configs', configs);
 
             this.emit('adapter:connected', adapterId);
             console.log(`[MessengerBridge] ${adapterId} connected`);

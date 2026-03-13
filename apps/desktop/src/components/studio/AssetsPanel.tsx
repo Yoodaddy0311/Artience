@@ -10,7 +10,8 @@ import {
 import { useAppStore, type ProjectAsset } from '../../store/useAppStore';
 
 export const AssetsPanel: React.FC = () => {
-    const { assets, setAssets } = useAppStore();
+    const assets = useAppStore((s) => s.assets);
+    const setAssets = useAppStore((s) => s.setAssets);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
