@@ -461,6 +461,118 @@ interface DogbaDirectiveApi {
     route(input: string, currentTabId: string): Promise<DirectiveRouteResult>;
 }
 
+interface SessionSearchResult {
+    id: string;
+    label: string;
+    agentName: string;
+    lastActive: number;
+    preview?: string;
+}
+
+interface SessionMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp?: number;
+}
+
+interface DogbaSessionApi {
+    search(query: string): Promise<{ sessions: SessionSearchResult[] }>;
+    getHistory(sessionId: string): Promise<{
+        success: boolean;
+        messages?: SessionMessage[];
+        error?: string;
+    }>;
+}
+
+interface TaskMetricRecord {
+    taskId: string;
+    agentId: string;
+    description: string;
+    startedAt: number;
+    completedAt?: number;
+    status: 'success' | 'failure' | 'timeout';
+    durationMs?: number;
+}
+
+interface AgentMetricsRecord {
+    agentId: string;
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    completionRate: number;
+    avgDurationMs: number;
+    recentTasks: TaskMetricRecord[];
+    lastActive: number;
+}
+
+interface DogbaMetricsApi {
+    get(agentId: string): Promise<AgentMetricsRecord>;
+    getAll(): Promise<Record<string, AgentMetricsRecord>>;
+    topPerformers(limit?: number): Promise<AgentMetricsRecord[]>;
+}
+
+interface TeamTemplateMember {
+    role: string;
+    agentId: string;
+    required: boolean;
+}
+
+interface TeamTemplateInfo {
+    id: string;
+    name: string;
+    description: string;
+    agents: TeamTemplateMember[];
+    suggestedFor: string[];
+}
+
+interface DogbaTeamTemplateApi {
+    list(): Promise<{ templates: TeamTemplateInfo[] }>;
+    get(id: string): Promise<{ template?: TeamTemplateInfo; error?: string }>;
+    suggest(
+        description: string,
+    ): Promise<{ template: TeamTemplateInfo | null }>;
+    create(
+        template: Omit<TeamTemplateInfo, 'id'>,
+    ): Promise<{ success: boolean; id?: string; template?: TeamTemplateInfo }>;
+}
+
+type ScheduledTaskPriority = 'critical' | 'high' | 'medium' | 'low';
+type ScheduledTaskStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+interface ScheduledTaskInfo {
+    id: string;
+    description: string;
+    priority: ScheduledTaskPriority;
+    deadline?: number;
+    assignedAgent?: string;
+    createdAt: number;
+    status: ScheduledTaskStatus;
+    result?: string;
+}
+
+interface DogbaTaskQueueApi {
+    enqueue(input: {
+        description: string;
+        priority: ScheduledTaskPriority;
+        deadline?: number;
+        assignedAgent?: string;
+    }): Promise<{ success: boolean; taskId: string; dispatched: boolean }>;
+    list(): Promise<{
+        queued: ScheduledTaskInfo[];
+        running: ScheduledTaskInfo[];
+        completed: ScheduledTaskInfo[];
+    }>;
+    cancel(taskId: string): Promise<{ success: boolean }>;
+    dispatch(): Promise<{
+        success: boolean;
+        task?: ScheduledTaskInfo;
+        error?: string;
+    }>;
+    complete(taskId: string, result?: string): Promise<{ success: boolean }>;
+    fail(taskId: string, error?: string): Promise<{ success: boolean }>;
+    onDispatched(callback: (task: ScheduledTaskInfo) => void): () => void;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -483,9 +595,13 @@ interface DogbaApi {
     provider: DogbaProviderApi;
     report: DogbaReportApi;
     workflow: DogbaWorkflowApi;
+    teamTemplate: DogbaTeamTemplateApi;
     meeting: DogbaMeetingApi;
     messenger: DogbaMessengerApi;
     agentDb: DogbaAgentDbApi;
+    session: DogbaSessionApi;
+    metrics: DogbaMetricsApi;
+    taskQueue: DogbaTaskQueueApi;
 }
 
 interface IncomingMessengerMessage {

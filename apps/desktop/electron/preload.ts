@@ -611,6 +611,23 @@ try {
                 ipcRenderer.invoke('workflow:detect', projectDir),
         },
 
+        // ── Team Template ──
+        teamTemplate: {
+            list: (): Promise<{ templates: any[] }> =>
+                ipcRenderer.invoke('team-template:list'),
+            get: (id: string): Promise<{ template?: any; error?: string }> =>
+                ipcRenderer.invoke('team-template:get', id),
+            suggest: (description: string): Promise<{ template: any | null }> =>
+                ipcRenderer.invoke('team-template:suggest', description),
+            create: (
+                template: any,
+            ): Promise<{
+                success: boolean;
+                id?: string;
+                template?: any;
+            }> => ipcRenderer.invoke('team-template:create', template),
+        },
+
         // ── Report Generator ──
         report: {
             generate: (
@@ -740,6 +757,52 @@ try {
             }> => ipcRenderer.invoke('agent-db:update', id, patch),
         },
 
+        // ── Task Queue ──
+        taskQueue: {
+            enqueue: (input: {
+                description: string;
+                priority: string;
+                deadline?: number;
+                assignedAgent?: string;
+            }): Promise<{
+                success: boolean;
+                taskId: string;
+                dispatched: boolean;
+            }> => ipcRenderer.invoke('task-queue:enqueue', input),
+            list: (): Promise<{
+                queued: any[];
+                running: any[];
+                completed: any[];
+            }> => ipcRenderer.invoke('task-queue:list'),
+            cancel: (taskId: string): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('task-queue:cancel', taskId),
+            dispatch: (): Promise<{
+                success: boolean;
+                task?: any;
+                error?: string;
+            }> => ipcRenderer.invoke('task-queue:dispatch'),
+            complete: (
+                taskId: string,
+                result?: string,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('task-queue:complete', taskId, result),
+            fail: (
+                taskId: string,
+                error?: string,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('task-queue:fail', taskId, error),
+            onDispatched: (callback: (task: any) => void) => {
+                const listener = (_e: Electron.IpcRendererEvent, task: any) =>
+                    callback(task);
+                ipcRenderer.on('task-queue:dispatched', listener);
+                return () =>
+                    ipcRenderer.removeListener(
+                        'task-queue:dispatched',
+                        listener,
+                    );
+            },
+        },
+
         // ── Directive Routing ──
         directive: {
             route: (
@@ -751,6 +814,42 @@ try {
                 routedTo?: string;
                 error?: string;
             }> => ipcRenderer.invoke('directive:route', input, currentTabId),
+        },
+
+        // ── Session History Search ──
+        session: {
+            search: (
+                query: string,
+            ): Promise<{
+                sessions: {
+                    id: string;
+                    label: string;
+                    agentName: string;
+                    lastActive: number;
+                    preview?: string;
+                }[];
+            }> => ipcRenderer.invoke('session:search', query),
+            getHistory: (
+                sessionId: string,
+            ): Promise<{
+                success: boolean;
+                messages?: {
+                    role: 'user' | 'assistant';
+                    content: string;
+                    timestamp?: number;
+                }[];
+                error?: string;
+            }> => ipcRenderer.invoke('session:getHistory', sessionId),
+        },
+
+        // ── Agent Metrics ──
+        metrics: {
+            get: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('metrics:get', agentId),
+            getAll: (): Promise<Record<string, any>> =>
+                ipcRenderer.invoke('metrics:getAll'),
+            topPerformers: (limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('metrics:topPerformers', limit),
         },
 
         // ── App Notifications (from MCP server / main process) ──

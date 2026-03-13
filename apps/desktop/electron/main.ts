@@ -55,7 +55,10 @@ import { reportGenerator } from './report-generator';
 import { workflowPackManager } from './workflow-pack';
 import { meetingManager } from './meeting-manager';
 import { agentDB } from './agent-db';
+import { agentMetrics } from './agent-metrics';
+import { teamTemplateManager } from './team-template';
 import { messengerBridge } from './messenger-bridge';
+import { taskScheduler, type EnqueueInput } from './task-scheduler';
 import {
     registerMcpServer,
     MCP_BRIDGE_DIR,
@@ -1497,6 +1500,32 @@ ipcMain.handle('workflow:detect', async (_e, projectDir?: string) => {
     return { packId };
 });
 
+// ── Team Template IPC ──────────────────────────────────────────────────────
+
+ipcMain.handle('team-template:list', () => {
+    return { templates: teamTemplateManager.listTemplates() };
+});
+
+ipcMain.handle('team-template:get', (_e, id: string) => {
+    const template = teamTemplateManager.getTemplate(id);
+    if (!template) return { error: `Template not found: ${id}` };
+    return { template };
+});
+
+ipcMain.handle('team-template:suggest', (_e, description: string) => {
+    const template = teamTemplateManager.suggestTemplate(description);
+    return { template };
+});
+
+ipcMain.handle(
+    'team-template:create',
+    (_e, template: Omit<import('./team-template').TeamTemplate, 'id'>) => {
+        const id = teamTemplateManager.createCustomTemplate(template);
+        const created = teamTemplateManager.getTemplate(id);
+        return { success: true, id, template: created };
+    },
+);
+
 // ── Studio IPC (Agent Manager) ─────────────────────────────────────────────
 
 ipcMain.handle(
@@ -1972,6 +2001,80 @@ ipcMain.handle('agent:recommend', async (_e, taskDescription: string) => {
     return recommendAgents(taskDescription);
 });
 
+// ── Task Queue IPC ──────────────────────────────────────────────────────────
+
+ipcMain.handle('task-queue:enqueue', async (_e, input: EnqueueInput) => {
+    const id = taskScheduler.enqueue(input);
+
+    // Auto-dispatch: try to run immediately if under concurrency limit
+    const dispatched = taskScheduler.dispatch();
+    if (dispatched) {
+        if (ctoController.isTeamActive()) {
+            const agent = dispatched.assignedAgent ?? 'auto';
+            const result = await ctoController.delegateTask(
+                agent,
+                dispatched.description,
+            );
+            if (!result.success) {
+                taskScheduler.markFailed(dispatched.id, result.error);
+            }
+        } else {
+            mainWindow?.webContents?.send('task-queue:dispatched', dispatched);
+        }
+    }
+
+    return { success: true, taskId: id, dispatched: dispatched?.id === id };
+});
+
+ipcMain.handle('task-queue:list', () => {
+    return {
+        queued: taskScheduler.getQueue(),
+        running: taskScheduler.getRunning(),
+        completed: taskScheduler.getCompleted(),
+    };
+});
+
+ipcMain.handle('task-queue:cancel', (_e, taskId: string) => {
+    const cancelled = taskScheduler.cancel(taskId);
+    return { success: cancelled };
+});
+
+ipcMain.handle('task-queue:dispatch', async () => {
+    const task = taskScheduler.dispatch();
+    if (!task) {
+        return {
+            success: false,
+            error: 'No tasks to dispatch or at concurrency limit',
+        };
+    }
+
+    if (ctoController.isTeamActive()) {
+        const agent = task.assignedAgent ?? 'auto';
+        const result = await ctoController.delegateTask(
+            agent,
+            task.description,
+        );
+        if (!result.success) {
+            taskScheduler.markFailed(task.id, result.error);
+            return { success: false, error: result.error };
+        }
+    } else {
+        mainWindow?.webContents?.send('task-queue:dispatched', task);
+    }
+
+    return { success: true, task };
+});
+
+ipcMain.handle('task-queue:complete', (_e, taskId: string, result?: string) => {
+    taskScheduler.markComplete(taskId, result);
+    return { success: true };
+});
+
+ipcMain.handle('task-queue:fail', (_e, taskId: string, error?: string) => {
+    taskScheduler.markFailed(taskId, error);
+    return { success: true };
+});
+
 // ── Directive Routing IPC ───────────────────────────────────────────────────
 
 ipcMain.handle(
@@ -2257,6 +2360,187 @@ ipcMain.handle('agent-db:update', (_e, id: string, patch: any) => {
     return { success: true, agent: updated };
 });
 
+// ── Agent Metrics IPC ─────────────────────────────────────────────────────
+
+ipcMain.handle('metrics:get', (_e, agentId: string) => {
+    return agentMetrics.getMetrics(agentId);
+});
+
+ipcMain.handle('metrics:getAll', () => {
+    return agentMetrics.getAllMetrics();
+});
+
+ipcMain.handle('metrics:topPerformers', (_e, limit?: number) => {
+    return agentMetrics.getTopPerformers(limit);
+});
+
+// ── Session History Search ─────────────────────────────────────────────────
+
+const sessionSearchStore = new Store({
+    name: 'dokba-chat-sessions',
+    defaults: { sessionIds: {} as Record<string, string> },
+});
+
+ipcMain.handle('session:search', async (_e, query: string) => {
+    const sessionIds = (sessionSearchStore.get('sessionIds') || {}) as Record<
+        string,
+        string
+    >;
+    const q = (query || '').toLowerCase().trim();
+    if (!q) return { sessions: [] };
+
+    const results: {
+        id: string;
+        label: string;
+        agentName: string;
+        lastActive: number;
+        preview?: string;
+    }[] = [];
+
+    for (const [agentId, sessionId] of Object.entries(sessionIds)) {
+        const label = terminalMeta.get(agentId)?.label || agentId;
+        const agentName = agentId;
+
+        if (
+            label.toLowerCase().includes(q) ||
+            agentName.toLowerCase().includes(q)
+        ) {
+            let preview: string | undefined;
+            let lastActive = 0;
+            try {
+                const sessionsDir = path.join(
+                    os.homedir(),
+                    '.claude',
+                    'projects',
+                );
+                if (fs.existsSync(sessionsDir)) {
+                    const projectDirs = fs.readdirSync(sessionsDir);
+                    for (const projDir of projectDirs) {
+                        const sessionFile = path.join(
+                            sessionsDir,
+                            projDir,
+                            sessionId + '.jsonl',
+                        );
+                        if (fs.existsSync(sessionFile)) {
+                            const stat = fs.statSync(sessionFile);
+                            lastActive = stat.mtimeMs;
+                            const content = fs.readFileSync(
+                                sessionFile,
+                                'utf-8',
+                            );
+                            const lines = content.trim().split('\n');
+                            for (let i = lines.length - 1; i >= 0; i--) {
+                                try {
+                                    const parsed = JSON.parse(lines[i]);
+                                    if (
+                                        parsed.type === 'assistant' &&
+                                        parsed.message?.content
+                                    ) {
+                                        const textBlocks =
+                                            parsed.message.content.filter(
+                                                (b: any) => b.type === 'text',
+                                            );
+                                        if (textBlocks.length > 0) {
+                                            preview = textBlocks[0].text.slice(
+                                                0,
+                                                120,
+                                            );
+                                            break;
+                                        }
+                                    }
+                                } catch {
+                                    // skip unparseable lines
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch {
+                // graceful fallback
+            }
+
+            results.push({
+                id: sessionId,
+                label,
+                agentName,
+                lastActive,
+                preview,
+            });
+        }
+    }
+
+    results.sort((a, b) => b.lastActive - a.lastActive);
+    return { sessions: results };
+});
+
+ipcMain.handle('session:getHistory', async (_e, sessionId: string) => {
+    try {
+        const sessionsDir = path.join(os.homedir(), '.claude', 'projects');
+        if (!fs.existsSync(sessionsDir)) {
+            return { success: false, error: 'No sessions directory found' };
+        }
+
+        let sessionFile: string | null = null;
+        const projectDirs = fs.readdirSync(sessionsDir);
+        for (const projDir of projectDirs) {
+            const candidate = path.join(
+                sessionsDir,
+                projDir,
+                sessionId + '.jsonl',
+            );
+            if (fs.existsSync(candidate)) {
+                sessionFile = candidate;
+                break;
+            }
+        }
+
+        if (!sessionFile) {
+            return {
+                success: false,
+                error: `Session file not found for ${sessionId}`,
+            };
+        }
+
+        const content = fs.readFileSync(sessionFile, 'utf-8');
+        const lines = content.trim().split('\n');
+        const messages: {
+            role: 'user' | 'assistant';
+            content: string;
+            timestamp?: number;
+        }[] = [];
+
+        for (const line of lines) {
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed.type === 'human' || parsed.type === 'assistant') {
+                    const textBlocks = (parsed.message?.content || []).filter(
+                        (b: any) => b.type === 'text',
+                    );
+                    if (textBlocks.length > 0) {
+                        messages.push({
+                            role:
+                                parsed.type === 'human' ? 'user' : 'assistant',
+                            content: textBlocks
+                                .map((b: any) => b.text)
+                                .join('\n'),
+                            timestamp: parsed.timestamp
+                                ? new Date(parsed.timestamp).getTime()
+                                : undefined,
+                        });
+                    }
+                }
+            } catch {
+                // skip unparseable lines
+            }
+        }
+
+        return { success: true, messages };
+    } catch (err: any) {
+        return { success: false, error: err.message || String(err) };
+    }
+});
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -2266,6 +2550,7 @@ app.whenReady().then(async () => {
     // Initialize agent DB and seed default personas
     agentDB.init();
     agentDB.seed();
+    teamTemplateManager.init();
 
     // Listen for messenger messages → tray balloon + forward to renderer
     messengerBridge.on('message:received', (msg: any) => {
