@@ -573,6 +573,83 @@ interface DogbaTaskQueueApi {
     onDispatched(callback: (task: ScheduledTaskInfo) => void): () => void;
 }
 
+interface P2PMessage {
+    id: string;
+    from: string;
+    to: string;
+    content: string;
+    timestamp: number;
+    read: boolean;
+}
+
+interface DogbaP2PApi {
+    send(
+        from: string,
+        to: string,
+        content: string,
+    ): Promise<{ success: boolean; message: P2PMessage }>;
+    inbox(
+        agentId: string,
+        unreadOnly?: boolean,
+    ): Promise<{ messages: P2PMessage[] }>;
+    markRead(agentId: string, messageId: string): Promise<{ success: boolean }>;
+    conversation(
+        agentA: string,
+        agentB: string,
+    ): Promise<{ messages: P2PMessage[] }>;
+    clear(agentId: string): Promise<{ success: boolean }>;
+    onNewMessage(callback: (msg: P2PMessage) => void): () => void;
+}
+
+interface RetroReportData {
+    period: 'daily' | 'weekly';
+    startDate: string;
+    endDate: string;
+    summary: {
+        totalTasks: number;
+        completedTasks: number;
+        failedTasks: number;
+        activeAgents: string[];
+    };
+    agentHighlights: {
+        agentId: string;
+        tasksCompleted: number;
+        avgDuration: number;
+        bestTask?: string;
+    }[];
+    recommendations: string[];
+}
+
+interface DogbaRetroApi {
+    daily(): Promise<RetroReportData>;
+    weekly(): Promise<RetroReportData>;
+    save(
+        report: RetroReportData,
+        projectDir?: string,
+    ): Promise<{ success: boolean; filePath?: string; error?: string }>;
+}
+
+interface FeedbackEvent {
+    agentId: string;
+    taskId: string;
+    outcome: 'success' | 'failure';
+    durationMs: number;
+    skillsUsed?: string[];
+}
+
+interface FeedbackResult {
+    agentId: string;
+    expGained: number;
+    skillExpGained: Record<string, number>;
+    recommendations: string[];
+    timestamp: number;
+}
+
+interface DogbaFeedbackApi {
+    process(event: FeedbackEvent): Promise<FeedbackResult>;
+    getHistory(agentId: string): Promise<{ history: FeedbackResult[] }>;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -602,6 +679,9 @@ interface DogbaApi {
     session: DogbaSessionApi;
     metrics: DogbaMetricsApi;
     taskQueue: DogbaTaskQueueApi;
+    p2p: DogbaP2PApi;
+    retro: DogbaRetroApi;
+    feedback: DogbaFeedbackApi;
 }
 
 interface IncomingMessengerMessage {

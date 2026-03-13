@@ -56,9 +56,17 @@ import { workflowPackManager } from './workflow-pack';
 import { meetingManager } from './meeting-manager';
 import { agentDB } from './agent-db';
 import { agentMetrics } from './agent-metrics';
+import { retroGenerator } from './retro-generator';
 import { teamTemplateManager } from './team-template';
 import { messengerBridge } from './messenger-bridge';
 import { taskScheduler, type EnqueueInput } from './task-scheduler';
+import { agentP2P, type P2PMessage } from './agent-p2p';
+import {
+    calculateFeedback,
+    generateRecommendations,
+    type FeedbackEvent,
+    type FeedbackResult,
+} from '../src/lib/feedback-loop';
 import {
     registerMcpServer,
     MCP_BRIDGE_DIR,
@@ -2541,6 +2549,76 @@ ipcMain.handle('session:getHistory', async (_e, sessionId: string) => {
     }
 });
 
+// ── Agent P2P Messaging IPC ────────────────────────────────────────────────
+
+ipcMain.handle(
+    'p2p:send',
+    async (_e, from: string, to: string, content: string) => {
+        const msg = agentP2P.send(from, to, content);
+        return { success: true, message: msg };
+    },
+);
+
+ipcMain.handle(
+    'p2p:inbox',
+    async (_e, agentId: string, unreadOnly?: boolean) => {
+        return { messages: agentP2P.getInbox(agentId, unreadOnly) };
+    },
+);
+
+ipcMain.handle(
+    'p2p:markRead',
+    async (_e, agentId: string, messageId: string) => {
+        return { success: agentP2P.markRead(agentId, messageId) };
+    },
+);
+
+ipcMain.handle(
+    'p2p:conversation',
+    async (_e, agentA: string, agentB: string) => {
+        return { messages: agentP2P.getConversation(agentA, agentB) };
+    },
+);
+
+ipcMain.handle('p2p:clear', async (_e, agentId: string) => {
+    agentP2P.clearInbox(agentId);
+    return { success: true };
+});
+
+agentP2P.on('message', (_from: string, _to: string, msg: P2PMessage) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('p2p:newMessage', msg);
+    }
+});
+
+// ── Feedback Loop IPC ──────────────────────────────────────────────────────
+
+const FEEDBACK_MAX_HISTORY = 20;
+const feedbackHistory = new Map<string, FeedbackResult[]>();
+
+ipcMain.handle('feedback:process', async (_e, event: FeedbackEvent) => {
+    const result = calculateFeedback(event);
+
+    // Get existing history for this agent
+    const agentHistory = feedbackHistory.get(event.agentId) || [];
+
+    // Generate recommendations using history
+    result.recommendations = generateRecommendations(agentHistory, event);
+
+    // Prepend to history (newest first), cap at max
+    agentHistory.unshift(result);
+    if (agentHistory.length > FEEDBACK_MAX_HISTORY) {
+        agentHistory.length = FEEDBACK_MAX_HISTORY;
+    }
+    feedbackHistory.set(event.agentId, agentHistory);
+
+    return result;
+});
+
+ipcMain.handle('feedback:getHistory', async (_e, agentId: string) => {
+    return { history: feedbackHistory.get(agentId) || [] };
+});
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -2589,6 +2667,21 @@ app.whenReady().then(async () => {
             }
         });
     }
+});
+
+// ── Retro Report IPC ──────────────────────────────────────────────────────
+
+ipcMain.handle('retro:daily', () => {
+    return retroGenerator.generateDaily();
+});
+
+ipcMain.handle('retro:weekly', () => {
+    return retroGenerator.generateWeekly();
+});
+
+ipcMain.handle('retro:save', (_e, report: any, projectDir?: string) => {
+    const dir = projectDir || getProjectDir();
+    return retroGenerator.saveReport(report, dir);
 });
 
 app.on('window-all-closed', () => {

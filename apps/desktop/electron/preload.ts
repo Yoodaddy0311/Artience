@@ -852,6 +852,62 @@ try {
                 ipcRenderer.invoke('metrics:topPerformers', limit),
         },
 
+        // ── Agent P2P Messaging ──
+        p2p: {
+            send: (
+                from: string,
+                to: string,
+                content: string,
+            ): Promise<{ success: boolean; message: any }> =>
+                ipcRenderer.invoke('p2p:send', from, to, content),
+            inbox: (
+                agentId: string,
+                unreadOnly?: boolean,
+            ): Promise<{ messages: any[] }> =>
+                ipcRenderer.invoke('p2p:inbox', agentId, unreadOnly),
+            markRead: (
+                agentId: string,
+                messageId: string,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('p2p:markRead', agentId, messageId),
+            conversation: (
+                agentA: string,
+                agentB: string,
+            ): Promise<{ messages: any[] }> =>
+                ipcRenderer.invoke('p2p:conversation', agentA, agentB),
+            clear: (agentId: string): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('p2p:clear', agentId),
+            onNewMessage: (callback: (msg: any) => void) => {
+                const listener = (_e: Electron.IpcRendererEvent, msg: any) =>
+                    callback(msg);
+                ipcRenderer.on('p2p:newMessage', listener);
+                return () =>
+                    ipcRenderer.removeListener('p2p:newMessage', listener);
+            },
+        },
+
+        // ── Retro Report ──
+        retro: {
+            daily: (): Promise<any> => ipcRenderer.invoke('retro:daily'),
+            weekly: (): Promise<any> => ipcRenderer.invoke('retro:weekly'),
+            save: (
+                report: any,
+                projectDir?: string,
+            ): Promise<{
+                success: boolean;
+                filePath?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('retro:save', report, projectDir),
+        },
+
+        // ── Feedback Loop ──
+        feedback: {
+            process: (event: any): Promise<any> =>
+                ipcRenderer.invoke('feedback:process', event),
+            getHistory: (agentId: string): Promise<{ history: any[] }> =>
+                ipcRenderer.invoke('feedback:getHistory', agentId),
+        },
+
         // ── App Notifications (from MCP server / main process) ──
         notification: {
             onToast: (
