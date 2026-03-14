@@ -136,7 +136,7 @@ class RetroGenerator {
         endMs: number,
         totalTasks: number,
         completedTasks: number,
-        failedTasks: number,
+        _failedTasks: number,
     ): string[] {
         const recs: string[] = [];
 

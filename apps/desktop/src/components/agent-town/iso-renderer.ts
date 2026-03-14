@@ -47,7 +47,7 @@ interface RoomDef {
     scale: number;
 }
 
-const ROOM_ASSETS: RoomDef[] = [
+const _ROOM_ASSETS: RoomDef[] = [
     {
         zone: 'meeting',
         asset: '/sprites/iso/room-meeting.png',
@@ -332,7 +332,7 @@ export async function createRoomSprites(
                 let isTransforming = false;
 
                 // Create corner handles for Distort Mode
-                let selectedHandleIndex = -1;
+                let _selectedHandleIndex = -1;
                 const handles: PIXI.Graphics[] = [];
                 const handlesContainer = new PIXI.Container();
 
@@ -394,7 +394,7 @@ export async function createRoomSprites(
                         e.stopPropagation();
                         isDraggingHandle = true;
                         isTransforming = true;
-                        selectedHandleIndex = i;
+                        _selectedHandleIndex = i;
 
                         startCorners = currentCorners.map((c) => ({ ...c }));
                         startCx =
@@ -473,7 +473,7 @@ export async function createRoomSprites(
                             if (onDragCancel) onDragCancel();
                             isDraggingHandle = false;
                             isTransforming = false;
-                            selectedHandleIndex = -1;
+                            _selectedHandleIndex = -1;
                             if (onCornersMoved) {
                                 onCornersMoved(
                                     obj.id,

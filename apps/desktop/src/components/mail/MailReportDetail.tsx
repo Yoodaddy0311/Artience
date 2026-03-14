@@ -11,11 +11,7 @@ import {
     MinusCircle,
     FileEdit,
 } from 'lucide-react';
-import type {
-    MailMessage,
-    MailReport,
-    DiffStat,
-} from '../../store/useMailStore';
+import type { MailMessage, DiffStat } from '../../store/useMailStore';
 
 import { formatDuration } from '../../lib/format-utils';
 import { FILE_ACTION_ICON } from './mail-icons';

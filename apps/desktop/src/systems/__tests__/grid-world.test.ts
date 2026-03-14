@@ -490,55 +490,57 @@ describe('grid-world', () => {
     // ── syncObjectCollision ──
 
     describe('syncObjectCollision', () => {
-        it('should block cells within object footprint plus 1-cell padding', () => {
-            const world = createTestGrid(10, 10);
-            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+        it('should block cells centered on object position plus 1-cell padding', () => {
+            const world = createTestGrid(12, 12);
+            // Object at (5,5) with width=2, height=2 → halfW=1, halfH=1
+            // Centered footprint: (4,4) to (5,5), padding adds (3,3) to (6,6)
+            const objects = [{ x: 5, y: 5, width: 2, height: 2 }];
 
             syncObjectCollision(world, objects);
 
-            // Object footprint cells (3,3), (4,3), (3,4), (4,4) should be blocked
-            expect(world.cells[3][3].collision).toBe(true);
-            expect(world.cells[3][4].collision).toBe(true);
-            expect(world.cells[4][3].collision).toBe(true);
+            // Center cells should be blocked
+            expect(world.cells[5][5].collision).toBe(true);
+            expect(world.cells[5][4].collision).toBe(true);
+            expect(world.cells[4][5].collision).toBe(true);
             expect(world.cells[4][4].collision).toBe(true);
 
-            // Padding cells should also be blocked (1 cell around)
-            expect(world.cells[2][3].collision).toBe(true); // above
-            expect(world.cells[5][3].collision).toBe(true); // below
-            expect(world.cells[3][2].collision).toBe(true); // left
-            expect(world.cells[3][5].collision).toBe(true); // right
+            // Padding cells should also be blocked
+            expect(world.cells[3][5].collision).toBe(true); // above
+            expect(world.cells[6][5].collision).toBe(true); // below
+            expect(world.cells[5][3].collision).toBe(true); // left
+            expect(world.cells[5][6].collision).toBe(true); // right
 
             // Far cells should remain walkable
             expect(world.cells[0][0].collision).toBe(false);
-            expect(world.cells[9][9].collision).toBe(false);
+            expect(world.cells[11][11].collision).toBe(false);
         });
 
         it('should clear old object collision when objects are removed', () => {
-            const world = createTestGrid(10, 10);
-            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+            const world = createTestGrid(12, 12);
+            const objects = [{ x: 5, y: 5, width: 2, height: 2 }];
 
             // First sync: block cells
             syncObjectCollision(world, objects);
-            expect(world.cells[3][3].collision).toBe(true);
+            expect(world.cells[5][5].collision).toBe(true);
 
             // Second sync: empty objects list should clear
             syncObjectCollision(world, []);
-            expect(world.cells[3][3].collision).toBe(false);
-            expect(world.cells[2][3].collision).toBe(false);
+            expect(world.cells[5][5].collision).toBe(false);
+            expect(world.cells[4][5].collision).toBe(false);
         });
 
         it('should preserve wall collision when clearing object collision', () => {
-            const world = createTestGrid(10, 10);
+            const world = createTestGrid(12, 12);
             // Manually set a wall
-            world.cells[5][5].wall = true;
-            world.cells[5][5].collision = true;
+            world.cells[9][9].wall = true;
+            world.cells[9][9].collision = true;
 
-            const objects = [{ x: 3, y: 3, width: 2, height: 2 }];
+            const objects = [{ x: 5, y: 5, width: 2, height: 2 }];
             syncObjectCollision(world, objects);
 
             // Wall should still be collision-blocked
-            expect(world.cells[5][5].collision).toBe(true);
-            expect(world.cells[5][5].wall).toBe(true);
+            expect(world.cells[9][9].collision).toBe(true);
+            expect(world.cells[9][9].wall).toBe(true);
         });
 
         it('should preserve built-in furniture (objectId) collision', () => {
@@ -557,26 +559,24 @@ describe('grid-world', () => {
         it('should update collision when object moves', () => {
             const world = createTestGrid(10, 10);
 
-            // Place object at (2,2)
-            syncObjectCollision(world, [{ x: 2, y: 2, width: 1, height: 1 }]);
-            expect(world.cells[2][2].collision).toBe(true);
+            // Place object at (3,3) — centered: collision at (3,3) + padding
+            syncObjectCollision(world, [{ x: 3, y: 3, width: 1, height: 1 }]);
+            expect(world.cells[3][3].collision).toBe(true);
 
-            // Move object to (6,6)
-            syncObjectCollision(world, [{ x: 6, y: 6, width: 1, height: 1 }]);
-            expect(world.cells[2][2].collision).toBe(false); // old position cleared
-            expect(world.cells[6][6].collision).toBe(true); // new position blocked
+            // Move object to (7,7)
+            syncObjectCollision(world, [{ x: 7, y: 7, width: 1, height: 1 }]);
+            expect(world.cells[3][3].collision).toBe(false); // old position cleared
+            expect(world.cells[7][7].collision).toBe(true); // new position blocked
         });
 
         it('should prevent pathfinding through object footprints', () => {
             const world = createTestGrid(10, 10);
 
-            // Place a wide object blocking the middle
-            syncObjectCollision(world, [{ x: 0, y: 4, width: 9, height: 1 }]);
+            // Place a wide object centered at (5,5), blocking middle rows
+            syncObjectCollision(world, [{ x: 5, y: 5, width: 9, height: 1 }]);
 
-            // Path from top to bottom should be blocked (wall spans almost entire width)
-            // Only cells at x=9 y=3..5 area might be passable due to padding
+            // Path from top to bottom should be blocked or go around
             const path = findPath(world, 0, 0, 0, 9);
-            // Should either be empty (blocked) or go around
             if (path.length > 0) {
                 // If a path exists, verify no cell in the path is collision-blocked
                 for (const cell of path) {
@@ -594,6 +594,46 @@ describe('grid-world', () => {
             expect(world.cells[1][0].collision).toBe(true);
             expect(world.cells[0][1].collision).toBe(true);
             // Should not throw for negative indices
+        });
+
+        it('should skip walkable objects (isWalkable: true)', () => {
+            const world = createTestGrid(10, 10);
+
+            // Walkable object should NOT generate collision
+            syncObjectCollision(world, [
+                {
+                    x: 5,
+                    y: 5,
+                    width: 2,
+                    height: 2,
+                    properties: { isWalkable: true },
+                },
+            ]);
+            expect(world.cells[5][5].collision).toBe(false);
+            expect(world.cells[4][4].collision).toBe(false);
+        });
+
+        it('should block non-walkable objects and skip walkable ones', () => {
+            const world = createTestGrid(10, 10);
+
+            syncObjectCollision(world, [
+                {
+                    x: 3,
+                    y: 3,
+                    width: 1,
+                    height: 1,
+                    properties: { isWalkable: false },
+                },
+                {
+                    x: 7,
+                    y: 7,
+                    width: 1,
+                    height: 1,
+                    properties: { isWalkable: true },
+                },
+            ]);
+            expect(world.cells[3][3].collision).toBe(true); // non-walkable → blocked
+            expect(world.cells[7][7].collision).toBe(false); // walkable → free
         });
     });
 });

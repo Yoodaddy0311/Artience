@@ -133,151 +133,149 @@ interface AgentCardProps {
     readonly activityStartTime: number;
 }
 
-const AgentCard: React.FC<AgentCardProps> = ({
-    agent,
-    activity,
-    events,
-    teamMemberName,
-    activityStartTime,
-}) => {
-    const config = STATUS_MAP[activity];
-    const [elapsed, setElapsed] = useState(0);
+const AgentCard: React.FC<AgentCardProps> = React.memo(
+    ({ agent, activity, events, teamMemberName, activityStartTime }) => {
+        const config = STATUS_MAP[activity];
+        const [elapsed, setElapsed] = useState(0);
 
-    // Update elapsed timer for active states
-    useEffect(() => {
-        if (!config.pulse || activityStartTime === 0) {
-            setElapsed(0);
-            return;
-        }
+        // Update elapsed timer for active states
+        useEffect(() => {
+            if (!config.pulse || activityStartTime === 0) {
+                setElapsed(0);
+                return;
+            }
 
-        const tick = () => setElapsed(Date.now() - activityStartTime);
-        tick();
-        const interval = setInterval(tick, 1000);
-        return () => clearInterval(interval);
-    }, [config.pulse, activityStartTime]);
+            const tick = () => setElapsed(Date.now() - activityStartTime);
+            tick();
+            const interval = setInterval(tick, 1000);
+            return () => clearInterval(interval);
+        }, [config.pulse, activityStartTime]);
 
-    const recentTools = getRecentToolEvents(events, 3);
-    const currentTool =
-        recentTools.length > 0 ? recentTools[recentTools.length - 1] : null;
+        const recentTools = getRecentToolEvents(events, 3);
+        const currentTool =
+            recentTools.length > 0 ? recentTools[recentTools.length - 1] : null;
 
-    return (
-        <div
-            className={`rounded-xl border-2 border-black bg-white shadow-[3px_3px_0_0_#000] transition-all ${
-                config.bg ? `${config.bg} border-l-4` : ''
-            }`}
-        >
-            {/* Header: Avatar + Name + Status */}
-            <div className="flex items-center gap-3 p-3 pb-0">
-                <img
-                    src={assetPath(agent.sprite)}
-                    alt={agent.name}
-                    className="w-10 h-10 rounded-lg bg-gray-100 object-contain border-2 border-black flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-black truncate">
-                            {agent.name}
-                        </span>
-                        {teamMemberName && (
-                            <span className="text-[10px] font-bold text-gray-400 truncate">
-                                ({teamMemberName})
+        return (
+            <div
+                className={`rounded-xl border-2 border-black bg-white shadow-[3px_3px_0_0_#000] transition-all ${
+                    config.bg ? `${config.bg} border-l-4` : ''
+                }`}
+            >
+                {/* Header: Avatar + Name + Status */}
+                <div className="flex items-center gap-3 p-3 pb-0">
+                    <img
+                        src={assetPath(agent.sprite)}
+                        alt={agent.name}
+                        className="w-10 h-10 rounded-lg bg-gray-100 object-contain border-2 border-black flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="font-black text-sm text-black truncate">
+                                {agent.name}
                             </span>
-                        )}
-                    </div>
-                    <span className="text-xs text-gray-500 block truncate">
-                        {agent.role}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    {config.pulse && elapsed > 0 && (
-                        <span className="text-[10px] font-bold text-gray-400 tabular-nums">
-                            {formatDuration(elapsed)}
-                        </span>
-                    )}
-                    <span className="relative flex h-3 w-3">
-                        {config.pulse && (
-                            <span
-                                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.dot}`}
-                            />
-                        )}
-                        <span
-                            className={`relative inline-flex rounded-full h-3 w-3 ${config.dot}`}
-                        />
-                    </span>
-                </div>
-            </div>
-
-            {/* Divider */}
-            <div className="mx-3 my-2 border-t border-gray-200" />
-
-            {/* Activity Info */}
-            <div className="px-3 pb-3 space-y-1.5">
-                {/* Current activity */}
-                {currentTool ? (
-                    <div className="flex items-start gap-1.5">
-                        <span className="text-[10px] font-black text-gray-400 uppercase w-8 flex-shrink-0 pt-0.5">
-                            Now
-                        </span>
-                        <span className="text-xs text-black font-mono truncate">
-                            {currentTool.toolName && (
-                                <span className="font-bold text-blue-600">
-                                    {currentTool.toolName}{' '}
+                            {teamMemberName && (
+                                <span className="text-[10px] font-bold text-gray-400 truncate">
+                                    ({teamMemberName})
                                 </span>
                             )}
-                            {formatToolContent(currentTool.content)}
+                        </div>
+                        <span className="text-xs text-gray-500 block truncate">
+                            {agent.role}
                         </span>
                     </div>
-                ) : (
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-black text-gray-400 uppercase w-8 flex-shrink-0">
-                            Now
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {config.pulse && elapsed > 0 && (
+                            <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+                                {formatDuration(elapsed)}
+                            </span>
+                        )}
+                        <span className="relative flex h-3 w-3">
+                            {config.pulse && (
+                                <span
+                                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.dot}`}
+                                />
+                            )}
+                            <span
+                                className={`relative inline-flex rounded-full h-3 w-3 ${config.dot}`}
+                            />
                         </span>
-                        <span className="text-xs text-gray-400 italic">
+                    </div>
+                </div>
+
+                {/* Divider */}
+                <div className="mx-3 my-2 border-t border-gray-200" />
+
+                {/* Activity Info */}
+                <div className="px-3 pb-3 space-y-1.5">
+                    {/* Current activity */}
+                    {currentTool ? (
+                        <div className="flex items-start gap-1.5">
+                            <span className="text-[10px] font-black text-gray-400 uppercase w-8 flex-shrink-0 pt-0.5">
+                                Now
+                            </span>
+                            <span className="text-xs text-black font-mono truncate">
+                                {currentTool.toolName && (
+                                    <span className="font-bold text-blue-600">
+                                        {currentTool.toolName}{' '}
+                                    </span>
+                                )}
+                                {formatToolContent(currentTool.content)}
+                            </span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black text-gray-400 uppercase w-8 flex-shrink-0">
+                                Now
+                            </span>
+                            <span className="text-xs text-gray-400 italic">
+                                {config.label}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Recent history (up to 2 older events) */}
+                    {recentTools.slice(0, -1).map((evt, idx) => (
+                        <div
+                            key={idx}
+                            className="flex items-start gap-1.5 opacity-60"
+                        >
+                            <span className="text-[10px] text-gray-300 w-8 flex-shrink-0 pt-0.5">
+                                {idx === 0 && recentTools.length > 2
+                                    ? '...'
+                                    : ''}
+                            </span>
+                            <span className="text-[11px] text-gray-500 font-mono truncate">
+                                {evt.toolName && (
+                                    <span className="font-semibold">
+                                        {evt.toolName}{' '}
+                                    </span>
+                                )}
+                                {formatToolContent(evt.content)}
+                            </span>
+                        </div>
+                    ))}
+
+                    {/* Status label badge */}
+                    <div className="flex items-center justify-end pt-1">
+                        <span
+                            className={`text-[10px] font-black px-2 py-0.5 rounded-md border border-black ${
+                                activity === 'idle'
+                                    ? 'bg-gray-100 text-gray-500'
+                                    : activity === 'error'
+                                      ? 'bg-red-100 text-red-700'
+                                      : activity === 'success'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-blue-50 text-blue-700'
+                            }`}
+                        >
                             {config.label}
                         </span>
                     </div>
-                )}
-
-                {/* Recent history (up to 2 older events) */}
-                {recentTools.slice(0, -1).map((evt, idx) => (
-                    <div
-                        key={idx}
-                        className="flex items-start gap-1.5 opacity-60"
-                    >
-                        <span className="text-[10px] text-gray-300 w-8 flex-shrink-0 pt-0.5">
-                            {idx === 0 && recentTools.length > 2 ? '...' : ''}
-                        </span>
-                        <span className="text-[11px] text-gray-500 font-mono truncate">
-                            {evt.toolName && (
-                                <span className="font-semibold">
-                                    {evt.toolName}{' '}
-                                </span>
-                            )}
-                            {formatToolContent(evt.content)}
-                        </span>
-                    </div>
-                ))}
-
-                {/* Status label badge */}
-                <div className="flex items-center justify-end pt-1">
-                    <span
-                        className={`text-[10px] font-black px-2 py-0.5 rounded-md border border-black ${
-                            activity === 'idle'
-                                ? 'bg-gray-100 text-gray-500'
-                                : activity === 'error'
-                                  ? 'bg-red-100 text-red-700'
-                                  : activity === 'success'
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-blue-50 text-blue-700'
-                        }`}
-                    >
-                        {config.label}
-                    </span>
                 </div>
             </div>
-        </div>
-    );
-};
+        );
+    },
+);
 
 // ── Activity Dashboard ──
 
@@ -288,15 +286,18 @@ interface ActivityDashboardProps {
 export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
     onClose,
 }) => {
-    // Selective subscriptions — derive only IDs/keys to minimize re-renders
-    const agentActivityIds = useTerminalStore(
+    // Selective subscriptions — derive serialized keys to minimize re-renders.
+    // Reading full objects (agentActivity, activeTeamMembers) via getState()
+    // avoids subscribing to new references on every store mutation.
+    const agentActivitySerialized = useTerminalStore(
         useCallback(
             (s: { agentActivity: Record<string, AgentActivity> }) =>
-                Object.keys(s.agentActivity).join(','),
+                Object.entries(s.agentActivity)
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join(','),
             [],
         ),
     );
-    const agentActivity = useTerminalStore((s) => s.agentActivity);
     const teamMemberKeys = useTerminalStore(
         useCallback(
             (s: { activeTeamMembers: Record<string, string> }) =>
@@ -306,7 +307,6 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
             [],
         ),
     );
-    const activeTeamMembers = useTerminalStore((s) => s.activeTeamMembers);
     const tabAgentMap = useTerminalStore(
         useCallback(
             (s: { tabs: Array<{ id: string; agentId?: string }> }) =>
@@ -324,6 +324,7 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
     const prevActivity = useRef<Record<string, AgentActivity>>({});
 
     useEffect(() => {
+        const agentActivity = useTerminalStore.getState().agentActivity;
         const now = Date.now();
         for (const [agentId, status] of Object.entries(
             agentActivity as Record<string, AgentActivity>,
@@ -333,10 +334,14 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
                 prevActivity.current[agentId] = status;
             }
         }
-    }, [agentActivity]);
+    }, [agentActivitySerialized]);
 
-    // Build derived data using memoized key strings to avoid recalculation
-    const { displayAgents, agentToTabId, statusCounts } = useMemo(() => {
+    // Build derived data using serialized key strings to avoid recalculation.
+    // Read full objects from getState() (not subscriptions) to avoid new-reference re-renders.
+    const { displayAgents, statusCounts } = useMemo(() => {
+        const agentActivity = useTerminalStore.getState().agentActivity;
+        const activeTeamMembers = useTerminalStore.getState().activeTeamMembers;
+
         // Reverse team member mapping: agentId -> teamMemberName
         const _agentToTeamName: Record<string, string> = {};
         for (const [memberName, agentId] of Object.entries(
@@ -388,11 +393,10 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
 
         return {
             displayAgents: _displayAgents,
-            agentToTabId: _agentToTabId,
             statusCounts: _statusCounts,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentActivityIds, teamMemberKeys, tabAgentMap, agentActivity]);
+    }, [agentActivitySerialized, teamMemberKeys, tabAgentMap]);
 
     // Growth section: agents with growth profiles
     const agentNameMap = useMemo(() => {
@@ -482,7 +486,9 @@ export const ActivityDashboard: React.FC<ActivityDashboardProps> = ({
             {/* Agent Cards */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 {displayAgents.map(({ agent, teamMemberName, tabId }) => {
-                    const status = agentActivity[agent.id] ?? 'idle';
+                    const status =
+                        useTerminalStore.getState().agentActivity[agent.id] ??
+                        'idle';
                     // Read events on-demand from store to avoid subscribing to parsedMessages
                     const events = tabId
                         ? (useTerminalStore.getState().parsedMessages[tabId] ??

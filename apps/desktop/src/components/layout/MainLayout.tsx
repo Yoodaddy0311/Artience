@@ -1,4 +1,10 @@
-import React, { Suspense, useState, useRef, useEffect } from 'react';
+import React, {
+    Suspense,
+    useState,
+    useRef,
+    useEffect,
+    useCallback,
+} from 'react';
 import {
     Wand2,
     Check,
@@ -10,8 +16,6 @@ import {
     Sparkles,
     Home,
     Inbox,
-    Bot,
-    ClipboardList,
     Clock,
     Package,
     Gem,
@@ -29,16 +33,24 @@ import { StudioDecorator } from '../studio/StudioDecorator';
 import { AssetInbox } from '../studio/AssetInbox';
 import { VersionHistory } from '../studio/VersionHistory';
 import { AssetsPanel } from '../studio/AssetsPanel';
-import { RunPanel } from '../run/RunPanel';
+const RunPanel = React.lazy(() =>
+    import('../run/RunPanel').then((m) => ({ default: m.RunPanel })),
+);
+const SettingsModal = React.lazy(() =>
+    import('./SettingsModal').then((m) => ({ default: m.SettingsModal })),
+);
+const MailCenterModal = React.lazy(() =>
+    import('../mail/MailCenterModal').then((m) => ({
+        default: m.MailCenterModal,
+    })),
+);
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { LevelProgress } from '../gamification/LevelProgress';
-import { SettingsModal } from './SettingsModal';
 import { assetPath } from '../../lib/assetPath';
 import { ToastContainer } from '../ui/Toast';
 import { InspectorCard } from '../agent-town/InspectorCard';
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
-import { MailCenterModal } from '../mail/MailCenterModal';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useGrowthStore } from '../../store/useGrowthStore';
 import { LevelUpNotification } from '../growth';
@@ -217,12 +229,27 @@ export const MainLayout: React.FC = () => {
     // Level-up notification queue
     const levelUpFirst = useGrowthStore((s) => s.levelUpQueue[0] ?? null);
     const shiftLevelUp = useGrowthStore((s) => s.shiftLevelUp);
-    const levelUpStage = useGrowthStore((s) => {
-        const entry = s.levelUpQueue[0];
-        if (!entry) return undefined;
-        const profile = s.profiles[entry.agentId];
-        return profile?.evolution.stage;
-    });
+    // Derive agentId separately to create a stable selector that only reads
+    // the specific profile, avoiding re-renders when unrelated profiles change.
+    const levelUpAgentId = levelUpFirst?.agentId;
+    const levelUpStage = useGrowthStore(
+        useCallback(
+            (s: {
+                profiles: Record<
+                    string,
+                    {
+                        evolution: {
+                            stage: import('../../types/growth').EvolutionStage;
+                        };
+                    }
+                >;
+            }) => {
+                if (!levelUpAgentId) return undefined;
+                return s.profiles[levelUpAgentId]?.evolution.stage;
+            },
+            [levelUpAgentId],
+        ),
+    );
 
     // Terminal panel visibility (right side, like RunPanel)
     const hasTerminalTabs = useTerminalStore((s) => s.tabs.length > 0);
@@ -614,7 +641,7 @@ export const MainLayout: React.FC = () => {
             {/* Terminal/Chat Panel (Right side, like RunPanel) */}
             {hasTerminalTabs && panelVisible && !showRunPanel && (
                 <div
-                    className={`w-full ${panelFullscreen ? 'max-w-full' : 'max-w-lg'} h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0`}
+                    className={`w-full ${panelFullscreen ? 'max-w-full' : 'max-w-lg'} h-full bg-white border-l-4 border-black shadow-[-6px_0_0_0_#000] flex flex-col z-20 transition-all absolute right-0 top-0 contain-panel`}
                 >
                     <Suspense
                         fallback={
@@ -630,22 +657,28 @@ export const MainLayout: React.FC = () => {
 
             {/* Run Panel (Right) */}
             {showRunPanel && (
-                <RunPanel onClose={() => setShowRunPanel(false)} />
+                <Suspense fallback={null}>
+                    <RunPanel onClose={() => setShowRunPanel(false)} />
+                </Suspense>
             )}
 
             {/* Mail Center Modal (Overlay) */}
             {isInboxOpen && (
-                <MailCenterModal onClose={() => setInboxOpen(false)} />
+                <Suspense fallback={null}>
+                    <MailCenterModal onClose={() => setInboxOpen(false)} />
+                </Suspense>
             )}
 
             {/* Bottom Dock */}
             <BottomDock />
 
             {/* Application Modals */}
-            <SettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-            />
+            <Suspense fallback={null}>
+                <SettingsModal
+                    isOpen={isSettingsOpen}
+                    onClose={() => setIsSettingsOpen(false)}
+                />
+            </Suspense>
 
             {/* Level-Up Notification */}
             {levelUpFirst && levelUpStage && (

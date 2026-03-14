@@ -81,7 +81,7 @@ if (!app.isPackaged) {
     process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 }
 
-const isDev = process.env.NODE_ENV !== 'production';
+const _isDev = process.env.NODE_ENV !== 'production';
 import {
     loadSkills,
     installDefaultSkills,
@@ -1098,44 +1098,51 @@ ipcMain.handle(
     }> => {
         const dir = cwd || getProjectDir();
         try {
-            const [branchRes, hashRes, diffRes] = await Promise.all([
+            const [branchRes, hashRes] = await Promise.all([
                 execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
                     cwd: dir,
                 }),
                 execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
                     cwd: dir,
                 }),
-                execFileAsync('git', ['diff', '--numstat', 'HEAD~1'], {
-                    cwd: dir,
-                }),
             ]);
 
             const branch = branchRes.stdout.trim();
             const commitHash = hashRes.stdout.trim();
-            const diffStats = diffRes.stdout
-                .trim()
-                .split('\n')
-                .filter((line) => line.trim())
-                .map((line) => {
-                    const [add, del, file] = line.split('\t');
-                    return {
-                        file: file || '',
-                        additions: parseInt(add, 10) || 0,
-                        deletions: parseInt(del, 10) || 0,
-                    };
-                })
-                .filter((s) => s.file);
+
+            let diffStats: {
+                file: string;
+                additions: number;
+                deletions: number;
+            }[] = [];
+            try {
+                const diffRes = await execFileAsync(
+                    'git',
+                    ['diff', '--numstat', 'HEAD~1'],
+                    { cwd: dir },
+                );
+                diffStats = diffRes.stdout
+                    .trim()
+                    .split('\n')
+                    .filter((line) => line.trim())
+                    .map((line) => {
+                        const [add, del, file] = line.split('\t');
+                        return {
+                            file: file || '',
+                            additions: parseInt(add, 10) || 0,
+                            deletions: parseInt(del, 10) || 0,
+                        };
+                    })
+                    .filter((s) => s.file);
+            } catch {
+                // initial commit — no HEAD~1, return empty diffStats
+            }
 
             return { success: true, branch, commitHash, diffStats };
         } catch (err: any) {
-            const msg = err.message || '';
-            const isInitialCommit =
-                msg.includes('unknown revision') || msg.includes('HEAD~1');
             return {
                 success: false,
-                error: isInitialCommit
-                    ? 'Initial commit — no previous commit to diff against'
-                    : msg,
+                error: err.message || 'Failed to get git diff',
             };
         }
     },
@@ -1287,7 +1294,7 @@ const mcpBridge: McpBridge = {
 
     sendMail(
         from: string,
-        to: string,
+        _to: string,
         subject: string,
         body: string,
         type: 'report' | 'error',
@@ -2214,18 +2221,21 @@ meetingManager.on('consensus:reached', (meetingId: string, round: unknown) => {
     mainWindow?.webContents?.send('meeting:round-update', meetingId, round);
 });
 
-meetingManager.on('opinion:received', (meetingId: string, opinion: unknown) => {
-    // Forward individual opinions as partial round updates
-    const meeting = meetingManager.getMeeting(meetingId);
-    if (meeting && meeting.rounds.length > 0) {
-        const currentRound = meeting.rounds[meeting.rounds.length - 1];
-        mainWindow?.webContents?.send(
-            'meeting:round-update',
-            meetingId,
-            currentRound,
-        );
-    }
-});
+meetingManager.on(
+    'opinion:received',
+    (meetingId: string, _opinion: unknown) => {
+        // Forward individual opinions as partial round updates
+        const meeting = meetingManager.getMeeting(meetingId);
+        if (meeting && meeting.rounds.length > 0) {
+            const currentRound = meeting.rounds[meeting.rounds.length - 1];
+            mainWindow?.webContents?.send(
+                'meeting:round-update',
+                meetingId,
+                currentRound,
+            );
+        }
+    },
+);
 
 meetingManager.on('meeting:end', (meetingId: string, result: unknown) => {
     mainWindow?.webContents?.send('meeting:end', meetingId, result);
@@ -2654,15 +2664,17 @@ ipcMain.handle('feedback:getHistory', async (_e, agentId: string) => {
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+    // Window creation is critical-path — do it first
     await createWindow();
+
+    // Everything below is non-blocking — run in parallel after window shows
     createTray();
 
-    // Initialize agent DB and seed default personas
+    // Initialize agent DB, team templates, messenger listener concurrently
     agentDB.init();
     agentDB.seed();
     teamTemplateManager.init();
 
-    // Listen for messenger messages → tray balloon + forward to renderer
     messengerBridge.on('message:received', (msg: any) => {
         if (tray) {
             tray.displayBalloon({
@@ -2675,30 +2687,27 @@ app.whenReady().then(async () => {
         }
     });
 
-    // Start MCP bridge file watcher (serves standalone MCP server requests)
-    startMcpBridgeWatcher();
+    // Defer MCP + artibot init to next tick so window renders first
+    setImmediate(() => {
+        startMcpBridgeWatcher();
 
-    // Register MCP server in project .mcp.json (standalone mode uses FileBridge)
-    const projectDir = getProjectDir();
-    if (projectDir && projectDir !== '.') {
-        registerMcpServer(projectDir);
-    }
-
-    // Initialize artibot registry from .agent/ directory
-    if (projectDir && projectDir !== '.') {
-        scanArtibotDir(projectDir);
-        watchArtibotDir(projectDir, (registry) => {
-            console.log(
-                '[artibot-registry] Registry updated, notifying renderer',
-            );
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send(
-                    'artibot:registry-updated',
-                    registry,
+        const projectDir = getProjectDir();
+        if (projectDir && projectDir !== '.') {
+            registerMcpServer(projectDir);
+            scanArtibotDir(projectDir);
+            watchArtibotDir(projectDir, (registry) => {
+                console.log(
+                    '[artibot-registry] Registry updated, notifying renderer',
                 );
-            }
-        });
-    }
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send(
+                        'artibot:registry-updated',
+                        registry,
+                    );
+                }
+            });
+        }
+    });
 });
 
 // ── Retro Report IPC ──────────────────────────────────────────────────────

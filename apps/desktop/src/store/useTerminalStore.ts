@@ -347,7 +347,17 @@ export const useTerminalStore = create<TerminalState>()(
                                 ? newTabs[newTabs.length - 1].id
                                 : null
                             : s.activeTabId;
-                    return { tabs: newTabs, activeTabId: newActive };
+                    // Clean up in-memory data for the removed tab to prevent leaks
+                    const { [id]: _pm, ...parsedMessages } = s.parsedMessages;
+                    const { [id]: _vm, ...viewMode } = s.viewMode;
+                    const { [id]: _ih, ...inputHistory } = s.inputHistory;
+                    return {
+                        tabs: newTabs,
+                        activeTabId: newActive,
+                        parsedMessages,
+                        viewMode,
+                        inputHistory,
+                    };
                 }),
             setActiveTab: (id) => set({ activeTabId: id }),
             updateTab: (id, patch) =>

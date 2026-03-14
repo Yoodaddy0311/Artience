@@ -417,7 +417,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     const processFileBlob = useCallback(
         async (file: File): Promise<Attachment | null> => {
-            const ext = getFileExt(file.name);
             if (!isSupportedFile(file.name) && !file.type.startsWith('image/'))
                 return null;
 

@@ -63,12 +63,9 @@ const STATE_LABELS: Record<AgentState, string> = {
 export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [tab, setTab] = useState<RunTab>('agents');
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-    const [agents, setAgents] = useState<AgentProfile[]>(DEFAULT_AGENTS);
+    const [agents] = useState<AgentProfile[]>(DEFAULT_AGENTS);
     const [jobs, setJobs] = useState<Job[]>([]);
     const [recipes] = useState<Recipe[]>(DEFAULT_RECIPES);
-
-    // P2-9: Canvas highlight store
-    const setHighlightedAgentId = useAppStore((s) => s.setHighlightedAgentId);
 
     // P2-7: Run settings from store
     const runSettings = useAppStore((s) => s.runSettings);
@@ -118,7 +115,7 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }, []);
 
     // R-4: Artifacts mock data
-    const [artifacts, setArtifacts] = useState<
+    const [artifacts] = useState<
         {
             name: string;
             path: string;

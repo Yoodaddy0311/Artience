@@ -88,7 +88,7 @@ const ChatBubble: React.FC<{
     event: ParsedEvent;
     agentSprite?: string;
     agentName?: string;
-}> = ({ event, agentSprite, agentName }) => {
+}> = React.memo(({ event, agentSprite, agentName }) => {
     const [collapsed, setCollapsed] = useState(true);
 
     switch (event.type) {
@@ -247,7 +247,7 @@ const ChatBubble: React.FC<{
         default:
             return null;
     }
-};
+});
 
 // ── 이미지 경로 감지 ──
 const IMAGE_PATH_RE =
@@ -271,44 +271,43 @@ function toFileUrl(p: string): string {
 }
 
 // ── 사용자 입력 버블 (오른쪽 정렬) ──
-const UserBubble: React.FC<{ content: string; timestamp: number }> = ({
-    content,
-    timestamp,
-}) => {
-    const imagePaths = useMemo(() => extractImagePaths(content), [content]);
+const UserBubble: React.FC<{ content: string; timestamp: number }> = React.memo(
+    ({ content, timestamp }) => {
+        const imagePaths = useMemo(() => extractImagePaths(content), [content]);
 
-    return (
-        <div className="flex justify-end">
-            <div className="max-w-[75%] flex flex-col items-end gap-0.5">
-                <div className="bg-[#E8DAFF] border-2 border-black rounded-2xl px-3 py-2">
-                    <p className="text-sm text-black whitespace-pre-wrap break-words">
-                        {content}
-                    </p>
-                    {imagePaths.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                            {imagePaths.map((p, i) => (
-                                <img
-                                    key={i}
-                                    src={toFileUrl(p)}
-                                    alt=""
-                                    className="max-w-[200px] max-h-[120px] rounded-lg border border-black/20 object-contain"
-                                    onError={(e) => {
-                                        (
-                                            e.target as HTMLImageElement
-                                        ).style.display = 'none';
-                                    }}
-                                />
-                            ))}
-                        </div>
-                    )}
+        return (
+            <div className="flex justify-end">
+                <div className="max-w-[75%] flex flex-col items-end gap-0.5">
+                    <div className="bg-[#E8DAFF] border-2 border-black rounded-2xl px-3 py-2">
+                        <p className="text-sm text-black whitespace-pre-wrap break-words">
+                            {content}
+                        </p>
+                        {imagePaths.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                {imagePaths.map((p, i) => (
+                                    <img
+                                        key={i}
+                                        src={toFileUrl(p)}
+                                        alt=""
+                                        className="max-w-[200px] max-h-[120px] rounded-lg border border-black/20 object-contain"
+                                        onError={(e) => {
+                                            (
+                                                e.target as HTMLImageElement
+                                            ).style.display = 'none';
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <span className="text-[9px] text-gray-400 mr-1">
+                        {relativeTime(timestamp)}
+                    </span>
                 </div>
-                <span className="text-[9px] text-gray-400 mr-1">
-                    {relativeTime(timestamp)}
-                </span>
             </div>
-        </div>
-    );
-};
+        );
+    },
+);
 
 // ── 채팅 뷰 전체 ──
 const ChatView: React.FC<{
@@ -363,31 +362,24 @@ const ChatView: React.FC<{
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto bg-cream-50 px-3 py-3 space-y-2"
         >
-            {messages.map((event, i) => {
-                // 사용자 입력은 오른쪽 정렬 버블
-                if (event.toolName === '__user_input__') {
-                    return (
+            {messages.map((event, i) => (
+                <div key={i} className="cv-auto">
+                    {event.toolName === '__user_input__' ? (
                         <UserBubble
-                            key={i}
                             content={event.content}
                             timestamp={event.timestamp}
                         />
-                    );
-                }
-                // prompt 구분선
-                if (event.type === 'prompt') {
-                    return <ChatBubble key={i} event={event} />;
-                }
-                // 에이전트 메시지 (왼쪽 정렬)
-                return (
-                    <ChatBubble
-                        key={i}
-                        event={event}
-                        agentSprite={agentSprite}
-                        agentName={agentName}
-                    />
-                );
-            })}
+                    ) : event.type === 'prompt' ? (
+                        <ChatBubble event={event} />
+                    ) : (
+                        <ChatBubble
+                            event={event}
+                            agentSprite={agentSprite}
+                            agentName={agentName}
+                        />
+                    )}
+                </div>
+            ))}
 
             {/* 자동 스크롤 해제 시 "최신으로" 버튼 */}
             {!autoScroll && (

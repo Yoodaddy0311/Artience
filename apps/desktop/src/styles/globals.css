@@ -45,3 +45,20 @@ body {
         -apple-system,
         sans-serif;
 }
+
+/* GPU acceleration for Pixi.js canvas */
+canvas {
+    will-change: transform;
+}
+
+/* Layout containment for side panels (RunPanel, TerminalPanel) */
+.contain-panel {
+    contain: layout style paint;
+}
+
+/* Content visibility for off-screen scrollable areas — browser skips
+   rendering of items outside the viewport until they scroll into view. */
+.cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 40px;
+}

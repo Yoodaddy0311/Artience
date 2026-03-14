@@ -33,15 +33,6 @@ const STAGE_LABELS: Record<EvolutionStage, string> = {
     legendary: 'Legendary',
 };
 
-function formatTimestamp(ts: number): string {
-    return new Date(ts).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-
 interface GrowthPanelProps {
     readonly agentId: string;
 }

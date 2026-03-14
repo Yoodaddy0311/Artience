@@ -512,10 +512,18 @@ export function getNearestWalkable(
 
 // ── Helper: sync collision map from world objects ──
 // Marks footprint cells (with 1-cell padding) as collision for each object.
+// Collision footprint is **centered** around (obj.x, obj.y) to match the
+// visual sprite anchor (0.5, 0.7), so characters avoid the visible asset area.
 // Call after any object add/move/delete to keep the grid in sync.
 export function syncObjectCollision(
     world: GridWorld,
-    objects: readonly { x: number; y: number; width: number; height: number }[],
+    objects: readonly {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        properties?: { isWalkable?: boolean };
+    }[],
 ): void {
     // 1. Clear all object-sourced collision (preserve walls & built-in furniture)
     for (let y = 0; y < world.rows; y++) {
@@ -527,11 +535,19 @@ export function syncObjectCollision(
         }
     }
 
-    // 2. Re-apply collision for each object with 1-cell padding
+    // 2. Re-apply collision for each object with 1-cell padding, centered on (x,y)
     const pad = 1;
     for (const obj of objects) {
-        for (let dx = -pad; dx < obj.width + pad; dx++) {
-            for (let dy = -pad; dy < obj.height + pad; dy++) {
+        // Skip walkable objects (e.g. floor decorations)
+        if (obj.properties?.isWalkable) continue;
+
+        // Center the collision footprint around the object's grid position
+        // to match the visual sprite anchor (0.5, 0.7)
+        const halfW = Math.floor(obj.width / 2);
+        const halfH = Math.floor(obj.height / 2);
+
+        for (let dy = -halfH - pad; dy <= halfH + pad; dy++) {
+            for (let dx = -halfW - pad; dx <= halfW + pad; dx++) {
                 const cx = obj.x + dx;
                 const cy = obj.y + dy;
                 if (cx >= 0 && cx < world.cols && cy >= 0 && cy < world.rows) {

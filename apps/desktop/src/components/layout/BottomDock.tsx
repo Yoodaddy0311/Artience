@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     useTerminalStore,
     type AgentSettings,
@@ -7,18 +7,6 @@ import { DEFAULT_AGENTS, type AgentProfile } from '../../types/platform';
 import { assetPath } from '../../lib/assetPath';
 import { HistoryModal } from './HistoryModal';
 import { AgentLevelBadge } from '../growth';
-
-// ── AgentSettings → extraArgs 변환 헬퍼 ──
-function buildExtraArgs(settings?: AgentSettings): string[] {
-    if (!settings) return [];
-    const args: string[] = [];
-    if (settings.model) args.push('--model', settings.model);
-    if (settings.permissionMode && settings.permissionMode !== 'default') {
-        args.push('--permission-mode', settings.permissionMode);
-    }
-    if (settings.maxTurns) args.push('--max-turns', String(settings.maxTurns));
-    return args;
-}
 
 const RACCOON: AgentProfile = {
     id: 'raccoon',
@@ -56,7 +44,6 @@ export const BottomDock: React.FC = () => {
     const removeDockAgent = useTerminalStore((s) => s.removeDockAgent);
     const agentSettings = useTerminalStore((s) => s.agentSettings);
     const setAgentSettings = useTerminalStore((s) => s.setAgentSettings);
-    const activeTeamMembers = useTerminalStore((s) => s.activeTeamMembers);
     const teamAddedAgents = useTerminalStore((s) => s.teamAddedAgents);
 
     const [ctxMenu, setCtxMenu] = useState<{
@@ -370,19 +357,20 @@ export const BottomDock: React.FC = () => {
     }, []);
 
     // 독에 없는 에이전트 목록 (추가 팝업용)
-    const availableAgents = DEFAULT_AGENTS.filter(
-        (a) => !(dockAgents ?? []).includes(a.id),
+    const availableAgents = useMemo(
+        () => DEFAULT_AGENTS.filter((a) => !(dockAgents ?? []).includes(a.id)),
+        [dockAgents],
     );
 
     // 독에 표시할 에이전트: Dokba(CTO)를 항상 첫 번째, 추가 에이전트는 그 뒤
     const dokbaAgent = AGENT_MAP.get(CTO_ID)!;
-    const extraDockAgents = (dockAgents ?? []).filter((id) => id !== CTO_ID);
+    const extraDockAgents = useMemo(
+        () => (dockAgents ?? []).filter((id) => id !== CTO_ID),
+        [dockAgents],
+    );
 
-    // 활동 상태
-    const agentActivity = useTerminalStore((s) => s.agentActivity);
-
-    // Dokba 활동 상태 아이콘
-    const dokbaActivity = agentActivity['raccoon'];
+    // Dokba 활동 상태 아이콘 (selective subscription — only raccoon)
+    const dokbaActivity = useTerminalStore((s) => s.agentActivity['raccoon']);
     const dokbaActivityLabel = (() => {
         switch (dokbaActivity) {
             case 'thinking':

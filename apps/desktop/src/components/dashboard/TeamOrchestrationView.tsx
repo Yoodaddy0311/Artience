@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { DEFAULT_AGENTS } from '../../types/platform';
 import type { AgentActivity } from '../../lib/pty-parser';
@@ -50,9 +50,19 @@ const DOKBA_PROFILE = {
 
 export const TeamOrchestrationView: React.FC = () => {
     const activeTeamMembers = useTerminalStore((s) => s.activeTeamMembers);
-    const agentActivity = useTerminalStore((s) => s.agentActivity);
+    // Serialize agentActivity to avoid re-renders from new object references
+    const agentActivityKey = useTerminalStore(
+        useCallback(
+            (s: { agentActivity: Record<string, AgentActivity> }) =>
+                Object.entries(s.agentActivity)
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join(','),
+            [],
+        ),
+    );
 
     const { nodes, edges } = useMemo(() => {
+        const agentActivity = useTerminalStore.getState().agentActivity;
         const teamNodes: TeamNode[] = [];
         const teamEdges: TeamEdge[] = [];
 
@@ -121,12 +131,11 @@ export const TeamOrchestrationView: React.FC = () => {
         }
 
         return { nodes: teamNodes, edges: teamEdges };
-    }, [activeTeamMembers, agentActivity]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTeamMembers, agentActivityKey]);
 
     const hasTeam = Object.keys(activeTeamMembers).length > 0;
     const memberNodes = nodes.filter((n) => !n.isLeader);
-    const leaderNode = nodes.find((n) => n.isLeader);
-
     // Layout: center leader, circular member placement
     const svgWidth = 360;
     const svgHeight = 280;
@@ -134,20 +143,25 @@ export const TeamOrchestrationView: React.FC = () => {
     const centerY = svgHeight / 2;
     const radius = 100;
 
+    // Stable dependency: use node IDs string instead of memberNodes array reference
+    const memberNodeIds = memberNodes.map((n) => n.id).join(',');
+
     const nodePositions = useMemo(() => {
         const positions: Record<string, { x: number; y: number }> = {};
         positions['raccoon'] = { x: centerX, y: centerY };
 
-        memberNodes.forEach((node, i) => {
-            const angle = (2 * Math.PI * i) / memberNodes.length - Math.PI / 2;
-            positions[node.id] = {
+        const ids = memberNodeIds.split(',').filter(Boolean);
+        ids.forEach((id, i) => {
+            const angle = (2 * Math.PI * i) / ids.length - Math.PI / 2;
+            positions[id] = {
                 x: centerX + radius * Math.cos(angle),
                 y: centerY + radius * Math.sin(angle),
             };
         });
 
         return positions;
-    }, [memberNodes, centerX, centerY]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [memberNodeIds]);
 
     return (
         <div className="p-3">

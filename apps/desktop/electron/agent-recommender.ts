@@ -7,12 +7,9 @@
 
 import { AGENT_PERSONAS } from '../src/data/agent-personas';
 import { CHARACTER_SKILLS } from './skill-map';
+import type { AgentRecommendation } from '../src/types/agent-state';
 
-export interface AgentRecommendation {
-    agentId: string;
-    score: number;
-    reason: string;
-}
+export type { AgentRecommendation };
 
 // ── Keyword → domain mapping with weights ───────────────────────────────────
 

@@ -35,6 +35,7 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
     const [visible, setVisible] = useState(false);
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const slideOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         // Trigger slide-in
@@ -43,12 +44,17 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
         // Auto-dismiss after 5 seconds
         const dismissTimer = setTimeout(() => {
             setVisible(false);
-            setTimeout(() => onCloseRef.current(), 300);
+            slideOutTimerRef.current = setTimeout(
+                () => onCloseRef.current(),
+                300,
+            );
         }, 5000);
 
         return () => {
             cancelAnimationFrame(showTimer);
             clearTimeout(dismissTimer);
+            if (slideOutTimerRef.current)
+                clearTimeout(slideOutTimerRef.current);
         };
     }, []); // stable — onClose tracked via ref
 
@@ -97,7 +103,7 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
                     <button
                         onClick={() => {
                             setVisible(false);
-                            setTimeout(onClose, 300);
+                            slideOutTimerRef.current = setTimeout(onClose, 300);
                         }}
                         className="w-7 h-7 flex items-center justify-center rounded-md border-2 border-black bg-white hover:bg-gray-100 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
                         aria-label="Close notification"

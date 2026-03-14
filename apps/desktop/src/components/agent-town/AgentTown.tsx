@@ -19,7 +19,6 @@ import { processActivityChange } from '../../lib/growth-bridge';
 import {
     gridToIso,
     getIsoCanvasSize,
-    getCameraOffset,
     getIsoDirection,
     isoToGrid,
 } from '../../systems/isometric';
@@ -47,7 +46,6 @@ import {
     type AnimalTextures,
     type AnimalVisual,
     type AnimalType,
-    type DeskAnimationFrames,
 } from './animal-runtime';
 
 // Agent runtime constants (still used for speeds, colors, stagger)

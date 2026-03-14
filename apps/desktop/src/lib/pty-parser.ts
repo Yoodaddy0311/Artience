@@ -99,7 +99,7 @@ export function isNoiseLine(trimmed: string): boolean {
 
 /** Unicode codepoints that Claude Code uses as visual markers */
 const THINKING_MARKER = '\u23FA'; // ⏺
-const SUCCESS_MARKER = '\u2713'; // ✓
+const _SUCCESS_MARKER = '\u2713'; // ✓
 const PROMPT_MARKER = '\u276F'; // ❯
 
 /** Known Claude Code tool names (from tool_use blocks in TUI output) */

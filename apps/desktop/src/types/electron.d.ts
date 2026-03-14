@@ -247,19 +247,15 @@ interface DogbaMailApi {
     getGitDiff(cwd?: string): Promise<GitDiffResult>;
 }
 
-interface AgentRecommendation {
-    agentId: string;
-    score: number;
-    reason: string;
-}
-
 interface DogbaAgentApi {
     createTeam(cwd?: string): Promise<{ success: boolean; error?: string }>;
     delegateTask(
         agentName: string,
         task: string,
     ): Promise<{ success: boolean; error?: string }>;
-    recommend(task: string): Promise<AgentRecommendation[]>;
+    recommend(
+        task: string,
+    ): Promise<import('./agent-state').AgentRecommendation[]>;
     onTaskResult(callback: (agentId: string, event: any) => void): () => void;
 }
 

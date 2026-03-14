@@ -78,6 +78,8 @@ interface MailState {
 const computeUnread = (messages: MailMessage[]) =>
     messages.filter((m) => !m.read).length;
 
+const MAX_MAIL_MESSAGES = 200;
+
 export const useMailStore = create<MailState>()(
     persist(
         (set) => ({
@@ -94,7 +96,10 @@ export const useMailStore = create<MailState>()(
                         status: msg.status ?? 'pending',
                         actions: msg.actions ?? [],
                     };
-                    const messages = [newMsg, ...s.messages];
+                    const messages = [newMsg, ...s.messages].slice(
+                        0,
+                        MAX_MAIL_MESSAGES,
+                    );
                     return { messages, unreadCount: computeUnread(messages) };
                 }),
 

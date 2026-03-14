@@ -49,7 +49,7 @@ export function getIsoCanvasSize(): { width: number; height: number } {
 /** Get camera offset to center the map in the viewport */
 export function getCameraOffset(
     viewportWidth: number,
-    viewportHeight: number,
+    _viewportHeight: number,
 ): { x: number; y: number } {
     return {
         x: viewportWidth / 2, // Center horizontally (the 0,0 iso point is at top-center)
