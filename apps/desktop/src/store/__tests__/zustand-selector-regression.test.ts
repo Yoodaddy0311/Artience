@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useTerminalStore } from '../useTerminalStore';
+import {
+    sanitizePersistedDockAgents,
+    useTerminalStore,
+} from '../useTerminalStore';
 import { useGrowthStore } from '../useGrowthStore';
 
 /**
@@ -21,14 +24,15 @@ function resetTerminalStore() {
         panelFullscreen: false,
         viewMode: {},
         parsedMessages: {},
+        lastToolUseByTab: {},
         characterDirMap: {},
         dockAgents: ['raccoon'],
+        pinnedDockAgents: ['raccoon'],
         agentActivity: {},
         agentStates: {},
         agentSettings: {},
         inputHistory: {},
         activeTeamMembers: {},
-        teamAddedAgents: [],
     });
 }
 
@@ -45,7 +49,7 @@ describe('Zustand selector stability (infinite loop regression)', () => {
 
             // Mutate parsedMessages (high-frequency churn)
             useTerminalStore.getState().addParsedEvent('tab-1', {
-                type: 'assistant',
+                type: 'text',
                 content: 'hello',
                 timestamp: Date.now(),
             });
@@ -133,6 +137,67 @@ describe('Zustand selector stability (infinite loop regression)', () => {
 
             expect(ids1).toBe(ids2);
         });
+
+        it('should preserve team membership across team refreshes without adding dock entries', () => {
+            const store = useTerminalStore.getState();
+
+            store.ensureTeamAgent('a03', 'Luna');
+            store.setActiveTeamMembers(['frontend-developer']);
+
+            const state = useTerminalStore.getState();
+            expect(state.activeTeamMembers['frontend-developer']).toBe('a03');
+            expect(state.dockAgents).toEqual(['raccoon']);
+            expect(state.pinnedDockAgents).toEqual(['raccoon']);
+        });
+
+        it('should add a delegated team agent without duplicating team entries', () => {
+            const store = useTerminalStore.getState();
+
+            store.ensureTeamAgent('a02', 'Rio');
+            store.ensureTeamAgent('a02', 'Rio');
+
+            const state = useTerminalStore.getState();
+            expect(state.activeTeamMembers.Rio).toBe('a02');
+            expect(state.dockAgents).toEqual(['raccoon']);
+            expect(state.pinnedDockAgents).toEqual(['raccoon']);
+        });
+
+        it('should keep dock agents separate when the team changes', () => {
+            const store = useTerminalStore.getState();
+
+            store.addDockAgent('a04');
+            store.ensureTeamAgent('a02', 'Rio');
+            store.ensureTeamAgent('a03', 'Luna');
+            store.setActiveTeamMembers(['planner']);
+
+            const state = useTerminalStore.getState();
+            expect(Object.values(state.activeTeamMembers)).toEqual(['a01']);
+            expect(state.dockAgents).toEqual(['raccoon', 'a04']);
+            expect(state.pinnedDockAgents).toEqual(['raccoon', 'a04']);
+            expect(state.dockAgents).not.toContain('a02');
+            expect(state.dockAgents).not.toContain('a03');
+            expect(state.dockAgents).not.toContain('a01');
+        });
+
+        it('should drop legacy team-only dock agents during persistence merge', () => {
+            expect(
+                sanitizePersistedDockAgents(
+                    ['raccoon', 'a02', 'a03', 'a04'],
+                    { a04: '/workspace/project' },
+                    {},
+                ),
+            ).toEqual(['raccoon', 'a04']);
+        });
+
+        it('should preserve explicit pinned dock agents without legacy heuristics', () => {
+            const store = useTerminalStore.getState();
+
+            store.addDockAgent('a07');
+
+            const state = useTerminalStore.getState();
+            expect(state.dockAgents).toEqual(['raccoon', 'a07']);
+            expect(state.pinnedDockAgents).toEqual(['raccoon', 'a07']);
+        });
     });
 
     describe('MainLayout: useCallback selector for specific profile', () => {
@@ -140,7 +205,9 @@ describe('Zustand selector stability (infinite loop regression)', () => {
             const agentId = 'raccoon';
 
             // Add growth profile
-            useGrowthStore.getState().addExp(agentId, 100, 'coding', 'test');
+            useGrowthStore
+                .getState()
+                .addExp(agentId, 100, 'test-task', [], 'frontend');
 
             const selectorForAgent = (s: {
                 profiles: Record<
@@ -152,7 +219,9 @@ describe('Zustand selector stability (infinite loop regression)', () => {
             const stage1 = selectorForAgent(useGrowthStore.getState());
 
             // Mutating a DIFFERENT agent's profile should not change this selector's output
-            useGrowthStore.getState().addExp('fox', 50, 'coding', 'test');
+            useGrowthStore
+                .getState()
+                .addExp('fox', 50, 'test-task', [], 'frontend');
 
             const stage2 = selectorForAgent(useGrowthStore.getState());
             expect(stage1).toBe(stage2);
@@ -166,7 +235,7 @@ describe('Zustand selector stability (infinite loop regression)', () => {
             // Simulate rapid PTY output (500+ events)
             for (let i = 0; i < 600; i++) {
                 useTerminalStore.getState().addParsedEvent(tabId, {
-                    type: 'assistant',
+                    type: 'text',
                     content: `msg-${i}`,
                     timestamp: Date.now(),
                 });

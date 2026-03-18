@@ -114,6 +114,8 @@ interface AppState {
     // Agent Highlight (P2-9)
     highlightedAgentId: string | null;
     setHighlightedAgentId: (id: string | null) => void;
+    selectedWorldObjectId: string | null;
+    setSelectedWorldObjectId: (id: string | null) => void;
 
     // Run Settings (P2-7)
     runSettings: RunSettings;
@@ -152,20 +154,28 @@ interface AppState {
     loadProject: () => Promise<void>;
     saveProject: () => Promise<void>;
     updateProjectConfig: (patch: Partial<ProjectData>) => void;
-    updateWorldObject: (id: string, x: number, y: number) => void;
+    updateWorldObject: (
+        id: string,
+        x: number,
+        y: number,
+        options?: { trackUndo?: boolean },
+    ) => void;
     updateWorldObjectProperties: (
         id: string,
         properties: Record<string, unknown>,
+        options?: { trackUndo?: boolean },
     ) => void;
     updateWorldObjectCorners: (
         id: string,
         corners: { x: number; y: number }[] | undefined,
+        options?: { trackUndo?: boolean },
     ) => void;
     updateWorldObjectFull: (
         id: string,
         x: number,
         y: number,
         properties: Record<string, unknown>,
+        options?: { trackUndo?: boolean },
     ) => void;
 
     // Clipboard
@@ -188,9 +198,10 @@ export const useAppStore = create<AppState>()(
             setClipboard: (obj) => set({ clipboard: obj }),
 
             pushUndoState: () => {
-                const currentConfig = JSON.parse(
-                    JSON.stringify(get().projectConfig),
-                );
+                const currentConfig =
+                    typeof structuredClone === 'function'
+                        ? structuredClone(get().projectConfig)
+                        : JSON.parse(JSON.stringify(get().projectConfig));
                 set((state) => {
                     const newStack = [...state.undoStack, currentConfig];
                     // keep max 20 states (each is a deep clone of projectConfig)
@@ -218,7 +229,13 @@ export const useAppStore = create<AppState>()(
             // ── Auth Gate ──
             isAuthenticated: null,
             authChecking: false,
+            selectedWorldObjectId: null,
+            setSelectedWorldObjectId: (id) =>
+                set({ selectedWorldObjectId: id }),
             checkAuth: async () => {
+                if (get().authChecking) {
+                    return;
+                }
                 // Offline → skip auth gate
                 if (!navigator.onLine) {
                     set({ isAuthenticated: true, authChecking: false });
@@ -464,8 +481,10 @@ export const useAppStore = create<AppState>()(
                 }));
             },
 
-            updateWorldObject: (id, x, y) => {
-                get().pushUndoState();
+            updateWorldObject: (id, x, y, options) => {
+                if (options?.trackUndo !== false) {
+                    get().pushUndoState();
+                }
                 set((state) => {
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
@@ -483,8 +502,10 @@ export const useAppStore = create<AppState>()(
                 });
             },
 
-            updateWorldObjectProperties: (id, properties) => {
-                get().pushUndoState();
+            updateWorldObjectProperties: (id, properties, options) => {
+                if (options?.trackUndo !== false) {
+                    get().pushUndoState();
+                }
                 set((state) => {
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
@@ -510,8 +531,10 @@ export const useAppStore = create<AppState>()(
                 });
             },
 
-            updateWorldObjectCorners: (id, corners) => {
-                get().pushUndoState();
+            updateWorldObjectCorners: (id, corners, options) => {
+                if (options?.trackUndo !== false) {
+                    get().pushUndoState();
+                }
                 set((state) => {
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>
@@ -534,8 +557,10 @@ export const useAppStore = create<AppState>()(
                 });
             },
 
-            updateWorldObjectFull: (id, x, y, properties) => {
-                get().pushUndoState();
+            updateWorldObjectFull: (id, x, y, properties, options) => {
+                if (options?.trackUndo !== false) {
+                    get().pushUndoState();
+                }
                 set((state) => {
                     const layers = state.projectConfig.world.layers;
                     const objects = layers.objects.map((obj) =>

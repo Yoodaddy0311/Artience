@@ -407,6 +407,22 @@ describe('detectActivity', () => {
         expect(detectActivity(events)).toBe('success');
     });
 
+    it('returns needs_input when prompt follows an explicit question', () => {
+        const events: ParsedEvent[] = [
+            {
+                type: 'text',
+                content: 'Which option do you want me to use?',
+                timestamp: Date.now(),
+            },
+            {
+                type: 'prompt',
+                content: '>',
+                timestamp: Date.now(),
+            },
+        ];
+        expect(detectActivity(events)).toBe('needs_input');
+    });
+
     it('returns idle when prompt without prior work', () => {
         expect(detectActivity([makeEvent('prompt')])).toBe('idle');
     });

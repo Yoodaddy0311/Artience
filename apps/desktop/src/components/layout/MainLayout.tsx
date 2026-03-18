@@ -28,11 +28,25 @@ const TerminalPanel = React.lazy(() =>
         default: m.TerminalPanel,
     })),
 );
-import { BottomDock } from './BottomDock';
-import { StudioDecorator } from '../studio/StudioDecorator';
-import { AssetInbox } from '../studio/AssetInbox';
-import { VersionHistory } from '../studio/VersionHistory';
-import { AssetsPanel } from '../studio/AssetsPanel';
+const BottomDock = React.lazy(() =>
+    import('./BottomDock').then((m) => ({ default: m.BottomDock })),
+);
+const StudioDecorator = React.lazy(() =>
+    import('../studio/StudioDecorator').then((m) => ({
+        default: m.StudioDecorator,
+    })),
+);
+const AssetInbox = React.lazy(() =>
+    import('../studio/AssetInbox').then((m) => ({ default: m.AssetInbox })),
+);
+const VersionHistory = React.lazy(() =>
+    import('../studio/VersionHistory').then((m) => ({
+        default: m.VersionHistory,
+    })),
+);
+const AssetsPanel = React.lazy(() =>
+    import('../studio/AssetsPanel').then((m) => ({ default: m.AssetsPanel })),
+);
 const RunPanel = React.lazy(() =>
     import('../run/RunPanel').then((m) => ({ default: m.RunPanel })),
 );
@@ -45,15 +59,47 @@ const MailCenterModal = React.lazy(() =>
     })),
 );
 import { DEFAULT_AGENTS } from '../../types/platform';
-import { LevelProgress } from '../gamification/LevelProgress';
 import { assetPath } from '../../lib/assetPath';
-import { ToastContainer } from '../ui/Toast';
-import { InspectorCard } from '../agent-town/InspectorCard';
+const InspectorCard = React.lazy(() =>
+    import('../agent-town/InspectorCard').then((m) => ({
+        default: m.InspectorCard,
+    })),
+);
+const LevelProgress = React.lazy(() =>
+    import('../gamification/LevelProgress').then((m) => ({
+        default: m.LevelProgress,
+    })),
+);
+const ToastContainer = React.lazy(() =>
+    import('../ui/Toast').then((m) => ({ default: m.ToastContainer })),
+);
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useGrowthStore } from '../../store/useGrowthStore';
-import { LevelUpNotification } from '../growth';
+const LevelUpNotification = React.lazy(() =>
+    import('../growth').then((m) => ({ default: m.LevelUpNotification })),
+);
+
+function markStartupPhase(name: string) {
+    window.dogbaApi?.app?.markStartup?.(name);
+}
+
+const StartupMarkedAgentTown: React.FC = () => {
+    useEffect(() => {
+        markStartupPhase('agent-town-mounted');
+    }, []);
+
+    return <AgentTown />;
+};
+
+const StartupMarkedBottomDock: React.FC = () => {
+    useEffect(() => {
+        markStartupPhase('bottom-dock-mounted');
+    }, []);
+
+    return <BottomDock />;
+};
 
 // ── Feature Flags ──
 
@@ -209,10 +255,13 @@ export const MainLayout: React.FC = () => {
     const [showRunPanel, setShowRunPanel] = useState(false);
     const [studioTab, setStudioTab] = useState<StudioTab>('inbox');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [showDeferredTown, setShowDeferredTown] = useState(false);
+    const [showDeferredDock, setShowDeferredDock] = useState(false);
     const isInboxOpen = useMailStore((s) => s.isInboxOpen);
     const toggleInbox = useMailStore((s) => s.toggleInbox);
     const mailUnreadCount = useMailStore((s) => s.unreadCount);
     const setInboxOpen = useMailStore((s) => s.setInboxOpen);
+    const hasToasts = useAppStore((s) => s.toasts.length > 0);
     const importInputRef = useRef<HTMLInputElement>(null);
 
     // Subscribe to mail:new-report IPC → feed into useMailStore
@@ -223,6 +272,33 @@ export const MainLayout: React.FC = () => {
         });
         return () => {
             unsub();
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        let rafId = 0;
+        let dockTimer: ReturnType<typeof setTimeout> | null = null;
+        markStartupPhase('main-layout-mounted');
+
+        rafId = window.requestAnimationFrame(() => {
+            if (cancelled) return;
+            markStartupPhase('town-requested');
+            setShowDeferredTown(true);
+            dockTimer = setTimeout(() => {
+                if (!cancelled) {
+                    markStartupPhase('dock-requested');
+                    setShowDeferredDock(true);
+                }
+            }, 120);
+        });
+
+        return () => {
+            cancelled = true;
+            window.cancelAnimationFrame(rafId);
+            if (dockTimer) {
+                clearTimeout(dockTimer);
+            }
         };
     }, []);
 
@@ -299,21 +375,29 @@ export const MainLayout: React.FC = () => {
                             }}
                         >
                             <AgentTownBoundary>
-                                <Suspense
-                                    fallback={
-                                        <div className="w-full h-full flex items-center justify-center bg-amber-50">
-                                            Loading Agent Town...
-                                        </div>
-                                    }
-                                >
-                                    <AgentTown />
-                                </Suspense>
+                                {showDeferredTown ? (
+                                    <Suspense
+                                        fallback={
+                                            <div className="w-full h-full flex items-center justify-center bg-amber-50 text-black text-sm font-bold">
+                                                Loading Agent Town...
+                                            </div>
+                                        }
+                                    >
+                                        <StartupMarkedAgentTown />
+                                    </Suspense>
+                                ) : (
+                                    <div className="w-full h-full bg-amber-50" />
+                                )}
                             </AgentTownBoundary>
                             {inspectedAgent && (
-                                <InspectorCard
-                                    agent={inspectedAgent}
-                                    onClose={() => setHighlightedAgentId(null)}
-                                />
+                                <Suspense fallback={null}>
+                                    <InspectorCard
+                                        agent={inspectedAgent}
+                                        onClose={() =>
+                                            setHighlightedAgentId(null)
+                                        }
+                                    />
+                                </Suspense>
                             )}
                         </div>
 
@@ -360,19 +444,33 @@ export const MainLayout: React.FC = () => {
                                     id={`studio-tabpanel-${studioTab}`}
                                     aria-labelledby={`studio-tab-${studioTab}`}
                                 >
-                                    {studioTab === 'inbox' && <AssetInbox />}
-                                    {studioTab === 'builder' && <AssetsPanel />}
-                                    {studioTab === 'history' && (
-                                        <VersionHistory />
-                                    )}
+                                    <Suspense
+                                        fallback={
+                                            <div className="w-full h-full flex items-center justify-center bg-white text-sm font-bold text-gray-500">
+                                                Loading...
+                                            </div>
+                                        }
+                                    >
+                                        {studioTab === 'inbox' && <AssetInbox />}
+                                        {studioTab === 'builder' && (
+                                            <AssetsPanel />
+                                        )}
+                                        {studioTab === 'history' && (
+                                            <VersionHistory />
+                                        )}
+                                    </Suspense>
                                 </div>
                             </div>
                             {/* Right: Asset Gallery (Hidden in Build Mode since canvas handles it) */}
                             {studioTab !== 'builder' && (
                                 <div className="flex-1 ml-4 bg-white rounded-3xl shadow-xl border-4 border-cream-200 overflow-hidden pointer-events-auto">
-                                    <StudioDecorator
-                                        onClose={() => setActiveView('town')}
-                                    />
+                                    <Suspense fallback={null}>
+                                        <StudioDecorator
+                                            onClose={() =>
+                                                setActiveView('town')
+                                            }
+                                        />
+                                    </Suspense>
                                 </div>
                             )}
                         </div>
@@ -385,21 +483,27 @@ export const MainLayout: React.FC = () => {
                                 <div className="flex flex-col gap-4 pointer-events-auto">
                                     {SHOW_GAMIFICATION && (
                                         <div className="bg-white border-4 border-black shadow-[6px_6px_0_0_#000] rounded-2xl p-4 w-[360px] hover:-translate-y-1 hover:shadow-[8px_8px_0_0_#000] transition-all">
-                                            <LevelProgress
-                                                level={gamification.level}
-                                                levelTitle={
-                                                    gamification.levelTitle
+                                            <Suspense
+                                                fallback={
+                                                    <div className="h-[106px] rounded-xl bg-gray-100 animate-pulse" />
                                                 }
-                                                levelProgress={
-                                                    gamification.levelProgress
-                                                }
-                                                pointsToNextLevel={
-                                                    gamification.pointsToNextLevel
-                                                }
-                                                totalPoints={
-                                                    gamification.totalPoints
-                                                }
-                                            />
+                                            >
+                                                <LevelProgress
+                                                    level={gamification.level}
+                                                    levelTitle={
+                                                        gamification.levelTitle
+                                                    }
+                                                    levelProgress={
+                                                        gamification.levelProgress
+                                                    }
+                                                    pointsToNextLevel={
+                                                        gamification.pointsToNextLevel
+                                                    }
+                                                    totalPoints={
+                                                        gamification.totalPoints
+                                                    }
+                                                />
+                                            </Suspense>
                                         </div>
                                     )}
 
@@ -670,28 +774,40 @@ export const MainLayout: React.FC = () => {
             )}
 
             {/* Bottom Dock */}
-            <BottomDock />
+            {showDeferredDock && (
+                <Suspense fallback={null}>
+                    <StartupMarkedBottomDock />
+                </Suspense>
+            )}
 
             {/* Application Modals */}
-            <Suspense fallback={null}>
-                <SettingsModal
-                    isOpen={isSettingsOpen}
-                    onClose={() => setIsSettingsOpen(false)}
-                />
-            </Suspense>
+            {isSettingsOpen && (
+                <Suspense fallback={null}>
+                    <SettingsModal
+                        isOpen={isSettingsOpen}
+                        onClose={() => setIsSettingsOpen(false)}
+                    />
+                </Suspense>
+            )}
 
             {/* Level-Up Notification */}
             {levelUpFirst && levelUpStage && (
-                <LevelUpNotification
-                    agentName={levelUpFirst.agentName}
-                    newLevel={levelUpFirst.newLevel}
-                    evolutionStage={levelUpStage}
-                    onClose={shiftLevelUp}
-                />
+                <Suspense fallback={null}>
+                    <LevelUpNotification
+                        agentName={levelUpFirst.agentName}
+                        newLevel={levelUpFirst.newLevel}
+                        evolutionStage={levelUpStage}
+                        onClose={shiftLevelUp}
+                    />
+                </Suspense>
             )}
 
             {/* Toast Notifications */}
-            <ToastContainer />
+            {hasToasts && (
+                <Suspense fallback={null}>
+                    <ToastContainer />
+                </Suspense>
+            )}
         </div>
     );
 };

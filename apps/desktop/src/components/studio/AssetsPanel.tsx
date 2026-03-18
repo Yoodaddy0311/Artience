@@ -1,19 +1,117 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     FolderOpen,
     Image,
     FileText,
     RefreshCw,
+    Settings2,
     Trash2,
     Upload,
 } from 'lucide-react';
 import { useAppStore, type ProjectAsset } from '../../store/useAppStore';
 
+interface NumericFieldProps {
+    label: string;
+    value: number;
+    step?: number;
+    min?: number;
+    max?: number;
+    onCommit: (value: number) => void;
+}
+
+const NumericField: React.FC<NumericFieldProps> = ({
+    label,
+    value,
+    step = 1,
+    min,
+    max,
+    onCommit,
+}) => {
+    const [draft, setDraft] = useState(() => String(value));
+
+    useEffect(() => {
+        setDraft(String(value));
+    }, [value]);
+
+    const commit = () => {
+        const parsed = Number(draft);
+        if (!Number.isFinite(parsed)) {
+            setDraft(String(value));
+            return;
+        }
+
+        const clamped = Math.min(
+            max ?? parsed,
+            Math.max(min ?? parsed, parsed),
+        );
+        setDraft(String(clamped));
+        if (clamped !== value) {
+            onCommit(clamped);
+        }
+    };
+
+    return (
+        <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-black uppercase tracking-[0.12em] text-gray-500">
+                {label}
+            </span>
+            <input
+                type="number"
+                value={draft}
+                step={step}
+                min={min}
+                max={max}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                    }
+                    if (e.key === 'Escape') {
+                        setDraft(String(value));
+                        e.currentTarget.blur();
+                    }
+                }}
+                className="h-10 rounded-lg border-2 border-black bg-white px-3 text-sm font-bold text-black outline-none transition-all focus:-translate-y-0.5 focus:shadow-[3px_3px_0_0_#000]"
+            />
+        </label>
+    );
+};
+
 export const AssetsPanel: React.FC = () => {
     const assets = useAppStore((s) => s.assets);
     const setAssets = useAppStore((s) => s.setAssets);
+    const projectConfig = useAppStore((s) => s.projectConfig);
+    const selectedWorldObjectId = useAppStore((s) => s.selectedWorldObjectId);
+    const setSelectedWorldObjectId = useAppStore(
+        (s) => s.setSelectedWorldObjectId,
+    );
+    const updateWorldObjectProperties = useAppStore(
+        (s) => s.updateWorldObjectProperties,
+    );
+    const saveProject = useAppStore((s) => s.saveProject);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    const selectedObject = useMemo(
+        () =>
+            projectConfig.world.layers.objects.find(
+                (object) => object.id === selectedWorldObjectId,
+            ) ?? null,
+        [projectConfig.world.layers.objects, selectedWorldObjectId],
+    );
+
+    const selectedAssetName =
+        typeof selectedObject?.properties?.asset === 'string'
+            ? (selectedObject.properties.asset.split('/').pop() ??
+              selectedObject.properties.asset)
+            : null;
+
+    const commitSelectedPatch = (patch: Record<string, unknown>) => {
+        if (!selectedObject) return;
+        updateWorldObjectProperties(selectedObject.id, patch);
+        saveProject();
+    };
 
     const fetchAssets = async () => {
         const studioApi = window.dogbaApi?.studio;
@@ -98,6 +196,12 @@ export const AssetsPanel: React.FC = () => {
             fetchAssets();
         }
     }, []);
+
+    useEffect(() => {
+        if (selectedWorldObjectId && !selectedObject) {
+            setSelectedWorldObjectId(null);
+        }
+    }, [selectedObject, selectedWorldObjectId, setSelectedWorldObjectId]);
 
     const typeIcon = (type: ProjectAsset['type']) => {
         switch (type) {
@@ -247,6 +351,242 @@ export const AssetsPanel: React.FC = () => {
                         ))}
                     </div>
                 )}
+
+                <div className="mt-6 rounded-2xl border-2 border-black bg-[#FFF7D6] shadow-[3px_3px_0_0_#000] overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 border-b-2 border-black px-4 py-3 bg-white">
+                        <div className="flex items-center gap-2">
+                            <Settings2 className="w-4 h-4 text-black" />
+                            <div>
+                                <h3 className="text-sm font-black text-black">
+                                    Selected Object
+                                </h3>
+                                <p className="text-[11px] text-gray-500 font-bold">
+                                    Collision and occlusion tuning
+                                </p>
+                            </div>
+                        </div>
+                        {selectedObject && (
+                            <button
+                                onClick={() => setSelectedWorldObjectId(null)}
+                                className="px-3 py-1.5 text-[11px] font-black rounded-lg border-2 border-black bg-white shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all"
+                            >
+                                Clear
+                            </button>
+                        )}
+                    </div>
+
+                    {selectedObject ? (
+                        <div className="space-y-4 p-4">
+                            <div className="rounded-xl border-2 border-black bg-white p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-black text-black truncate">
+                                            {selectedAssetName ??
+                                                selectedObject.type}
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-500 mt-1">
+                                            id: {selectedObject.id}
+                                        </p>
+                                    </div>
+                                    <span className="shrink-0 rounded-full border-2 border-black bg-[#FFE066] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em]">
+                                        {selectedObject.type}
+                                    </span>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-gray-600">
+                                    <div className="rounded-lg bg-gray-50 px-2 py-2">
+                                        Grid: {selectedObject.x},{' '}
+                                        {selectedObject.y}
+                                    </div>
+                                    <div className="rounded-lg bg-gray-50 px-2 py-2">
+                                        Size: {selectedObject.width} x{' '}
+                                        {selectedObject.height}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-gray-500">
+                                    Transform
+                                </p>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <NumericField
+                                        label="Scale"
+                                        value={Number(
+                                            selectedObject.properties?.scale ??
+                                                1,
+                                        )}
+                                        step={0.05}
+                                        min={0.1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                scale: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Offset X"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.offsetX ?? 0,
+                                        )}
+                                        step={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                offsetX: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Offset Y"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.offsetY ?? 0,
+                                        )}
+                                        step={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                offsetY: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Rotation (rad)"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.rotation ?? 0,
+                                        )}
+                                        step={0.05}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                rotation: value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-gray-500">
+                                    Collision and Occlusion
+                                </p>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <NumericField
+                                        label="Occlusion Offset Y"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.occlusionOffsetY ?? 0,
+                                        )}
+                                        step={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                occlusionOffsetY: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Collision Padding"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.collisionPadding ?? 0,
+                                        )}
+                                        step={1}
+                                        min={0}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                collisionPadding: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Collision Inset X"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.collisionInsetX ?? 0,
+                                        )}
+                                        step={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                collisionInsetX: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Collision Inset Y"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.collisionInsetY ?? 0,
+                                        )}
+                                        step={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                collisionInsetY: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Footprint Width"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.collisionFootprintWidth ??
+                                                selectedObject.width,
+                                        )}
+                                        step={1}
+                                        min={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                collisionFootprintWidth: value,
+                                            })
+                                        }
+                                    />
+                                    <NumericField
+                                        label="Footprint Height"
+                                        value={Number(
+                                            selectedObject.properties
+                                                ?.collisionFootprintHeight ??
+                                                selectedObject.height,
+                                        )}
+                                        step={1}
+                                        min={1}
+                                        onCommit={(value) =>
+                                            commitSelectedPatch({
+                                                collisionFootprintHeight: value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            <label className="flex items-center justify-between gap-3 rounded-xl border-2 border-black bg-white px-3 py-3">
+                                <div>
+                                    <p className="text-sm font-black text-black">
+                                        Walkable
+                                    </p>
+                                    <p className="text-[11px] font-bold text-gray-500 mt-1">
+                                        Allow agents to pass through this asset
+                                    </p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(
+                                        selectedObject.properties?.isWalkable,
+                                    )}
+                                    onChange={(e) =>
+                                        commitSelectedPatch({
+                                            isWalkable: e.target.checked,
+                                        })
+                                    }
+                                    className="h-5 w-5 rounded border-2 border-black accent-black"
+                                />
+                            </label>
+                        </div>
+                    ) : (
+                        <div className="p-4 text-sm font-bold text-gray-600">
+                            캔버스에서 오브젝트를 선택하면 이곳에서 스케일,
+                            오프셋, 충돌 풋프린트, 가림 기준선을 정교하게 조정할
+                            수 있습니다.
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Footer */}

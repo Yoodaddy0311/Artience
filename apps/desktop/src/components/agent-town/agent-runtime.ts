@@ -134,6 +134,15 @@ export const BUBBLE_CONFIGS: Record<string, BubbleConfig> = {
         displayFrames: 0,
         fadeFrames: 60,
     },
+    needs_input: {
+        emoji: '\u{1F64B}',
+        texts: [
+            '\uD655\uC778\uD574\uC904 \uAC83\uC774 \uC788\uC5B4!',
+            '\uC785\uB825\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC911...',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
     reading: {
         emoji: '\u{1F50D}',
         texts: [

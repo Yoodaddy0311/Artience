@@ -62,6 +62,17 @@ export const useTimelineStore = create<TimelineState>()((set) => ({
     recordTransition: (agentId, activity, toolName, detail) =>
         set((s) => {
             const now = Date.now();
+            const lastEntry = s.entries.findLast((e) => e.agentId === agentId);
+
+            if (
+                lastEntry &&
+                lastEntry.endedAt === undefined &&
+                lastEntry.activity === activity &&
+                lastEntry.toolName === toolName &&
+                lastEntry.detail === detail
+            ) {
+                return s;
+            }
 
             // Close any open entry for this agent
             const updatedEntries = s.entries.map((e) =>
@@ -72,10 +83,10 @@ export const useTimelineStore = create<TimelineState>()((set) => ({
 
             // Don't create entries for 'idle' if the agent was already idle
             // (avoids flooding the timeline with idle entries)
-            const lastEntry = updatedEntries.findLast(
+            const latestEntry = updatedEntries.findLast(
                 (e) => e.agentId === agentId,
             );
-            if (activity === 'idle' && lastEntry?.activity === 'idle') {
+            if (activity === 'idle' && latestEntry?.activity === 'idle') {
                 return { entries: updatedEntries };
             }
 

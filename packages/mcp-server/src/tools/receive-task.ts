@@ -47,10 +47,13 @@ export function registerReceiveTask(
 
             // Extract prompt text from the task for enrichment
             const promptText =
-                ((task as Record<string, unknown>).prompt as string) ??
-                ((task as Record<string, unknown>).text as string) ??
-                ((task as Record<string, unknown>).taskContent as string) ??
-                '';
+                'prompt' in task
+                    ? task.prompt
+                    : 'text' in task
+                      ? task.text
+                      : 'taskContent' in task
+                        ? task.taskContent
+                        : '';
 
             // Enrich with agent recommendation and skill context
             const enrichment: Record<string, unknown> = {};

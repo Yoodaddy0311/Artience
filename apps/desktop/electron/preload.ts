@@ -1,14 +1,26 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-console.log('[Preload] Script executing...');
-console.log('[Preload] contextBridge available:', !!contextBridge);
-console.log('[Preload] ipcRenderer available:', !!ipcRenderer);
+const shouldLogPreload =
+    process.env.NODE_ENV !== 'production' ||
+    Boolean(process.env.VITE_DEV_SERVER_URL);
+
+if (shouldLogPreload) {
+    console.log('[Preload] Script executing...');
+    console.log('[Preload] contextBridge available:', !!contextBridge);
+    console.log('[Preload] ipcRenderer available:', !!ipcRenderer);
+}
+
+ipcRenderer.send('app:startup-mark', 'preload-script-start');
 
 try {
     contextBridge.exposeInMainWorld('dogbaApi', {
         // ── App ──
         app: {
             getVersion: () => process.env.npm_package_version,
+            markStartup: (name: string, detail?: string): void =>
+                ipcRenderer.send('app:startup-mark', name, detail),
+            getStartupMetrics: (): Promise<import('../src/lib/startup-metrics').StartupMetricsSnapshot> =>
+                ipcRenderer.invoke('app:get-startup-metrics'),
         },
 
         // ── Terminal ──
@@ -21,6 +33,7 @@ try {
                     autoCommand?: string;
                     shell?: string;
                     label?: string;
+                    agentId?: string;
                 },
             ): Promise<{ id: string; label: string; cwd: string }> =>
                 ipcRenderer.invoke('terminal:create', cols, rows, options),
@@ -33,7 +46,15 @@ try {
             destroy: (id: string): void =>
                 ipcRenderer.send('terminal:destroy', id),
             list: (): Promise<
-                { id: string; cwd: string; label: string; pid: number }[]
+                {
+                    id: string;
+                    cwd: string;
+                    label: string;
+                    pid: number;
+                    agentId?: string;
+                    activity?: string;
+                    lastOutputAt?: number;
+                }[]
             > => ipcRenderer.invoke('terminal:list'),
             onData: (callback: (id: string, data: string) => void) => {
                 const listener = (
@@ -65,6 +86,21 @@ try {
                 return () =>
                     ipcRenderer.removeListener(
                         'terminal:parsed-event',
+                        listener,
+                    );
+            },
+            onParsedEvents: (
+                callback: (tabId: string, events: any[]) => void,
+            ) => {
+                const listener = (
+                    _event: Electron.IpcRendererEvent,
+                    tabId: string,
+                    events: any[],
+                ) => callback(tabId, events);
+                ipcRenderer.on('terminal:parsed-events', listener);
+                return () =>
+                    ipcRenderer.removeListener(
+                        'terminal:parsed-events',
                         listener,
                     );
             },
@@ -206,6 +242,18 @@ try {
                 ipcRenderer.on('chat:session-closed', listener);
                 return () =>
                     ipcRenderer.removeListener('chat:session-closed', listener);
+            },
+            onAgentActivity: (
+                callback: (agentId: string, activity: string) => void,
+            ) => {
+                const listener = (
+                    _e: Electron.IpcRendererEvent,
+                    agentId: string,
+                    activity: string,
+                ) => callback(agentId, activity);
+                ipcRenderer.on('chat:agent-activity', listener);
+                return () =>
+                    ipcRenderer.removeListener('chat:agent-activity', listener);
             },
         },
 
@@ -439,8 +487,15 @@ try {
         agent: {
             createTeam: (
                 cwd?: string,
+                seedTask?: string,
+                preferredAgents?: string[],
             ): Promise<{ success: boolean; error?: string }> =>
-                ipcRenderer.invoke('agent:create-team', cwd),
+                ipcRenderer.invoke(
+                    'agent:create-team',
+                    cwd,
+                    seedTask,
+                    preferredAgents,
+                ),
             delegateTask: (
                 agentName: string,
                 task: string,
@@ -920,7 +975,10 @@ try {
             },
         },
     });
-    console.log('[Preload] dogbaApi exposed successfully');
+    ipcRenderer.send('app:startup-mark', 'preload-api-exposed');
+    if (shouldLogPreload) {
+        console.log('[Preload] dogbaApi exposed successfully');
+    }
 } catch (err) {
     console.error('[Preload] FAILED to expose dogbaApi:', err);
 }

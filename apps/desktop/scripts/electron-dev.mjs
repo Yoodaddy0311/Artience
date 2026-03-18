@@ -11,7 +11,7 @@ import { createConnection } from 'net';
 import { rmSync, existsSync } from 'fs';
 import { join } from 'path';
 
-const VITE_PORT = 5173;
+const VITE_PORT = Number(process.env.DOGBA_VITE_PORT || '5173');
 const VITE_HOST = 'localhost';
 
 // Step 1: Build electron files (synchronous — must finish before anything else)

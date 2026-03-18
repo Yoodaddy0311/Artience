@@ -10,7 +10,9 @@
     "scripts": {
         "build": "tsc",
         "dev": "tsc --watch",
-        "start": "node dist/index.js"
+        "start": "node dist/index.js",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@dokba/shared-types": "workspace:*",
@@ -20,7 +22,8 @@
     "devDependencies": {
         "@types/node": "^22.0.0",
         "@types/ws": "^8.5.13",
-        "typescript": "^5.6.0"
+        "typescript": "^5.6.0",
+        "vitest": "^4.0.18"
     },
     "engines": {
         "node": ">=18.0.0"

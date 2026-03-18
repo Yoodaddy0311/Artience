@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { easeInOutQuad } from '../animal-runtime';
+import { easeInOutQuad, supportsDeskAnimation } from '../animal-runtime';
 
 describe('easeInOutQuad', () => {
     it('returns 0 at t=0', () => {
@@ -41,5 +41,19 @@ describe('easeInOutQuad', () => {
             const high = easeInOutQuad(1 - t);
             expect(low + high).toBeCloseTo(1, 10);
         }
+    });
+});
+
+describe('supportsDeskAnimation', () => {
+    it('enables desk spritesheet animation for hamster agents', () => {
+        expect(supportsDeskAnimation('hamster')).toBe(true);
+    });
+
+    it('does not force non-hamster agents into the hamster desk sprite', () => {
+        expect(supportsDeskAnimation('otter')).toBe(false);
+        expect(supportsDeskAnimation('cat')).toBe(false);
+        expect(supportsDeskAnimation('dog')).toBe(false);
+        expect(supportsDeskAnimation('rabbit')).toBe(false);
+        expect(supportsDeskAnimation('raccoon')).toBe(false);
     });
 });

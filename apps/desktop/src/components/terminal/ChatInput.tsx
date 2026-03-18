@@ -10,6 +10,12 @@ import { useTerminalStore } from '../../store/useTerminalStore';
 import { useAppStore } from '../../store/useAppStore';
 import { MemoizedAgentRecommendPanel } from '../agent/AgentRecommendPanel';
 import type { AgentRecommendation } from '../../types/agent-state';
+import { getAgentDisplayName } from '../../lib/agent-directory';
+import {
+    extractSlashCommand,
+    shouldRouteViaPlatform,
+    type ArtibotCommandRoute,
+} from '../../lib/terminal-command-routing';
 
 // ── Types ──
 
@@ -116,16 +122,10 @@ const NATIVE_COMMANDS: SlashCommand[] = [
     {
         id: '/team',
         label: '/team',
-        description: '팀 모드 (artibot)',
+        description: 'Claude 팀 모드',
         source: 'native',
     },
 ];
-
-// Artibot registry command type
-interface ArtibotCommand {
-    command: string;
-    agent: string;
-}
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 const TEXT_EXTS = new Set([
@@ -263,7 +263,6 @@ export interface ChatInputProps {
     tabId: string;
     agentSprite?: string;
     onSubmit: (message: string) => void;
-    onSelectAgent?: (agentId: string) => void;
     disabled?: boolean;
     /** When true (no agent selected), enables recommendation panel */
     showRecommendations?: boolean;
@@ -273,7 +272,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     tabId,
     agentSprite,
     onSubmit,
-    onSelectAgent,
     disabled,
     showRecommendations,
 }) => {
@@ -316,9 +314,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }, [projectDir]);
 
     // Load artibot registry commands
-    const [artibotCommands, setArtibotCommands] = useState<ArtibotCommand[]>(
-        [],
-    );
+    const [artibotCommands, setArtibotCommands] = useState<
+        ArtibotCommandRoute[]
+    >([]);
     useEffect(() => {
         const api = (window as any).dogbaApi?.artibot;
         if (!api) return;
@@ -367,14 +365,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         };
     }, [text, showRecommendations, recommendDismissed]);
 
-    const handleRecommendSelect = useCallback(
-        (agentId: string) => {
-            setRecommendations([]);
-            setRecommendDismissed(true);
-            onSelectAgent?.(agentId);
-        },
-        [onSelectAgent],
-    );
+    const handleRecommendSelect = useCallback((agentId: string) => {
+        setRecommendations([]);
+        setRecommendDismissed(true);
+        const agentName = getAgentDisplayName(agentId);
+        setText((prev) => {
+            const stripped = prev
+                .trim()
+                .replace(/^#\s*/, '')
+                .replace(/@([a-zA-Z][a-zA-Z0-9_-]*)/, '')
+                .trim();
+            return stripped
+                ? `# @${agentName} ${stripped}`
+                : `# @${agentName} `;
+        });
+        requestAnimationFrame(() => textareaRef.current?.focus());
+    }, []);
 
     const handleRecommendClose = useCallback(() => {
         setRecommendations([]);
@@ -553,20 +559,27 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
 
         // Check if it's an artibot platform command (e.g. /team, /plan)
-        const slashCmd = trimmed.startsWith('/')
-            ? trimmed.split(' ')[0].slice(1)
-            : null;
-        const artibotCmd = slashCmd
-            ? artibotCommands.find((c) => c.command === slashCmd)
-            : null;
+        const slashCmd = extractSlashCommand(trimmed);
+        const routeViaPlatform = shouldRouteViaPlatform(
+            trimmed,
+            artibotCommands,
+        );
+        const artibotCmd =
+            routeViaPlatform && slashCmd
+                ? artibotCommands.find(
+                      (commandDef) =>
+                          commandDef.command.toLowerCase() === slashCmd,
+                  )
+                : null;
 
-        if (artibotCmd) {
+        if (artibotCmd && slashCmd) {
             // Route via platform IPC instead of sending to CLI PTY
-            const args = trimmed.slice(slashCmd!.length + 2).trim();
+            const args = trimmed.slice(slashCmd.length + 2).trim();
             const api = (window as any).dogbaApi?.artibot;
             if (api) {
                 api.executeCommand(artibotCmd.command, args);
             }
+            useTerminalStore.getState().addInputHistory(tabId, trimmed);
         } else {
             // Build final message: text + attachment paths
             let message = trimmed;

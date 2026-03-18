@@ -15,13 +15,43 @@ import * as fs from 'fs';
 // EPIPE on console.log which crashes the Electron main process.
 process.stdout?.on?.('error', () => {});
 process.stderr?.on?.('error', () => {});
+let fatalMainProcessRecoveryScheduled = false;
+
+function scheduleFatalMainProcessRecovery(err: Error) {
+    if (fatalMainProcessRecoveryScheduled) return;
+    fatalMainProcessRecoveryScheduled = true;
+
+    console.error('[Electron] Fatal main-process error:', err);
+
+    const recover = () => {
+        try {
+            app.relaunch();
+        } catch (relaunchError) {
+            console.error(
+                '[Electron] Failed to relaunch after fatal error:',
+                relaunchError,
+            );
+        } finally {
+            app.exit(1);
+        }
+    };
+
+    if (app.isReady()) {
+        dialog.showErrorBox(
+            'Dokba Studio Restarting',
+            `${err.name}: ${err.message}\n\nA fatal main-process error occurred. The app will restart to recover safely.`,
+        );
+        setTimeout(recover, 50);
+        return;
+    }
+
+    setTimeout(recover, 0);
+}
+
 process.on('uncaughtException', (err) => {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') return;
-    // Let Electron handle non-pipe errors normally
-    if (app.isReady()) {
-        dialog.showErrorBox('Error', `${err.name}: ${err.message}`);
-    }
+    scheduleFatalMainProcessRecovery(err);
 });
 process.on('unhandledRejection', (reason) => {
     console.error('[Electron] Unhandled rejection:', reason);
@@ -53,6 +83,7 @@ import {
     parseDirective,
     type DirectiveType,
 } from '../src/lib/directive-parser';
+import { resolveAgentId } from '../src/lib/agent-directory';
 import { providerRegistry } from './provider-registry';
 import { reportGenerator } from './report-generator';
 import { workflowPackManager } from './workflow-pack';
@@ -70,11 +101,13 @@ import {
     type FeedbackEvent,
     type FeedbackResult,
 } from '../src/lib/feedback-loop';
+import { createStartupMetricsTracker } from '../src/lib/startup-metrics';
 import {
     registerMcpServer,
     MCP_BRIDGE_DIR,
     type McpBridge,
 } from './mcp-artience-server';
+import { createAuthStatusCache } from './auth-status-cache';
 
 // Dev 환경에서 Vite HMR을 위한 unsafe-eval 관련 보안 경고 무시
 if (!app.isPackaged) {
@@ -96,8 +129,6 @@ import {
     stopWatching,
     getRegistry,
 } from './artibot-registry';
-
-console.log('[Electron] BUILD_ID: 20260303-v8 (Hydration-Fix)');
 
 // Dev mode: disable ALL caches to prevent stale assets from previous builds
 if (process.env.VITE_DEV_SERVER_URL) {
@@ -142,6 +173,20 @@ function getDefaultPermissionMode(agentLabel: string): string {
 }
 
 const execFileAsync = promisify(execFile);
+const shouldEmitVerboseRuntimeLogs = Boolean(process.env.VITE_DEV_SERVER_URL);
+const POST_RENDER_INIT_DELAY_MS = 250;
+const authStatusCache = createAuthStatusCache();
+const startupMetrics = createStartupMetricsTracker();
+
+function recordStartupMark(name: string, detail?: string, overwrite = false) {
+    startupMetrics.mark(name, detail, overwrite);
+}
+
+recordStartupMark('main-module-loaded');
+
+if (shouldEmitVerboseRuntimeLogs) {
+    console.log('[Electron] BUILD_ID: 20260303-v8 (Hydration-Fix)');
+}
 
 let mainWindow: BrowserWindow;
 let tray: Tray | null = null;
@@ -215,7 +260,14 @@ if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
 // ── Terminal process store (node-pty based for proper TTY support) ──────────
 
 const terminals = new Map<string, pty.IPty>();
-const terminalMeta = new Map<string, { cwd: string; label: string }>();
+const terminalMeta = new Map<
+    string,
+    {
+        cwd: string;
+        label: string;
+        agentId?: string;
+    }
+>();
 let terminalIdCounter = 0;
 
 // ── Per-tab PTY parser state (tee analysis) ─────────────────────────────────
@@ -229,9 +281,28 @@ interface TabParserState {
     lineBuffer: string;
     /** Timer to flush lineBuffer when no newline arrives (ink TUI partial lines) */
     flushTimer: ReturnType<typeof setTimeout> | null;
+    /** Last time any PTY output was observed for this tab */
+    lastOutputAt: number;
+    /** Heartbeat timer that downgrades stale active states back to idle */
+    heartbeatTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const tabParserState = new Map<string, TabParserState>();
+const pendingTerminalOutput = new Map<string, string>();
+const pendingTerminalOutputTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+>();
+const pendingHistoryWrites = new Map<string, string>();
+const pendingHistoryWriteTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+>();
+const pendingParsedEventBatches = new Map<string, ParsedEvent[]>();
+const pendingParsedEventTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+>();
 
 function getOrCreateParserState(tabId: string): TabParserState {
     let state = tabParserState.get(tabId);
@@ -242,6 +313,8 @@ function getOrCreateParserState(tabId: string): TabParserState {
             workCycleActive: false,
             lineBuffer: '',
             flushTimer: null,
+            lastOutputAt: Date.now(),
+            heartbeatTimer: null,
         };
         tabParserState.set(tabId, state);
     }
@@ -250,6 +323,169 @@ function getOrCreateParserState(tabId: string): TabParserState {
 
 /** Flush timer delay for partial lines without newline (ms) */
 const LINE_BUFFER_FLUSH_MS = 200;
+const ACTIVITY_HEARTBEAT_MS = 12000;
+const TERMINAL_OUTPUT_BATCH_MS = 16;
+const HISTORY_WRITE_BATCH_MS = 120;
+const PARSED_EVENT_BATCH_MS = 48;
+const AUTO_COMMAND_DELAY_MS = 200;
+
+function emitActivityChange(tabId: string, activity: AgentActivity): void {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+            'terminal:activity-change',
+            tabId,
+            activity,
+        );
+    }
+}
+
+function flushQueuedHistoryWrite(tabId: string): void {
+    const timer = pendingHistoryWriteTimers.get(tabId);
+    if (timer) {
+        clearTimeout(timer);
+        pendingHistoryWriteTimers.delete(tabId);
+    }
+
+    const buffered = pendingHistoryWrites.get(tabId);
+    if (!buffered) return;
+    pendingHistoryWrites.delete(tabId);
+
+    const meta = terminalMeta.get(tabId);
+    const agentLabel = meta?.label || tabId;
+    const logFile = path.join(LOGS_DIR, `${agentLabel}_history.log`);
+
+    fs.appendFile(logFile, buffered, (err) => {
+        if (err) console.error(`Failed to write log for ${agentLabel}: `, err);
+    });
+}
+
+function queueHistoryWrite(tabId: string, rawData: string): void {
+    pendingHistoryWrites.set(
+        tabId,
+        (pendingHistoryWrites.get(tabId) || '') + rawData,
+    );
+
+    if (pendingHistoryWriteTimers.has(tabId)) {
+        return;
+    }
+
+    const timer = setTimeout(() => {
+        flushQueuedHistoryWrite(tabId);
+    }, HISTORY_WRITE_BATCH_MS);
+    pendingHistoryWriteTimers.set(tabId, timer);
+}
+
+function flushQueuedParsedEvents(tabId: string): void {
+    const timer = pendingParsedEventTimers.get(tabId);
+    if (timer) {
+        clearTimeout(timer);
+        pendingParsedEventTimers.delete(tabId);
+    }
+
+    const batch = pendingParsedEventBatches.get(tabId);
+    if (!batch || batch.length === 0) return;
+    pendingParsedEventBatches.delete(tabId);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:parsed-events', tabId, batch);
+    }
+}
+
+function queueParsedEvents(tabId: string, events: ParsedEvent[]): void {
+    if (events.length === 0) return;
+
+    const pending = pendingParsedEventBatches.get(tabId) || [];
+    pending.push(...events);
+    pendingParsedEventBatches.set(tabId, pending);
+
+    if (pendingParsedEventTimers.has(tabId)) {
+        return;
+    }
+
+    const timer = setTimeout(() => {
+        flushQueuedParsedEvents(tabId);
+    }, PARSED_EVENT_BATCH_MS);
+    pendingParsedEventTimers.set(tabId, timer);
+}
+
+function flushQueuedTerminalOutput(tabId: string): void {
+    const timer = pendingTerminalOutputTimers.get(tabId);
+    if (timer) {
+        clearTimeout(timer);
+        pendingTerminalOutputTimers.delete(tabId);
+    }
+
+    const buffered = pendingTerminalOutput.get(tabId);
+    if (!buffered) return;
+    pendingTerminalOutput.delete(tabId);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:data', tabId, buffered);
+    }
+
+    processPtyForParser(tabId, buffered);
+}
+
+function queueTerminalOutput(tabId: string, rawData: string): void {
+    pendingTerminalOutput.set(
+        tabId,
+        (pendingTerminalOutput.get(tabId) || '') + rawData,
+    );
+
+    if (pendingTerminalOutputTimers.has(tabId)) {
+        return;
+    }
+
+    const timer = setTimeout(() => {
+        flushQueuedTerminalOutput(tabId);
+    }, TERMINAL_OUTPUT_BATCH_MS);
+    pendingTerminalOutputTimers.set(tabId, timer);
+}
+
+function flushAllTerminalBuffers(tabId: string): void {
+    flushQueuedTerminalOutput(tabId);
+    flushQueuedHistoryWrite(tabId);
+    flushQueuedParsedEvents(tabId);
+}
+
+function scheduleActivityHeartbeat(tabId: string, state: TabParserState): void {
+    if (state.heartbeatTimer !== null) {
+        clearTimeout(state.heartbeatTimer);
+    }
+
+    state.heartbeatTimer = setTimeout(() => {
+        state.heartbeatTimer = null;
+
+        if (!terminals.has(tabId)) return;
+        if (Date.now() - state.lastOutputAt < ACTIVITY_HEARTBEAT_MS) {
+            scheduleActivityHeartbeat(tabId, state);
+            return;
+        }
+
+        if (state.lineBuffer.length > 0) {
+            const buffered = state.lineBuffer;
+            state.lineBuffer = '';
+            const parsed = parsePtyChunk(buffered);
+            processParsedEvents(tabId, state, parsed);
+            if (
+                state.lastActivity !== 'idle' &&
+                state.lastActivity !== 'needs_input'
+            ) {
+                scheduleActivityHeartbeat(tabId, state);
+            }
+            return;
+        }
+
+        if (
+            ['thinking', 'working', 'reading', 'typing', 'writing'].includes(
+                state.lastActivity,
+            )
+        ) {
+            state.lastActivity = 'idle';
+            emitActivityChange(tabId, 'idle');
+        }
+    }, ACTIVITY_HEARTBEAT_MS);
+}
 
 /**
  * Process parsed events: push to event buffer, send to renderer, detect activity changes.
@@ -262,17 +498,14 @@ function processParsedEvents(
 ): void {
     if (parsed.length === 0) return;
 
+    queueParsedEvents(tabId, parsed);
+
     for (const event of parsed) {
         // Cap event buffer at 200 to avoid unbounded growth
         if (state.events.length >= 200) {
             state.events = state.events.slice(-100);
         }
         state.events.push(event);
-
-        // Send each parsed event to renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('terminal:parsed-event', tabId, event);
-        }
 
         // Track work cycle for mail trigger
         if (event.type === 'thinking' || event.type === 'tool_use') {
@@ -286,13 +519,7 @@ function processParsedEvents(
         const prevActivity = state.lastActivity;
         state.lastActivity = newActivity;
 
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-                'terminal:activity-change',
-                tabId,
-                newActivity,
-            );
-        }
+        emitActivityChange(tabId, newActivity);
 
         // Mail trigger: work cycle completed (transition to success/idle after work)
         if (
@@ -362,16 +589,11 @@ function processParsedEvents(
  * preventing activity detection from being blocked indefinitely.
  */
 function processPtyForParser(tabId: string, rawData: string): void {
-    const meta = terminalMeta.get(tabId);
-    const agentLabel = meta?.label || tabId;
-    const logFile = path.join(LOGS_DIR, `${agentLabel}_history.log`);
-
-    // 백그라운드에서 로그 파일 기록
-    fs.appendFile(logFile, rawData, (err) => {
-        if (err) console.error(`Failed to write log for ${agentLabel}: `, err);
-    });
+    queueHistoryWrite(tabId, rawData);
 
     const state = getOrCreateParserState(tabId);
+    state.lastOutputAt = Date.now();
+    scheduleActivityHeartbeat(tabId, state);
 
     // Clear any pending flush timer — new data arrived
     if (state.flushTimer !== null) {
@@ -447,13 +669,16 @@ function createTray(): void {
 // ── Window ─────────────────────────────────────────────────────────────────
 
 async function createWindow() {
+    recordStartupMark('create-window-start');
     const preloadPath = path.join(__dirname, 'preload.js');
 
-    console.log('[Electron] app.isPackaged:', app.isPackaged);
-    console.log('[Electron] __dirname:', __dirname);
-    console.log('[Electron] app.getAppPath():', app.getAppPath());
-    console.log('[Electron] preload path:', preloadPath);
-    console.log('[Electron] preload exists:', fs.existsSync(preloadPath));
+    if (shouldEmitVerboseRuntimeLogs) {
+        console.log('[Electron] app.isPackaged:', app.isPackaged);
+        console.log('[Electron] __dirname:', __dirname);
+        console.log('[Electron] app.getAppPath():', app.getAppPath());
+        console.log('[Electron] preload path:', preloadPath);
+        console.log('[Electron] preload exists:', fs.existsSync(preloadPath));
+    }
 
     mainWindow = new BrowserWindow({
         width: 1440,
@@ -467,6 +692,15 @@ async function createWindow() {
             nodeIntegration: false,
             sandbox: false,
         },
+    });
+    recordStartupMark('browser-window-created');
+
+    mainWindow.once('ready-to-show', () => {
+        recordStartupMark('window-ready-to-show', undefined, true);
+    });
+
+    mainWindow.webContents.once('did-finish-load', () => {
+        recordStartupMark('window-did-finish-load', undefined, true);
     });
 
     mainWindow.webContents.on(
@@ -493,10 +727,11 @@ async function createWindow() {
             const msg =
                 typeof message === 'string' ? message : String(message ?? '');
             if (
-                msg.includes('[Preload]') ||
-                msg.includes('[ChatSend]') ||
-                msg.includes('[terminal') ||
-                level >= 3
+                level >= 3 ||
+                (shouldEmitVerboseRuntimeLogs &&
+                    (msg.includes('[Preload]') ||
+                        msg.includes('[ChatSend]') ||
+                        msg.includes('[terminal')))
             ) {
                 const tag = level >= 3 ? 'ERROR' : 'LOG';
                 const src = sourceId && line ? ` [${sourceId}:${line}]` : '';
@@ -513,25 +748,33 @@ async function createWindow() {
         });
         console.log('[Electron] Dev cache + storage purged');
         mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+        recordStartupMark('window-load-requested', 'dev-server', true);
     } else {
         // __dirname = dist-electron/, Vite 출력 = ../dist/index.html
         const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
-        console.log(
-            '[Electron] Loading index.html from:',
-            indexPath,
-            '| exists:',
-            fs.existsSync(indexPath),
-        );
+        if (shouldEmitVerboseRuntimeLogs) {
+            console.log(
+                '[Electron] Loading index.html from:',
+                indexPath,
+                '| exists:',
+                fs.existsSync(indexPath),
+            );
+        }
         mainWindow.loadFile(indexPath);
+        recordStartupMark('window-load-requested', 'dist-file', true);
     }
 
-    if (process.env.VITE_DEV_SERVER_URL) {
+    if (
+        process.env.VITE_DEV_SERVER_URL &&
+        process.env.DOGBA_OPEN_DEVTOOLS === '1'
+    ) {
         mainWindow.webContents.openDevTools();
     }
 
-    mainWindow.webContents.on('did-finish-load', async () => {
-        try {
-            const result = await mainWindow.webContents.executeJavaScript(`
+    if (shouldEmitVerboseRuntimeLogs) {
+        mainWindow.webContents.on('did-finish-load', async () => {
+            try {
+                const result = await mainWindow.webContents.executeJavaScript(`
 JSON.stringify({
     dogbaApi: typeof window.dogbaApi,
     keys: window.dogbaApi ? Object.keys(window.dogbaApi) : [],
@@ -540,15 +783,25 @@ JSON.stringify({
     cliAvailable: !!window.dogbaApi?.cli?.authStatus,
     projectAvailable: !!window.dogbaApi?.project?.load,
 })
-            `);
-            console.log('[Electron] window.dogbaApi check:', result);
-        } catch (e: any) {
-            console.error('[Electron] executeJavaScript error:', e.message);
-        }
-    });
+                `);
+                console.log('[Electron] window.dogbaApi check:', result);
+            } catch (e: any) {
+                console.error('[Electron] executeJavaScript error:', e.message);
+            }
+        });
+    }
 }
 
 // ── Terminal IPC handlers (node-pty for full TTY support) ───────────────────
+
+ipcMain.on('app:startup-mark', (_event, name: string, detail?: string) => {
+    if (typeof name !== 'string' || name.length === 0) {
+        return;
+    }
+    recordStartupMark(name, detail, true);
+});
+
+ipcMain.handle('app:get-startup-metrics', () => startupMetrics.snapshot());
 
 ipcMain.handle(
     'terminal:create',
@@ -561,6 +814,7 @@ ipcMain.handle(
             autoCommand?: string;
             shell?: string;
             label?: string;
+            agentId?: string;
             agentSettings?: {
                 model?: string;
                 permissionMode?: string;
@@ -575,6 +829,7 @@ ipcMain.handle(
         const cwd =
             options?.cwd || process.env.HOME || process.env.USERPROFILE || '.';
         const label = options?.label || id;
+        const agentId = options?.agentId;
 
         const env = { ...process.env } as Record<string, string>;
         delete env.CLAUDECODE;
@@ -589,7 +844,7 @@ ipcMain.handle(
         });
 
         terminals.set(id, proc);
-        terminalMeta.set(id, { cwd, label });
+        terminalMeta.set(id, { cwd, label, agentId });
 
         if (options?.autoCommand) {
             // Build the actual command with agent settings flags
@@ -621,19 +876,15 @@ ipcMain.handle(
 
             setTimeout(() => {
                 proc.write(cmd + '\r');
-            }, 1500);
+            }, AUTO_COMMAND_DELAY_MS);
         }
 
         proc.onData((data: string) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                // Original path: send raw data to xterm (unchanged)
-                mainWindow.webContents.send('terminal:data', id, data);
-            }
-            // Tee path: parse for structured events (does NOT affect xterm)
-            processPtyForParser(id, data);
+            queueTerminalOutput(id, data);
         });
 
         proc.onExit(({ exitCode }) => {
+            flushAllTerminalBuffers(id);
             terminals.delete(id);
             terminalMeta.delete(id);
             const parserState = tabParserState.get(id);
@@ -642,6 +893,12 @@ ipcMain.handle(
                 parserState?.flushTimer !== undefined
             ) {
                 clearTimeout(parserState.flushTimer);
+            }
+            if (
+                parserState?.heartbeatTimer !== null &&
+                parserState?.heartbeatTimer !== undefined
+            ) {
+                clearTimeout(parserState.heartbeatTimer);
             }
             tabParserState.delete(id);
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -656,16 +913,10 @@ ipcMain.handle(
 ipcMain.on('terminal:write', (_event, id: string, data: string) => {
     const pty = terminals.get(id);
     if (pty) {
-        console.log(
-            '[terminal:write] OK → id:',
-            id,
-            '| data:',
-            JSON.stringify(data).slice(0, 80),
-        );
         pty.write(data);
     } else {
         console.warn(
-            '[terminal:write] No PTY found for id:',
+            '[terminal.write] No PTY found for id:',
             id,
             '| available:',
             [...terminals.keys()],
@@ -683,6 +934,7 @@ ipcMain.on(
 ipcMain.on('terminal:destroy', (_event, id: string) => {
     const proc = terminals.get(id);
     if (proc) {
+        flushAllTerminalBuffers(id);
         proc.kill();
         terminals.delete(id);
         terminalMeta.delete(id);
@@ -692,6 +944,12 @@ ipcMain.on('terminal:destroy', (_event, id: string) => {
             parserState?.flushTimer !== undefined
         ) {
             clearTimeout(parserState.flushTimer);
+        }
+        if (
+            parserState?.heartbeatTimer !== null &&
+            parserState?.heartbeatTimer !== undefined
+        ) {
+            clearTimeout(parserState.heartbeatTimer);
         }
         tabParserState.delete(id);
     }
@@ -703,6 +961,9 @@ ipcMain.handle('terminal:list', () => {
         cwd: terminalMeta.get(id)?.cwd || '',
         label: terminalMeta.get(id)?.label || id,
         pid: proc.pid,
+        agentId: terminalMeta.get(id)?.agentId,
+        activity: tabParserState.get(id)?.lastActivity || 'idle',
+        lastOutputAt: tabParserState.get(id)?.lastOutputAt,
     }));
 });
 
@@ -728,6 +989,17 @@ function resolveAgentName(agentName: string): string {
     return persona ? `${agentName} (${persona.role})` : agentName;
 }
 
+// ── Chat activity dedup — skip consecutive identical activity events per agent ──
+const _lastChatActivity = new Map<string, string>();
+
+function emitChatActivity(agentId: string, activity: string): void {
+    if (_lastChatActivity.get(agentId) === activity) return;
+    _lastChatActivity.set(agentId, activity);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('chat:agent-activity', agentId, activity);
+    }
+}
+
 async function drainChat(
     agentName: string,
     gen: AsyncGenerator<StreamChunk>,
@@ -735,18 +1007,25 @@ async function drainChat(
     let fullText = '';
     let sessionId: string | undefined;
 
+    const agentId = agentName.toLowerCase();
+
+    // Notify renderer that this agent started working
+    emitChatActivity(agentId, 'thinking');
+
     try {
         for await (const chunk of gen) {
             sessionId = chunk.sessionId || sessionId;
 
             if (chunk.type === 'text') {
                 fullText += chunk.content;
+                emitChatActivity(agentId, 'typing');
                 mainWindow?.webContents.send(
                     'chat:stream',
                     agentName,
                     chunk.content,
                 );
             } else if (chunk.type === 'tool_use') {
+                emitChatActivity(agentId, 'working');
                 mainWindow?.webContents.send(
                     'chat:tool-use',
                     agentName,
@@ -755,9 +1034,10 @@ async function drainChat(
             } else if (chunk.type === 'result') {
                 fullText = chunk.content || fullText;
             } else if (chunk.type === 'error') {
+                emitChatActivity(agentId, 'error');
                 mainWindow?.webContents.send('chat:stream-end', agentName);
                 mainWindow?.webContents.send('mail:new-report', {
-                    fromAgentId: agentName.toLowerCase(),
+                    fromAgentId: agentId,
                     fromAgentName: resolveAgentName(agentName),
                     subject: '작업 실패',
                     body: chunk.content.slice(0, 500),
@@ -768,10 +1048,11 @@ async function drainChat(
             }
         }
     } catch (err: any) {
+        emitChatActivity(agentId, 'error');
         mainWindow?.webContents.send('chat:stream-end', agentName);
         const errorMsg = err.message || 'Chat failed';
         mainWindow?.webContents.send('mail:new-report', {
-            fromAgentId: agentName.toLowerCase(),
+            fromAgentId: agentId,
             fromAgentName: resolveAgentName(agentName),
             subject: '작업 실패',
             body: errorMsg.slice(0, 500),
@@ -781,9 +1062,10 @@ async function drainChat(
         return { success: false, text: errorMsg };
     }
 
+    emitChatActivity(agentId, 'success');
     mainWindow?.webContents.send('chat:stream-end', agentName);
     mainWindow?.webContents.send('mail:new-report', {
-        fromAgentId: agentName.toLowerCase(),
+        fromAgentId: agentId,
         fromAgentName: resolveAgentName(agentName),
         subject: '작업 완료 보고',
         body: fullText.slice(0, 500),
@@ -918,59 +1200,82 @@ ipcMain.handle(
 chatSessionManager.on('stream', (agentId: string, event: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('chat:stream-event', agentId, event);
+
+        // Derive agent activity from stream event type (dedup via emitChatActivity)
+        const evt = event as { type?: string };
+        if (evt.type === 'text') {
+            emitChatActivity(agentId, 'typing');
+        } else if (evt.type === 'tool_use') {
+            emitChatActivity(agentId, 'working');
+        } else if (evt.type === 'thinking') {
+            emitChatActivity(agentId, 'thinking');
+        } else if (evt.type === 'error') {
+            emitChatActivity(agentId, 'error');
+        }
     }
 });
 
 chatSessionManager.on('session:closed', (agentId: string, code: number) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('chat:session-closed', agentId, code);
+        emitChatActivity(agentId, code === 0 ? 'idle' : 'error');
     }
 });
 
 chatSessionManager.on('response:end', (agentId: string) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('chat:response-end', agentId);
+        // Note: emitChatActivity('success') removed here to avoid duplicate events.
+        // - drainChat path: emits success after the for-await loop completes (not here).
+        // - ChatSessionManager path: the 'stream' handler emits success when it
+        //   receives a 'result' type event, which fires before 'response:end'.
     }
 });
 
 // ── CLI Auth IPC ───────────────────────────────────────────────────────────
 
 ipcMain.handle('cli:auth-status', async () => {
-    try {
-        const env = { ...process.env };
-        delete env.CLAUDECODE;
-        console.log('[cli:auth-status] Running claude auth status...');
-        const { stdout } = await execFileAsync('claude', ['auth', 'status'], {
-            env,
-            timeout: 10000,
-            shell: true,
-        });
-        console.log('[cli:auth-status] stdout:', stdout);
-        let data: any;
+    return authStatusCache.get(async () => {
         try {
-            data = JSON.parse(stdout);
-        } catch (parseErr: any) {
-            console.error(
-                '[cli:auth-status] parse error:',
-                parseErr.message,
-                '| raw:',
-                stdout.slice(0, 200),
+            const env = { ...process.env };
+            delete env.CLAUDECODE;
+            if (shouldEmitVerboseRuntimeLogs) {
+                console.log('[cli.auth-status] Running claude auth status...');
+            }
+            const { stdout } = await execFileAsync(
+                'claude',
+                ['auth', 'status'],
+                {
+                    env,
+                    timeout: 10000,
+                    shell: true,
+                },
             );
+            let data: any;
+            try {
+                data = JSON.parse(stdout);
+            } catch (parseErr: any) {
+                console.error(
+                    '[cli.auth-status] parse error:',
+                    parseErr.message,
+                    '| raw:',
+                    stdout.slice(0, 200),
+                );
+                return { authenticated: false };
+            }
+            return { authenticated: !!data.loggedIn };
+        } catch (err: any) {
+            console.error('[cli.auth-status] ERROR:', err.message || err);
             return { authenticated: false };
         }
-        const authenticated = !!data.loggedIn;
-        console.log('[cli:auth-status] authenticated:', authenticated);
-        return { authenticated };
-    } catch (err: any) {
-        console.error('[cli:auth-status] ERROR:', err.message || err);
-        return { authenticated: false };
-    }
+    });
 });
 
 ipcMain.handle('cli:auth-login', async () => {
     try {
         const env = { ...process.env };
         delete env.CLAUDECODE;
+        authStatusCache.invalidate();
 
         if (process.platform === 'win32') {
             spawn('cmd', ['/c', 'start', 'cmd', '/k', 'claude auth login'], {
@@ -1048,10 +1353,10 @@ ipcMain.handle('project:selectDir', async () => {
         try {
             const initResult = hooksManager.initProject(selectedDir);
             console.log(
-                `[project:selectDir]Auto - init hooks: ${JSON.stringify(initResult)} `,
+                `[project.selectDir] Auto-init hooks: ${JSON.stringify(initResult)}`,
             );
         } catch (err: any) {
-            console.warn('[project:selectDir] Hooks init failed:', err.message);
+            console.warn('[project.selectDir] Hooks init failed:', err.message);
         }
     }
 
@@ -2024,10 +2329,13 @@ ipcMain.handle('job:getHistory', () => {
 
 // ── Agent Team IPC (CTO Controller) ─────────────────────────────────────────
 
-ipcMain.handle('agent:create-team', async (_e, cwd?: string) => {
-    const dir = cwd || getProjectDir();
-    return ctoController.createTeamSession(dir);
-});
+ipcMain.handle(
+    'agent:create-team',
+    async (_e, cwd?: string, seedTask?: string, preferredAgents?: string[]) => {
+        const dir = cwd || getProjectDir();
+        return ctoController.createTeamSession(dir, seedTask, preferredAgents);
+    },
+);
 
 ipcMain.handle(
     'agent:delegate-task',
@@ -2125,7 +2433,7 @@ ipcMain.handle(
     async (
         _e,
         input: string,
-        currentTabId: string,
+        _currentTabId: string,
     ): Promise<{
         success: boolean;
         type: DirectiveType;
@@ -2140,7 +2448,11 @@ ipcMain.handle(
 
         if (directive.type === 'ceo') {
             const dir = getProjectDir();
-            const teamResult = await ctoController.createTeamSession(dir);
+            const teamResult = await ctoController.createTeamSession(
+                dir,
+                directive.content,
+                directive.targetAgent ? [directive.targetAgent] : undefined,
+            );
             if (!teamResult.success) {
                 return {
                     success: false,
@@ -2167,16 +2479,12 @@ ipcMain.handle(
 
         // type === 'task'
         if (directive.targetAgent) {
-            // Direct agent specified — write to that agent's PTY
-            const proc = terminals.get(currentTabId);
-            if (proc) {
-                proc.write(directive.content);
-                setTimeout(() => proc.write('\r'), 50);
-            }
+            const routedAgentId =
+                resolveAgentId(directive.targetAgent) || directive.targetAgent;
             return {
                 success: true,
                 type: 'task',
-                routedTo: directive.targetAgent,
+                routedTo: routedAgentId,
             };
         }
 
@@ -2663,14 +2971,17 @@ ipcMain.handle('feedback:getHistory', async (_e, agentId: string) => {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
-app.whenReady().then(async () => {
-    // Window creation is critical-path — do it first
-    await createWindow();
+let postRenderInitializationStarted = false;
 
-    // Everything below is non-blocking — run in parallel after window shows
+function runPostRenderInitialization() {
+    if (postRenderInitializationStarted) {
+        return;
+    }
+    postRenderInitializationStarted = true;
+    recordStartupMark('post-render-init-start', undefined, true);
+
     createTray();
 
-    // Initialize agent DB, team templates, messenger listener concurrently
     agentDB.init();
     agentDB.seed();
     teamTemplateManager.init();
@@ -2687,7 +2998,6 @@ app.whenReady().then(async () => {
         }
     });
 
-    // Defer MCP + artibot init to next tick so window renders first
     setImmediate(() => {
         startMcpBridgeWatcher();
 
@@ -2707,7 +3017,37 @@ app.whenReady().then(async () => {
                 }
             });
         }
+
+        recordStartupMark('post-render-init-finished', undefined, true);
     });
+}
+
+function schedulePostRenderInitialization() {
+    if (!mainWindow || postRenderInitializationStarted) {
+        return;
+    }
+
+    const schedule = () => {
+        recordStartupMark('post-render-init-scheduled', undefined, true);
+        setTimeout(runPostRenderInitialization, POST_RENDER_INIT_DELAY_MS);
+    };
+
+    if (mainWindow.webContents.isLoadingMainFrame()) {
+        mainWindow.webContents.once('did-finish-load', schedule);
+        return;
+    }
+
+    schedule();
+}
+
+app.whenReady().then(async () => {
+    recordStartupMark('app-ready', undefined, true);
+    // Window creation is critical-path — do it first
+    await createWindow();
+    recordStartupMark('create-window-resolved', undefined, true);
+
+    // Everything below is non-blocking — run in parallel after window shows
+    schedulePostRenderInitialization();
 });
 
 // ── Retro Report IPC ──────────────────────────────────────────────────────

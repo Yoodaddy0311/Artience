@@ -129,7 +129,7 @@ export class WsBridge {
     /**
      * Send a raw message (for backward compat or extensions).
      */
-    sendRaw(message: Record<string, unknown>): boolean {
+    sendRaw(message: object): boolean {
         if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(message));
             return true;

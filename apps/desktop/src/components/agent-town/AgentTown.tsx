@@ -12,7 +12,10 @@ import {
 } from '../../systems/grid-world';
 import { DEFAULT_AGENTS, AGENT_ANIMAL_MAP } from '../../types/platform';
 import { useAppStore } from '../../store/useAppStore';
-import { useTerminalStore } from '../../store/useTerminalStore';
+import {
+    getVisibleWorldAgentIds,
+    useTerminalStore,
+} from '../../store/useTerminalStore';
 import { processActivityChange } from '../../lib/growth-bridge';
 
 // Isometric coordinate system
@@ -37,6 +40,7 @@ import {
     loadDeskAnimation,
     showDeskAnimation,
     hideDeskAnimation,
+    supportsDeskAnimation,
     createAnimalVisual,
     setAnimalDirection,
     tickAnimalAnimation,
@@ -46,6 +50,7 @@ import {
     type AnimalTextures,
     type AnimalVisual,
     type AnimalType,
+    type DeskAnimationFrames,
 } from './animal-runtime';
 
 // Agent runtime constants (still used for speeds, colors, stagger)
@@ -89,6 +94,48 @@ const IDLE_DEBOUNCE_FRAMES = 180; // ~3s at 60fps
 // ── Success/Error → REST 복귀 딜레이: 5초(300프레임) ──
 const SUCCESS_REST_DELAY_FRAMES = 300;
 
+// ── Desk seat assignments ──
+// Each desk at (dx, dy) has a seat at (dx+1, dy) — one cell to the right.
+// Desks are at cols 3,8,13 / rows 3,5,7,9 in the work zone.
+// Fixed assignment for the 5 main agents; overflow agents get dynamic assignment.
+const DESK_SEATS: Record<string, { x: number; y: number }> = {
+    raccoon: { x: 4, y: 3 }, // desk (3,3)
+    a01: { x: 4, y: 5 }, // desk (3,5) — Sera
+    a02: { x: 4, y: 7 }, // desk (3,7) — Rio
+    a03: { x: 9, y: 3 }, // desk (8,3) — Luna
+    a04: { x: 9, y: 5 }, // desk (8,5) — Alex
+};
+
+// Overflow seats for dynamically added agents (a05+)
+const OVERFLOW_DESK_SEATS = [
+    { x: 9, y: 7 },
+    { x: 9, y: 9 },
+    { x: 14, y: 3 },
+    { x: 14, y: 5 },
+    { x: 14, y: 7 },
+    { x: 14, y: 9 },
+    { x: 4, y: 9 },
+];
+const _assignedOverflow = new Set<string>(); // track which overflow seats are taken
+const _overflowMap = new Map<string, { x: number; y: number }>();
+
+function getDeskSeat(agentId: string): { x: number; y: number } | null {
+    // Fixed assignment
+    if (DESK_SEATS[agentId]) return DESK_SEATS[agentId];
+    // Dynamic overflow
+    if (_overflowMap.has(agentId)) return _overflowMap.get(agentId)!;
+    // Assign next available overflow seat
+    for (const seat of OVERFLOW_DESK_SEATS) {
+        const key = `${seat.x},${seat.y}`;
+        if (!_assignedOverflow.has(key)) {
+            _assignedOverflow.add(key);
+            _overflowMap.set(agentId, seat);
+            return seat;
+        }
+    }
+    return null; // no seats available
+}
+
 interface IsoAgent {
     id: string;
     name: string;
@@ -102,6 +149,52 @@ interface IsoAgent {
     stateAnimTimer: number;
     visible: boolean; // SOLO_MODE에서 숨김 제어
     idleDebounceTimer: number; // idle 디바운스 카운터 (프레임)
+}
+
+function getStationaryTaskAnimState(
+    state: AgentState,
+): AnimalVisual['animState'] {
+    switch (state) {
+        case 'READING':
+            return 'read';
+        case 'WRITING':
+            return 'write';
+        case 'TYPING':
+        case 'RUNNING':
+            return 'type';
+        case 'THINKING':
+        case 'NEEDS_INPUT':
+            return 'think';
+        case 'SLEEPING':
+            return 'sleep';
+        default:
+            return 'idle';
+    }
+}
+
+function shouldShowDeskWorkAnimation(agent: IsoAgent): boolean {
+    const visual = agent.visual as AnimalVisual;
+    return (
+        supportsDeskAnimation(visual.animalType) &&
+        (agent.state === 'RUNNING' ||
+            agent.state === 'TYPING' ||
+            agent.state === 'WRITING')
+    );
+}
+
+function applyStationaryTaskVisual(
+    agent: IsoAgent,
+    deskFrames: DeskAnimationFrames,
+): void {
+    const visual = agent.visual as AnimalVisual;
+    visual.animState = getStationaryTaskAnimState(agent.state);
+
+    if (shouldShowDeskWorkAnimation(agent)) {
+        showDeskAnimation(visual, deskFrames);
+        return;
+    }
+
+    hideDeskAnimation(visual);
 }
 
 export const AgentTown: React.FC = () => {
@@ -136,6 +229,37 @@ export const AgentTown: React.FC = () => {
         const buildingSpritesMap = new Map<string, PIXI.Container>();
         let canvasElRef: HTMLCanvasElement | null = null;
         let unsubTerminal: (() => void) | null = null;
+        let unsubApp: (() => void) | null = null;
+
+        const setSelectedBuilding = (id: string | null) => {
+            selectedBuildingId.current = id;
+            useAppStore.getState().setSelectedWorldObjectId(id);
+        };
+
+        const syncSelectionVisuals = (id: string | null) => {
+            buildingSpritesMap.forEach((sprite, spriteId) => {
+                const spriteAny = sprite as PIXI.Container & {
+                    tint?: number;
+                    alpha?: number;
+                    __depthOffsetY?: number;
+                    isTransformMode?: boolean;
+                };
+                const depthOffset = spriteAny.__depthOffsetY ?? 0;
+                const isSelected = spriteId === id;
+
+                spriteAny.tint = isSelected ? 0xffffaa : 0xffffff;
+                spriteAny.alpha = 0.85;
+
+                if (isSelected) {
+                    sprite.zIndex = 1000;
+                    return;
+                }
+
+                sprite.emit('toggleTransformMode', false);
+                spriteAny.isTransformMode = false;
+                sprite.zIndex = 100 + sprite.y + depthOffset;
+            });
+        };
 
         const initPixi = async () => {
             try {
@@ -182,13 +306,8 @@ export const AgentTown: React.FC = () => {
                         selectedBuildingId.current &&
                         activeViewRef.current === 'studio'
                     ) {
-                        selectedBuildingId.current = null;
-                        buildingSpritesMap.forEach((s) => {
-                            s.tint = 0xffffff;
-                            s.emit('toggleTransformMode', false);
-                            // We use 'any' cast here if typescript complains about isTransformMode missing
-                            (s as any).isTransformMode = false;
-                        });
+                        setSelectedBuilding(null);
+                        syncSelectionVisuals(null);
                     }
                 });
 
@@ -269,14 +388,21 @@ export const AgentTown: React.FC = () => {
                     offsetY?: number,
                     rotation?: number,
                 ) => {
-                    updateWorldObject(id, col, row);
                     if (offsetX !== undefined && offsetY !== undefined) {
-                        useAppStore.getState().updateWorldObjectProperties(id, {
-                            offsetX,
-                            offsetY,
-                            rotation,
-                        });
+                        useAppStore.getState().updateWorldObjectFull(
+                            id,
+                            col,
+                            row,
+                            {
+                                offsetX,
+                                offsetY,
+                                rotation,
+                            },
+                        );
+                    } else {
+                        updateWorldObject(id, col, row);
                     }
+                    refreshCollision();
                     saveProject(); // 즉시 저장
                     refreshCollision(); // Update collision map after object move
                 };
@@ -314,8 +440,8 @@ export const AgentTown: React.FC = () => {
                         isDraggingBuilding = false;
                     },
                     (id) => {
-                        // Object selected
-                        selectedBuildingId.current = id;
+                        setSelectedBuilding(id);
+                        syncSelectionVisuals(id);
                     },
                     handleCornersMoved,
                 );
@@ -323,6 +449,86 @@ export const AgentTown: React.FC = () => {
                 for (const rs of roomSprites) {
                     buildingSpritesMap.set(rs.id, rs.sprite);
                 }
+
+                const syncSpriteFromObject = (obj: WorldObject) => {
+                    const sprite = buildingSpritesMap.get(obj.id);
+                    if (!sprite) return;
+
+                    const isoPos = gridToIso(obj.x, obj.y);
+                    const offsetX = Number(obj.properties?.offsetX ?? 0);
+                    const offsetY = Number(obj.properties?.offsetY ?? 0);
+                    const rotation = Number(obj.properties?.rotation ?? 0);
+                    const scale = Number(obj.properties?.scale ?? 1);
+                    const occlusionOffsetY = Number(
+                        obj.properties?.occlusionOffsetY ?? 0,
+                    );
+
+                    sprite.x = isoPos.x + offsetX;
+                    sprite.y = isoPos.y + offsetY;
+                    sprite.rotation = rotation;
+                    sprite.scale.set(scale);
+                    (
+                        sprite as PIXI.Container & { __depthOffsetY?: number }
+                    ).__depthOffsetY = occlusionOffsetY;
+
+                    if (selectedBuildingId.current !== obj.id) {
+                        sprite.zIndex = 100 + sprite.y + occlusionOffsetY;
+                    }
+                };
+
+                projectConfig.world.layers.objects.forEach(
+                    syncSpriteFromObject,
+                );
+                syncSelectionVisuals(
+                    useAppStore.getState().selectedWorldObjectId,
+                );
+
+                unsubApp = useAppStore.subscribe((appState, prevAppState) => {
+                    const nextObjects =
+                        appState.projectConfig.world.layers.objects;
+                    const prevObjects =
+                        prevAppState.projectConfig.world.layers.objects;
+                    const objectsChanged = nextObjects !== prevObjects;
+                    const selectionChanged =
+                        appState.selectedWorldObjectId !==
+                        prevAppState.selectedWorldObjectId;
+
+                    if (!objectsChanged && !selectionChanged) return;
+
+                    if (objectsChanged) {
+                        const nextIds = new Set(
+                            nextObjects.map((object) => object.id),
+                        );
+
+                        for (const [id, sprite] of Array.from(
+                            buildingSpritesMap.entries(),
+                        )) {
+                            if (nextIds.has(id)) continue;
+                            worldContainer.removeChild(sprite);
+                            sprite.destroy();
+                            buildingSpritesMap.delete(id);
+                        }
+
+                        nextObjects.forEach(syncSpriteFromObject);
+                        refreshCollision();
+                    }
+
+                    if (
+                        objectsChanged &&
+                        appState.selectedWorldObjectId &&
+                        !nextObjects.some(
+                            (object) =>
+                                object.id === appState.selectedWorldObjectId,
+                        )
+                    ) {
+                        setSelectedBuilding(null);
+                    } else if (selectionChanged) {
+                        selectedBuildingId.current =
+                            appState.selectedWorldObjectId;
+                    }
+
+                    syncSelectionVisuals(selectedBuildingId.current);
+                });
 
                 // ── Zone Labels ──
                 const labelsContainer = createZoneLabels(
@@ -372,6 +578,9 @@ export const AgentTown: React.FC = () => {
 
                 const isoAgents: IsoAgent[] = [];
                 const isoAgentMap = new Map<string, IsoAgent>();
+                const initialVisibleAgents = new Set(
+                    getVisibleWorldAgentIds(useTerminalStore.getState()),
+                );
 
                 // Dokba를 먼저 생성
                 const allProfiles = [DOKBA_PROFILE, ...DEFAULT_AGENTS];
@@ -428,7 +637,7 @@ export const AgentTown: React.FC = () => {
                     // Initial visibility assumption (will be updated dynamically in the ticker)
                     const isVisible = SOLO_MODE
                         ? profile.id === 'raccoon'
-                        : true;
+                        : initialVisibleAgents.has(profile.id);
 
                     const agent: IsoAgent = {
                         id: profile.id,
@@ -451,6 +660,41 @@ export const AgentTown: React.FC = () => {
                     isoAgents.push(agent);
                     isoAgentMap.set(profile.id, agent);
                     isoAgentMap.set(profile.name.toLowerCase(), agent);
+                }
+
+                if (import.meta.env.DEV) {
+                    (
+                        window as Window & {
+                            __DOGBA_DEBUG__?: {
+                                getIsoAgents: () => Array<{
+                                    id: string;
+                                    state: AgentState;
+                                    animState: AnimalVisual['animState'];
+                                    isAtDesk: boolean;
+                                    deskVisible: boolean;
+                                    pathLength: number;
+                                    visible: boolean;
+                                    animalType: AnimalType;
+                                    x: number;
+                                    y: number;
+                                }>;
+                            };
+                        }
+                    ).__DOGBA_DEBUG__ = {
+                        getIsoAgents: () =>
+                            isoAgents.map((agent) => ({
+                                id: agent.id,
+                                state: agent.state,
+                                animState: agent.visual.animState,
+                                isAtDesk: agent.visual.isAtDesk,
+                                deskVisible: !!agent.visual.deskSprite?.visible,
+                                pathLength: agent.path.length,
+                                visible: agent.visible,
+                                animalType: agent.visual.animalType,
+                                x: agent.visual.container.x,
+                                y: agent.visual.container.y,
+                            })),
+                    };
                 }
 
                 // ── Helper: pick wandering destination for an animal agent ──
@@ -490,6 +734,29 @@ export const AgentTown: React.FC = () => {
                         agent.gridY,
                         target.x,
                         target.y,
+                    );
+                    agent.path = path;
+                };
+
+                // ── Helper: send agent to their assigned desk seat ──
+                const pickDeskSeatDest = (agent: IsoAgent): void => {
+                    const seat = getDeskSeat(agent.id);
+                    if (!seat) {
+                        // No desk seat available, fall back to random work zone cell
+                        pickIsoZoneDest(agent, 'work');
+                        return;
+                    }
+                    // Already at desk seat — no need to move
+                    if (agent.gridX === seat.x && agent.gridY === seat.y) {
+                        agent.path = [];
+                        return;
+                    }
+                    const path = findPath(
+                        gridWorld,
+                        agent.gridX,
+                        agent.gridY,
+                        seat.x,
+                        seat.y,
                     );
                     agent.path = path;
                 };
@@ -754,7 +1021,8 @@ export const AgentTown: React.FC = () => {
                             buildingSpritesMap.delete(id);
                         }
 
-                        selectedBuildingId.current = null;
+                        setSelectedBuilding(null);
+                        syncSelectionVisuals(null);
                         state.saveProject();
                         refreshCollision(); // Update collision map after object delete
                         return;
@@ -799,17 +1067,27 @@ export const AgentTown: React.FC = () => {
                                 restoredObjects,
                                 true, // isEditMode
                                 (oid, col, row, ox, oy, rot) => {
-                                    useAppStore
-                                        .getState()
-                                        .updateWorldObject(oid, col, row);
                                     if (ox !== undefined && oy !== undefined) {
                                         useAppStore
                                             .getState()
-                                            .updateWorldObjectProperties(oid, {
-                                                offsetX: ox,
-                                                offsetY: oy,
-                                                rotation: rot,
-                                            });
+                                            .updateWorldObjectFull(
+                                                oid,
+                                                col,
+                                                row,
+                                                {
+                                                    offsetX: ox,
+                                                    offsetY: oy,
+                                                    rotation: rot,
+                                                },
+                                            );
+                                    } else {
+                                        useAppStore
+                                            .getState()
+                                            .updateWorldObject(
+                                                oid,
+                                                col,
+                                                row,
+                                            );
                                     }
                                     useAppStore.getState().saveProject();
                                     refreshCollision();
@@ -825,10 +1103,8 @@ export const AgentTown: React.FC = () => {
                                     isDraggingBuilding = false;
                                 },
                                 (sid) => {
-                                    selectedBuildingId.current = sid;
-                                    buildingSpritesMap.forEach((s) => {
-                                        s.tint = 0xffffff;
-                                    });
+                                    setSelectedBuilding(sid);
+                                    syncSelectionVisuals(sid);
                                 },
                                 (oid, corners) => {
                                     const cloned = corners.map((c) => ({
@@ -922,17 +1198,27 @@ export const AgentTown: React.FC = () => {
                                 [newObj],
                                 true,
                                 (oid, col, row, ox, oy, rot) => {
-                                    useAppStore
-                                        .getState()
-                                        .updateWorldObject(oid, col, row);
                                     if (ox !== undefined && oy !== undefined) {
                                         useAppStore
                                             .getState()
-                                            .updateWorldObjectProperties(oid, {
-                                                offsetX: ox,
-                                                offsetY: oy,
-                                                rotation: rot,
-                                            });
+                                            .updateWorldObjectFull(
+                                                oid,
+                                                col,
+                                                row,
+                                                {
+                                                    offsetX: ox,
+                                                    offsetY: oy,
+                                                    rotation: rot,
+                                                },
+                                            );
+                                    } else {
+                                        useAppStore
+                                            .getState()
+                                            .updateWorldObject(
+                                                oid,
+                                                col,
+                                                row,
+                                            );
                                     }
                                     useAppStore.getState().saveProject();
                                     refreshCollision();
@@ -968,13 +1254,8 @@ export const AgentTown: React.FC = () => {
                                     buildingSpritesMap.set(ns.id, ns.sprite);
                                 });
                                 // Auto-select the pasted object
-                                selectedBuildingId.current = newObj.id;
-                                const pastedSprite = buildingSpritesMap.get(
-                                    newObj.id,
-                                );
-                                if (pastedSprite) {
-                                    pastedSprite.tint = 0xffffaa;
-                                }
+                                setSelectedBuilding(newObj.id);
+                                syncSelectionVisuals(newObj.id);
                             });
 
                             console.log(
@@ -1034,7 +1315,7 @@ export const AgentTown: React.FC = () => {
                         offsetX: ox,
                         offsetY: oy,
                         rotation: rot,
-                    });
+                    }, { trackUndo: false });
                     state.saveProject();
                 };
 
@@ -1046,11 +1327,8 @@ export const AgentTown: React.FC = () => {
 
                 floorContainer.eventMode = 'static';
                 floorContainer.on('pointerdown', () => {
-                    selectedBuildingId.current = null;
-                    // Reset visual highlight
-                    buildingSpritesMap.forEach((sprite) => {
-                        sprite.tint = 0xffffff;
-                    });
+                    setSelectedBuilding(null);
+                    syncSelectionVisuals(null);
                 });
 
                 // ══════════════════════════════════════════════════════
@@ -1084,11 +1362,18 @@ export const AgentTown: React.FC = () => {
 
                 unsubTerminal = useTerminalStore.subscribe(
                     (state, prevState) => {
-                        // ── 팀원 캐릭터 표시/숨김 ──
-                        if (
+                        const teamChanged =
                             state.activeTeamMembers !==
-                            prevState.activeTeamMembers
-                        ) {
+                            prevState.activeTeamMembers;
+                        const tabsChanged = state.tabs !== prevState.tabs;
+                        const activityChanged =
+                            state.agentActivity !== prevState.agentActivity;
+
+                        if (!teamChanged && !tabsChanged && !activityChanged) {
+                            return;
+                        }
+                        // ── 팀원 캐릭터 표시/숨김 ──
+                        if (teamChanged) {
                             const currentTeamAgentIds = new Set(
                                 Object.values(state.activeTeamMembers),
                             );
@@ -1124,7 +1409,7 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('connecting'),
                                     );
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
                                 } else if (!inTeam && wasInTeam) {
                                     // 팀에서 제거: 숨김 + 상태 초기화
                                     agent.visible = false;
@@ -1139,56 +1424,64 @@ export const AgentTown: React.FC = () => {
                         }
 
                         // ── 탭 상태 변경 감지 ──
-                        for (const tab of state.tabs) {
-                            const prev = prevState.tabs.find(
-                                (t) => t.id === tab.id,
-                            );
-                            if (prev && prev.status === tab.status) continue;
+                        if (tabsChanged) {
+                            for (const tab of state.tabs) {
+                                const prev = prevState.tabs.find(
+                                    (t) => t.id === tab.id,
+                                );
+                                if (prev && prev.status === tab.status)
+                                    continue;
 
-                            if (!tab.agentId) continue;
-                            const agent = isoAgentMap.get(tab.agentId);
-                            if (!agent || agent.id === 'cto') continue;
+                                if (!tab.agentId) continue;
+                                const agent = isoAgentMap.get(tab.agentId);
+                                if (!agent || agent.id === 'cto') continue;
 
-                            if (tab.status === 'connecting') {
-                                // A-1: connecting에서 Work Zone 이동 제거 — REST에서 대기
-                                agent.state = 'IDLE';
-                                agent.visual.animState = 'idle';
-                                updateAnimalStateDot(
-                                    agent.visual as AnimalVisual,
-                                    STATE_COLORS.IDLE,
-                                );
-                                showAnimalBubble(
-                                    agent.visual as AnimalVisual,
-                                    getBubbleText('connecting'),
-                                );
-                            } else if (tab.status === 'connected') {
-                                agent.state = 'IDLE';
-                                agent.visual.animState = 'idle';
-                                agent.stateAnimTimer = 0;
-                                updateAnimalStateDot(
-                                    agent.visual as AnimalVisual,
-                                    STATE_COLORS.IDLE,
-                                );
-                                showAnimalBubble(
-                                    agent.visual as AnimalVisual,
-                                    getBubbleText('connected'),
-                                );
-                            } else if (tab.status === 'exited') {
-                                agent.state = 'SUCCESS';
-                                agent.visual.animState = 'success';
-                                agent.stateAnimTimer = 0;
-                                updateAnimalStateDot(
-                                    agent.visual as AnimalVisual,
-                                    STATE_COLORS.SUCCESS,
-                                );
-                                showAnimalBubble(
-                                    agent.visual as AnimalVisual,
-                                    getBubbleText('exited'),
-                                );
+                                if (tab.status === 'connecting') {
+                                    // A-1: connecting에서 Work Zone 이동 제거 — REST에서 대기
+                                    agent.state = 'IDLE';
+                                    agent.visual.animState = 'idle';
+                                    updateAnimalStateDot(
+                                        agent.visual as AnimalVisual,
+                                        STATE_COLORS.IDLE,
+                                    );
+                                    showAnimalBubble(
+                                        agent.visual as AnimalVisual,
+                                        getBubbleText('connecting'),
+                                    );
+                                } else if (tab.status === 'connected') {
+                                    agent.state = 'IDLE';
+                                    agent.visual.animState = 'idle';
+                                    agent.stateAnimTimer = 0;
+                                    updateAnimalStateDot(
+                                        agent.visual as AnimalVisual,
+                                        STATE_COLORS.IDLE,
+                                    );
+                                    showAnimalBubble(
+                                        agent.visual as AnimalVisual,
+                                        getBubbleText('connected'),
+                                    );
+                                } else if (tab.status === 'exited') {
+                                    agent.state = 'SUCCESS';
+                                    agent.visual.animState = 'success';
+                                    agent.stateAnimTimer = 0;
+                                    updateAnimalStateDot(
+                                        agent.visual as AnimalVisual,
+                                        STATE_COLORS.SUCCESS,
+                                    );
+                                    showAnimalBubble(
+                                        agent.visual as AnimalVisual,
+                                        getBubbleText('exited'),
+                                    );
+                                }
                             }
                         }
 
                         // ── 에이전트 활동 상태 변경 → 시각적 반응 + 게이미피케이션 ──
+
+                        if (!activityChanged) {
+                            return;
+                        }
+
                         for (const [agentId, activity] of Object.entries(
                             state.agentActivity,
                         )) {
@@ -1217,7 +1510,7 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('thinking'),
                                     );
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
                                     break;
                                 case 'working': {
                                     agent.state = 'RUNNING';
@@ -1226,25 +1519,33 @@ export const AgentTown: React.FC = () => {
                                     const tab = state.tabs.find(
                                         (t) => t.agentId === agentId,
                                     );
-                                    const msgs = tab
-                                        ? state.parsedMessages[tab.id]
+                                    const lastToolName = tab
+                                        ? state.lastToolUseByTab[tab.id]
                                         : undefined;
-                                    const lastToolEvent = msgs
-                                        ?.slice(-5)
-                                        .reverse()
-                                        .find((e) => e.type === 'tool_use');
                                     updateAnimalStateDot(
                                         agent.visual as AnimalVisual,
                                         STATE_COLORS.RUNNING,
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText(
-                                            'working',
-                                            lastToolEvent?.toolName,
-                                        ),
+                                        getBubbleText('working', lastToolName),
                                     );
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
+                                    break;
+                                }
+                                case 'needs_input': {
+                                    agent.state = 'NEEDS_INPUT';
+                                    agent.visual.animState = 'think';
+                                    agent.stateAnimTimer = 0;
+                                    updateAnimalStateDot(
+                                        agent.visual as AnimalVisual,
+                                        STATE_COLORS.NEEDS_INPUT,
+                                    );
+                                    showAnimalBubble(
+                                        agent.visual as AnimalVisual,
+                                        getBubbleText('needs_input'),
+                                    );
+                                    pickDeskSeatDest(agent);
                                     break;
                                 }
                                 case 'reading': {
@@ -1254,23 +1555,16 @@ export const AgentTown: React.FC = () => {
                                     const tab = state.tabs.find(
                                         (t) => t.agentId === agentId,
                                     );
-                                    const msgs = tab
-                                        ? state.parsedMessages[tab.id]
+                                    const lastToolName = tab
+                                        ? state.lastToolUseByTab[tab.id]
                                         : undefined;
-                                    const lastToolEvent = msgs
-                                        ?.slice(-5)
-                                        .reverse()
-                                        .find((e) => e.type === 'tool_use');
                                     updateAnimalStateDot(
                                         agent.visual as AnimalVisual,
                                         STATE_COLORS.READING,
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText(
-                                            'reading',
-                                            lastToolEvent?.toolName,
-                                        ),
+                                        getBubbleText('reading', lastToolName),
                                     );
                                     pickIsoZoneDest(agent, 'meeting');
                                     break;
@@ -1282,25 +1576,18 @@ export const AgentTown: React.FC = () => {
                                     const tab = state.tabs.find(
                                         (t) => t.agentId === agentId,
                                     );
-                                    const msgs = tab
-                                        ? state.parsedMessages[tab.id]
+                                    const lastToolName = tab
+                                        ? state.lastToolUseByTab[tab.id]
                                         : undefined;
-                                    const lastToolEvent = msgs
-                                        ?.slice(-5)
-                                        .reverse()
-                                        .find((e) => e.type === 'tool_use');
                                     updateAnimalStateDot(
                                         agent.visual as AnimalVisual,
                                         STATE_COLORS.TYPING,
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText(
-                                            'typing',
-                                            lastToolEvent?.toolName,
-                                        ),
+                                        getBubbleText('typing', lastToolName),
                                     );
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
                                     break;
                                 }
                                 case 'writing': {
@@ -1310,25 +1597,18 @@ export const AgentTown: React.FC = () => {
                                     const tab = state.tabs.find(
                                         (t) => t.agentId === agentId,
                                     );
-                                    const msgs = tab
-                                        ? state.parsedMessages[tab.id]
+                                    const lastToolName = tab
+                                        ? state.lastToolUseByTab[tab.id]
                                         : undefined;
-                                    const lastToolEvent = msgs
-                                        ?.slice(-5)
-                                        .reverse()
-                                        .find((e) => e.type === 'tool_use');
                                     updateAnimalStateDot(
                                         agent.visual as AnimalVisual,
                                         STATE_COLORS.WRITING,
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText(
-                                            'writing',
-                                            lastToolEvent?.toolName,
-                                        ),
+                                        getBubbleText('writing', lastToolName),
                                     );
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
                                     break;
                                 }
                                 case 'success': {
@@ -1447,14 +1727,15 @@ export const AgentTown: React.FC = () => {
                     }
 
                     // ── Dynamic Visibility Sync with Dock (MUST be before skip guard) ──
-                    const currentDockAgents =
-                        useTerminalStore.getState().dockAgents || [];
+                    const visibleWorldAgents = new Set(
+                        getVisibleWorldAgentIds(useTerminalStore.getState()),
+                    );
 
                     for (const agent of isoAgents) {
-                        // Sync visibility with dock
+                        // Sync visibility with dock terminals + active team members
                         const shouldBeVisible = SOLO_MODE
                             ? agent.id === 'raccoon'
-                            : currentDockAgents.includes(agent.id);
+                            : visibleWorldAgents.has(agent.id);
 
                         if (agent.visible !== shouldBeVisible) {
                             agent.visible = shouldBeVisible;
@@ -1680,10 +1961,7 @@ export const AgentTown: React.FC = () => {
                                 agent.state === 'RUNNING'
                             ) {
                                 // Show desk animation for work states
-                                showDeskAnimation(
-                                    agent.visual as AnimalVisual,
-                                    deskFrames,
-                                );
+                                applyStationaryTaskVisual(agent, deskFrames);
                             } else {
                                 // Not working — hide desk if showing
                                 hideDeskAnimation(agent.visual as AnimalVisual);
@@ -1713,7 +1991,7 @@ export const AgentTown: React.FC = () => {
                                     agent.state === 'TYPING' ||
                                     agent.state === 'WRITING'
                                 ) {
-                                    pickIsoZoneDest(agent, 'work');
+                                    pickDeskSeatDest(agent);
                                 } else if (agent.state === 'READING') {
                                     pickIsoZoneDest(agent, 'meeting');
                                 }
@@ -1723,18 +2001,23 @@ export const AgentTown: React.FC = () => {
                         tickAnimalAnimation(agent.visual, now, isMoving);
                     }
 
-                    // ── Depth sort: re-order children by iso depth (row+col) ──
+                    // Use rendered foot position instead of coarse grid depth so
+                    // tall assets and walking agents interleave more naturally.
                     for (const agent of isoAgents) {
                         if (!agent.visible) continue;
                         agent.visual.container.zIndex =
-                            100 + agent.gridX + agent.gridY;
+                            100 + agent.visual.container.y;
                     }
 
-                    // Also sort building sprites dynamically so they interleave with characters
+                    // Sort building sprites by their rendered base line as well.
                     buildingSpritesMap.forEach((sprite) => {
-                        const grid = isoToGrid(sprite.x, sprite.y);
-                        // Add fraction to stabilize sorting between cells
-                        sprite.zIndex = 100 + grid.col + grid.row + 0.5;
+                        const depthOffsetY =
+                            (
+                                sprite as PIXI.Container & {
+                                    __depthOffsetY?: number;
+                                }
+                            ).__depthOffsetY || 0;
+                        sprite.zIndex = 100 + sprite.y + depthOffsetY + 0.5;
                     });
 
                     worldContainer.sortChildren();
@@ -1797,6 +2080,10 @@ export const AgentTown: React.FC = () => {
                 unsubTerminal();
                 unsubTerminal = null;
             }
+            if (unsubApp) {
+                unsubApp();
+                unsubApp = null;
+            }
 
             if (appRef.current) {
                 try {
@@ -1812,6 +2099,14 @@ export const AgentTown: React.FC = () => {
                     /* HMR safe: _cancelResize etc. */
                 }
                 appRef.current = null;
+            }
+
+            if (import.meta.env.DEV) {
+                delete (
+                    window as Window & {
+                        __DOGBA_DEBUG__?: unknown;
+                    }
+                ).__DOGBA_DEBUG__;
             }
         };
     }, []);
@@ -1834,6 +2129,107 @@ export const AgentTown: React.FC = () => {
                 className="absolute inset-0 select-none touch-none z-0"
                 style={{ WebkitTapHighlightColor: 'transparent' }}
             />
+            {import.meta.env.DEV && <AgentDebugPanel />}
+        </div>
+    );
+};
+
+// ── Dev-only debug panel for manually triggering agent activity states ──
+
+const DEBUG_AGENTS = [
+    { id: 'raccoon', name: 'Dokba' },
+    { id: 'a01', name: 'Sera' },
+    { id: 'a02', name: 'Rio' },
+    { id: 'a03', name: 'Luna' },
+    { id: 'a04', name: 'Alex' },
+] as const;
+
+const DEBUG_ACTIVITIES = [
+    { activity: 'idle', label: 'IDLE', color: '#6b7280' },
+    { activity: 'working', label: 'RUNNING', color: '#2563eb' },
+    { activity: 'typing', label: 'TYPING', color: '#7c3aed' },
+    { activity: 'writing', label: 'WRITING', color: '#059669' },
+    { activity: 'thinking', label: 'THINKING', color: '#d97706' },
+    { activity: 'reading', label: 'READING', color: '#0891b2' },
+    { activity: 'success', label: 'SUCCESS', color: '#16a34a' },
+    { activity: 'error', label: 'ERROR', color: '#dc2626' },
+] as const;
+
+const AgentDebugPanel: React.FC = () => {
+    const [visible, setVisible] = useState(false);
+    const [selectedAgent, setSelectedAgent] = useState<string>(
+        DEBUG_AGENTS[0].id,
+    );
+
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                e.preventDefault();
+                setVisible((v) => !v);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    if (!visible) {
+        return (
+            <button
+                onClick={() => setVisible(true)}
+                className="absolute bottom-2 right-2 z-50 w-6 h-6 rounded bg-black/20 hover:bg-black/40 text-white text-xs flex items-center justify-center"
+                title="Debug Panel (Ctrl+Shift+D)"
+            >
+                D
+            </button>
+        );
+    }
+
+    const handleActivity = (activity: string) => {
+        useTerminalStore
+            .getState()
+            .setAgentActivity(
+                selectedAgent,
+                activity as import('../../lib/pty-parser').AgentActivity,
+            );
+    };
+
+    return (
+        <div
+            className="absolute bottom-2 right-2 z-50 bg-black/70 text-white rounded-lg p-3 text-xs backdrop-blur-sm select-none"
+            style={{ minWidth: 200 }}
+        >
+            <div className="flex items-center justify-between mb-2">
+                <span className="font-bold">Agent Debug</span>
+                <button
+                    onClick={() => setVisible(false)}
+                    className="w-4 h-4 rounded hover:bg-white/20 flex items-center justify-center"
+                >
+                    x
+                </button>
+            </div>
+            <select
+                value={selectedAgent}
+                onChange={(e) => setSelectedAgent(e.target.value)}
+                className="w-full mb-2 px-1 py-0.5 rounded bg-white/10 border border-white/20 text-white text-xs"
+            >
+                {DEBUG_AGENTS.map((a) => (
+                    <option key={a.id} value={a.id} className="bg-gray-800">
+                        {a.name} ({a.id})
+                    </option>
+                ))}
+            </select>
+            <div className="grid grid-cols-4 gap-1">
+                {DEBUG_ACTIVITIES.map((a) => (
+                    <button
+                        key={a.activity}
+                        onClick={() => handleActivity(a.activity)}
+                        className="px-1 py-1 rounded text-[10px] font-medium hover:opacity-80 active:scale-95 transition-all"
+                        style={{ backgroundColor: a.color }}
+                    >
+                        {a.label}
+                    </button>
+                ))}
+            </div>
         </div>
     );
 };

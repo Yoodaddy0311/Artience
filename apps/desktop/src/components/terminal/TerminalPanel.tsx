@@ -9,8 +9,12 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminalStore } from '../../store/useTerminalStore';
+import { useAppStore } from '../../store/useAppStore';
 import { DEFAULT_AGENTS } from '../../types/platform';
 import { assetPath } from '../../lib/assetPath';
+import { parseDirective } from '../../lib/directive-parser';
+import { classifyAgentCommandIntent } from '../../lib/agent-command-intent';
+import { getAgentDisplayName, resolveAgentId } from '../../lib/agent-directory';
 import { ChatInput } from './ChatInput';
 import type { ParsedEvent } from '../../lib/pty-parser';
 import type { ViewMode } from '../../store/useTerminalStore';
@@ -436,6 +440,7 @@ const ViewModeToggle: React.FC<{
 
 // Stable empty array reference (avoids infinite re-render from [] !== [])
 const STABLE_EMPTY_MESSAGES: ParsedEvent[] = [];
+const RESTORED_HISTORY_TAIL_CHARS = 120_000;
 
 // ── TerminalPanel 메인 컴포넌트 ──
 export const TerminalPanel: React.FC = () => {
@@ -457,6 +462,10 @@ export const TerminalPanel: React.FC = () => {
     const xtermMapRef = useRef<
         Map<string, { terminal: Terminal; fitAddon: FitAddon }>
     >(new Map());
+    const chatIdleTimersRef = useRef<
+        Map<string, ReturnType<typeof setTimeout>>
+    >(new Map());
+    const restoredHistoryRef = useRef<Set<string>>(new Set());
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalAreaRef = useRef<HTMLDivElement>(null);
 
@@ -494,15 +503,19 @@ export const TerminalPanel: React.FC = () => {
         ),
     );
 
-    // ── ChatInput onSubmit 콜백: PTY write(50ms split) + parsedMessages 추가 ──
-    const handleChatSubmit = useCallback((msg: string) => {
+    // ── ChatInput onSubmit 콜백: directive routing + immediate activity hint ──
+    const handleChatSubmit = useCallback(async (msg: string) => {
         const state = useTerminalStore.getState();
         const currentTab = state.tabs.find((t) => t.id === state.activeTabId);
         if (!currentTab) return;
 
         const tabId = currentTab.id;
-        const api = window.dogbaApi?.terminal;
-        if (!api) return;
+        const terminalApi = window.dogbaApi?.terminal;
+        if (!terminalApi) return;
+
+        const addToast = useAppStore.getState().addToast;
+        const directive = parseDirective(msg);
+        const intent = classifyAgentCommandIntent(msg);
 
         // 채팅 모드에서 사용자 입력을 parsedMessages에 추가 (UserBubble)
         const currentMode = state.viewMode[tabId] || 'terminal';
@@ -515,11 +528,153 @@ export const TerminalPanel: React.FC = () => {
             });
         }
 
-        // Claude Code ink TUI: 텍스트와 \r을 분리 전송해야 함
-        api.write(tabId, msg);
-        setTimeout(() => {
-            api.write(tabId, '\r');
-        }, 50);
+        if (currentTab.agentId) {
+            state.hintAgentActivity(currentTab.agentId, intent.activity);
+        }
+
+        const writeToTab = (targetTabId: string, content: string) => {
+            terminalApi.write(targetTabId, content);
+            setTimeout(() => {
+                terminalApi.write(targetTabId, '\r');
+            }, 50);
+        };
+
+        if (directive.type !== 'normal') {
+            try {
+                const routeResult = await window.dogbaApi?.directive?.route(
+                    msg,
+                    tabId,
+                );
+
+                if (!routeResult?.success) {
+                    addToast({
+                        type: 'error',
+                        message:
+                            routeResult?.error ||
+                            '지시를 라우팅하지 못했습니다.',
+                    });
+                    if (currentTab.agentId) {
+                        state.hintAgentActivity(
+                            currentTab.agentId,
+                            'error',
+                            1200,
+                        );
+                    }
+                    return;
+                }
+
+                if (routeResult.type === 'ceo') {
+                    state.hintAgentActivity('raccoon', 'thinking', 2500);
+                    addToast({
+                        type: 'info',
+                        message: 'Dokba가 팀 작업을 오케스트레이션합니다.',
+                    });
+                    return;
+                }
+
+                if (routeResult.type === 'task') {
+                    const routedAgentId =
+                        resolveAgentId(routeResult.routedTo) ||
+                        resolveAgentId(directive.targetAgent) ||
+                        routeResult.routedTo;
+                    const taskMessage = directive.content.trim();
+
+                    if (!routedAgentId || !taskMessage) {
+                        addToast({
+                            type: 'error',
+                            message:
+                                '작업을 전달할 대상 또는 내용이 비어 있습니다.',
+                        });
+                        return;
+                    }
+
+                    const agentApi = window.dogbaApi?.agent;
+                    const projectDir =
+                        currentTab.cwd ||
+                        useAppStore.getState().appSettings.projectDir;
+                    if (!agentApi || !projectDir) {
+                        addToast({
+                            type: 'error',
+                            message: '대상 에이전트 세션을 열지 못했습니다.',
+                        });
+                        return;
+                    }
+
+                    const teamResult = await agentApi.createTeam(
+                        projectDir,
+                        taskMessage,
+                        [getAgentDisplayName(routedAgentId)],
+                    );
+                    if (!teamResult.success) {
+                        addToast({
+                            type: 'error',
+                            message:
+                                teamResult.error ||
+                                '? ?몄뀡???쒖옉?섏? 紐삵뻽?듬땲??',
+                        });
+                        if (currentTab.agentId) {
+                            state.hintAgentActivity(
+                                currentTab.agentId,
+                                'error',
+                                1200,
+                            );
+                        }
+                        return;
+                    }
+
+                    const targetIntent =
+                        classifyAgentCommandIntent(taskMessage);
+                    state.ensureTeamAgent(
+                        routedAgentId,
+                        getAgentDisplayName(routedAgentId),
+                    );
+                    state.initAgentState(routedAgentId);
+                    if (currentTab.agentId) {
+                        state.hintAgentActivity(
+                            currentTab.agentId,
+                            'thinking',
+                            2400,
+                        );
+                    }
+                    state.hintAgentActivity(
+                        routedAgentId,
+                        targetIntent.activity,
+                        2800,
+                    );
+
+                    const delegateResult = await agentApi.delegateTask(
+                        getAgentDisplayName(routedAgentId),
+                        taskMessage,
+                    );
+                    if (!delegateResult.success) {
+                        state.hintAgentActivity(routedAgentId, 'error', 1500);
+                        addToast({
+                            type: 'error',
+                            message:
+                                delegateResult.error ||
+                                '????먯씠?꾪듃 ?꾩엫??諛곗젙?섏? 紐삵뻽?듬땲??',
+                        });
+                        return;
+                    }
+                    addToast({
+                        type: 'success',
+                        message: `${getAgentDisplayName(routedAgentId)}에게 작업을 전달했습니다.`,
+                    });
+                    return;
+                }
+            } catch (error) {
+                addToast({
+                    type: 'error',
+                    message: '지시 처리 중 오류가 발생했습니다.',
+                });
+                if (import.meta.env.DEV) {
+                    console.error('Directive routing failed:', error);
+                }
+                return;
+            }
+        }
+
+        writeToTab(tabId, msg);
     }, []);
 
     // Create a new terminal tab via IPC
@@ -566,26 +721,47 @@ export const TerminalPanel: React.FC = () => {
             if (entry) entry.terminal.write(data);
         });
 
-        const unsubExit = api.onExit((id: string, _exitCode: number) => {
+        const unsubExit = api.onExit((id: string, exitCode: number) => {
             updateTab(id, { status: 'exited' });
+            const state = useTerminalStore.getState();
+            const tab = state.tabs.find((entry) => entry.id === id);
+            if (tab?.agentId) {
+                state.setAgentActivity(
+                    tab.agentId,
+                    exitCode === 0 ? 'idle' : 'error',
+                );
+            }
         });
 
         // Parsed events from PTY parser (tee path from main process)
-        const unsubParsed = api.onParsedEvent?.(
-            (tabId: string, event: ParsedEvent) => {
-                useTerminalStore.getState().addParsedEvent(tabId, event);
+        const handleParsedEvents = (tabId: string, events: ParsedEvent[]) => {
+            if (events.length === 0) return;
 
-                // team_update 이벤트 → 캐릭터 자동 매핑
-                if (event.type === 'team_update') {
-                    const store = useTerminalStore.getState();
-                    if (event.teamMembers && event.teamMembers.length > 0) {
-                        store.setActiveTeamMembers(event.teamMembers);
-                    } else {
-                        store.clearActiveTeam();
-                    }
-                }
-            },
-        );
+            const store = useTerminalStore.getState();
+            store.addParsedEvents(tabId, events);
+
+            const latestTeamUpdate = [...events]
+                .reverse()
+                .find((event) => event.type === 'team_update');
+            if (!latestTeamUpdate) return;
+
+            if (
+                latestTeamUpdate.teamMembers &&
+                latestTeamUpdate.teamMembers.length > 0
+            ) {
+                store.setActiveTeamMembers(latestTeamUpdate.teamMembers);
+            } else {
+                store.clearActiveTeam();
+            }
+        };
+
+        const unsubParsedBatch = api.onParsedEvents?.(handleParsedEvents);
+        const unsubParsedSingle =
+            !unsubParsedBatch && api.onParsedEvent
+                ? api.onParsedEvent((tabId: string, event: ParsedEvent) => {
+                      handleParsedEvents(tabId, [event]);
+                  })
+                : undefined;
 
         // Activity changes → agentActivity store (for badge + AgentTown)
         const unsubActivity = api.onActivityChange?.(
@@ -599,34 +775,150 @@ export const TerminalPanel: React.FC = () => {
                     state.setAgentActivity(tab.agentId, typedActivity);
 
                     // Record timeline entry for Gantt view
-                    const lastToolEvent = (state.parsedMessages[tabId] ?? [])
-                        .slice(-5)
-                        .reverse()
-                        .find(
-                            (e: ParsedEvent) =>
-                                e.type === 'tool_use' && e.toolName,
-                        );
+                    const lastToolName = state.lastToolUseByTab[tabId];
                     const tls = useTimelineStore.getState();
                     tls.recordTransition(
                         tab.agentId,
                         typedActivity,
-                        lastToolEvent?.toolName,
+                        lastToolName,
                     );
+                }
+            },
+        );
 
-                    // Propagate timeline to team members
-                    const teamMembers = state.activeTeamMembers;
-                    if (teamMembers && Object.keys(teamMembers).length > 0) {
-                        for (const memberAgentId of Object.values(
-                            teamMembers,
-                        )) {
-                            if (memberAgentId === tab.agentId) continue;
-                            tls.recordTransition(
-                                memberAgentId,
-                                typedActivity,
-                                lastToolEvent?.toolName,
-                            );
+        // ── ChatSessionManager stream events → agentActivity store ──
+        // This path handles chat-mode (stream-json) events.
+        // PTY path (onActivityChange above) handles terminal-mode events.
+        // No collision: onStreamEvent delivers agentId directly from ChatSessionManager,
+        // while onActivityChange maps tabId→agentId from PTY tabs.
+        const chatApi = window.dogbaApi?.chat;
+        const clearChatIdleTimer = (agentId: string) => {
+            const timer = chatIdleTimersRef.current.get(agentId);
+            if (!timer) return;
+            clearTimeout(timer);
+            chatIdleTimersRef.current.delete(agentId);
+        };
+        const scheduleChatIdle = (agentId: string) => {
+            clearChatIdleTimer(agentId);
+            const timer = setTimeout(() => {
+                useTerminalStore.getState().setAgentActivity(agentId, 'idle');
+                useTimelineStore
+                    .getState()
+                    .recordTransition(agentId, 'idle');
+                chatIdleTimersRef.current.delete(agentId);
+            }, 3000);
+            chatIdleTimersRef.current.set(agentId, timer);
+        };
+
+        const unsubStreamEvent = chatApi?.onStreamEvent?.(
+            (
+                agentId: string,
+                event: { type: string; toolName?: string; partial?: boolean },
+            ) => {
+                const state = useTerminalStore.getState();
+                const tls = useTimelineStore.getState();
+
+                // Cancel pending idle transition if new activity arrives
+                clearChatIdleTimer(agentId);
+
+                let activity: import('../../lib/pty-parser').AgentActivity;
+                switch (event.type) {
+                    case 'thinking':
+                        activity = 'thinking';
+                        break;
+                    case 'tool_use': {
+                        // Map tool name → granular activity (same logic as pty-parser detectActivity)
+                        const name = (event.toolName ?? '').toLowerCase();
+                        if (['bash', 'terminal'].includes(name)) {
+                            activity = 'typing';
+                        } else if (
+                            [
+                                'read',
+                                'glob',
+                                'grep',
+                                'todoread',
+                                'webfetch',
+                                'websearch',
+                                'ls',
+                            ].includes(name)
+                        ) {
+                            activity = 'reading';
+                        } else if (
+                            [
+                                'edit',
+                                'write',
+                                'todowrite',
+                                'notebookedit',
+                                'multiedit',
+                            ].includes(name)
+                        ) {
+                            activity = 'writing';
+                        } else {
+                            activity = 'working';
                         }
+                        break;
                     }
+                    case 'tool_result':
+                        activity = 'working';
+                        break;
+                    case 'text':
+                        activity = event.partial ? 'typing' : 'working';
+                        break;
+                    case 'result':
+                        activity = 'success';
+                        break;
+                    case 'error':
+                        activity = 'error';
+                        break;
+                    default:
+                        return; // Unknown event type, skip
+                }
+
+                state.setAgentActivity(agentId, activity);
+                tls.recordTransition(agentId, activity, event.toolName);
+            },
+        );
+
+        const unsubResponseEnd = chatApi?.onResponseEnd?.((agentId: string) => {
+            const state = useTerminalStore.getState();
+            const current = state.agentActivity[agentId];
+            // Transition to success, then idle after a short delay
+            // so AgentTown can play the success animation before returning to rest
+            if (current && current !== 'idle' && current !== 'error') {
+                state.setAgentActivity(agentId, 'success');
+                useTimelineStore
+                    .getState()
+                    .recordTransition(agentId, 'success');
+
+                scheduleChatIdle(agentId);
+            }
+        });
+
+        // ── Legacy drainChat path: chat:agent-activity IPC ──
+        // drainChat() (used by chat:send / chat:send-stream) emits chat:agent-activity
+        // but NOT chat:stream-event. Subscribe here so the legacy path also updates
+        // agentActivity in the store. Dedup is handled server-side (emitChatActivity),
+        // and for ChatSessionManager path both channels fire — store's setAgentActivity
+        // is idempotent for same-value writes, so no conflict.
+        const unsubChatAgentActivity = chatApi?.onAgentActivity?.(
+            (agentId: string, activity: string) => {
+                const state = useTerminalStore.getState();
+                const typedActivity =
+                    activity as import('../../lib/pty-parser').AgentActivity;
+                state.setAgentActivity(agentId, typedActivity);
+                useTimelineStore
+                    .getState()
+                    .recordTransition(agentId, typedActivity);
+
+                // Auto-transition success → idle after delay (same as onResponseEnd)
+                if (typedActivity === 'success') {
+                    scheduleChatIdle(agentId);
+                } else if (
+                    typedActivity !== 'idle' &&
+                    typedActivity !== 'error'
+                ) {
+                    // Cancel pending idle if new work arrives
+                    clearChatIdleTimer(agentId);
                 }
             },
         );
@@ -634,8 +926,16 @@ export const TerminalPanel: React.FC = () => {
         return () => {
             unsubData();
             unsubExit();
-            unsubParsed?.();
+            unsubParsedBatch?.();
+            unsubParsedSingle?.();
             unsubActivity?.();
+            unsubStreamEvent?.();
+            unsubResponseEnd?.();
+            unsubChatAgentActivity?.();
+            for (const timer of chatIdleTimersRef.current.values()) {
+                clearTimeout(timer);
+            }
+            chatIdleTimersRef.current.clear();
         };
     }, [updateTab]);
 
@@ -675,6 +975,7 @@ export const TerminalPanel: React.FC = () => {
             if (!tabIds.has(id)) {
                 entry.terminal.dispose();
                 xtermMapRef.current.delete(id);
+                restoredHistoryRef.current.delete(id);
             }
         }
     }, [tabs]);
@@ -687,6 +988,36 @@ export const TerminalPanel: React.FC = () => {
             if (!entry) return;
             if (el.querySelector('.xterm')) return;
             entry.terminal.open(el);
+            const restoredTab = useTerminalStore
+                .getState()
+                .tabs.find((tab) => tab.id === id);
+            if (
+                restoredTab?.restored &&
+                restoredTab.agentId &&
+                !restoredHistoryRef.current.has(id)
+            ) {
+                restoredHistoryRef.current.add(id);
+                void window.dogbaApi?.terminal
+                    ?.readHistory(restoredTab.label)
+                    .then((history) => {
+                        if (history) {
+                            entry.terminal.write(
+                                history.slice(-RESTORED_HISTORY_TAIL_CHARS),
+                            );
+                        }
+                    })
+                    .catch((error) => {
+                        if (import.meta.env.DEV) {
+                            console.error(
+                                'Failed to hydrate restored terminal history:',
+                                error,
+                            );
+                        }
+                    })
+                    .finally(() => {
+                        updateTab(id, { restored: false });
+                    });
+            }
             // 레이아웃 완료 후 fit (마진 반영)
             requestAnimationFrame(() => {
                 entry.fitAddon.fit();
@@ -961,6 +1292,7 @@ export const TerminalPanel: React.FC = () => {
                     agentSprite={activeAgent?.sprite}
                     onSubmit={handleChatSubmit}
                     disabled={activeTab.status === 'exited'}
+                    showRecommendations={true}
                 />
             )}
         </div>

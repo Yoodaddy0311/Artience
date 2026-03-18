@@ -34,6 +34,7 @@ export type AgentActivity =
     | 'idle'
     | 'thinking'
     | 'working'
+    | 'needs_input'
     | 'success'
     | 'error'
     | 'reading'
@@ -165,6 +166,13 @@ const TOOL_RESULT_PATTERNS = [
     /^\s*\u2713\s/, // ✓ at line start (with content after)
     /^\s*\d+ files? /i, // file count in results
     /^Output:/i,
+];
+
+/** Heuristics for cases where the assistant is explicitly waiting on the user. */
+const INPUT_REQUEST_PATTERNS = [
+    /\b(do you want|would you like|which one|choose|select|pick|confirm|approve|allow|reply|respond|answer|continue|enter|input)\b/i,
+    /\b(y\/n|yes\/no)\b/i,
+    /(입력|답변|응답|선택|승인|허용|계속|확인)/,
 ];
 
 // ── Main parser ────────────────────────────────────────────────────────────
@@ -348,6 +356,20 @@ export function detectActivity(events: ParsedEvent[]): AgentActivity {
     // Check last event specifically for prompt (idle)
     const last = recent[recent.length - 1];
     if (last.type === 'prompt') {
+        const promptContext = recent
+            .slice(-4)
+            .filter((event) => event.type !== 'prompt')
+            .map((event) => event.content.trim())
+            .filter(Boolean);
+        const waitingForUserInput = promptContext.some(
+            (content) =>
+                /[?？]$/.test(content) ||
+                INPUT_REQUEST_PATTERNS.some((pattern) => pattern.test(content)),
+        );
+        if (waitingForUserInput) {
+            return 'needs_input';
+        }
+
         // If there were tool uses or thinking before the prompt, it's success
         const hasWork = recent.some(
             (e) =>

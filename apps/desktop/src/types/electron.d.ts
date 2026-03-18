@@ -3,6 +3,7 @@ interface TerminalCreateOptions {
     autoCommand?: string;
     shell?: string;
     label?: string;
+    agentId?: string;
     agentSettings?: {
         model?: string;
         permissionMode?: string;
@@ -21,16 +22,36 @@ interface TerminalInfo {
     cwd: string;
     label: string;
     pid: number;
+    agentId?: string;
+    activity?: AgentActivity;
+    lastOutputAt?: number;
 }
 
 interface ParsedEvent {
-    type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'error' | 'prompt';
+    type:
+        | 'text'
+        | 'thinking'
+        | 'tool_use'
+        | 'tool_result'
+        | 'error'
+        | 'prompt'
+        | 'team_update';
     content: string;
     toolName?: string;
+    teamMembers?: string[];
     timestamp: number;
 }
 
-type AgentActivity = 'idle' | 'thinking' | 'working' | 'success' | 'error';
+type AgentActivity =
+    | 'idle'
+    | 'thinking'
+    | 'working'
+    | 'needs_input'
+    | 'success'
+    | 'error'
+    | 'reading'
+    | 'typing'
+    | 'writing';
 
 interface DogbaTerminalApi {
     create(
@@ -47,6 +68,9 @@ interface DogbaTerminalApi {
     onExit(callback: (id: string, exitCode: number) => void): () => void;
     onParsedEvent(
         callback: (tabId: string, event: ParsedEvent) => void,
+    ): () => void;
+    onParsedEvents(
+        callback: (tabId: string, events: ParsedEvent[]) => void,
     ): () => void;
     onActivityChange(
         callback: (tabId: string, activity: AgentActivity) => void,
@@ -102,6 +126,9 @@ interface DogbaChatApi {
     closeSession(agentId: string): Promise<{ success: boolean }>;
     onSessionClosed(
         callback: (agentId: string, code: number) => void,
+    ): () => void;
+    onAgentActivity(
+        callback: (agentId: string, activity: AgentActivity) => void,
     ): () => void;
 }
 
@@ -248,7 +275,11 @@ interface DogbaMailApi {
 }
 
 interface DogbaAgentApi {
-    createTeam(cwd?: string): Promise<{ success: boolean; error?: string }>;
+    createTeam(
+        cwd?: string,
+        seedTask?: string,
+        preferredAgents?: string[],
+    ): Promise<{ success: boolean; error?: string }>;
     delegateTask(
         agentName: string,
         task: string,
@@ -641,6 +672,18 @@ interface FeedbackResult {
     timestamp: number;
 }
 
+interface StartupMetricMark {
+    name: string;
+    at: number;
+    sinceLaunchMs: number;
+    detail?: string;
+}
+
+interface StartupMetricsSnapshot {
+    launchAt: number;
+    marks: StartupMetricMark[];
+}
+
 interface DogbaFeedbackApi {
     process(event: FeedbackEvent): Promise<FeedbackResult>;
     getHistory(agentId: string): Promise<{ history: FeedbackResult[] }>;
@@ -649,6 +692,8 @@ interface DogbaFeedbackApi {
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
+        markStartup: (name: string, detail?: string) => void;
+        getStartupMetrics: () => Promise<StartupMetricsSnapshot>;
     };
     artibot: DogbaArtibotApi;
     terminal: DogbaTerminalApi;

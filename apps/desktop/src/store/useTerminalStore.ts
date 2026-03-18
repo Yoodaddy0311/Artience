@@ -17,6 +17,7 @@ export interface TerminalTab {
     label: string;
     cwd: string;
     status: 'connecting' | 'connected' | 'exited';
+    restored?: boolean;
 }
 
 export interface AgentSettings {
@@ -27,6 +28,50 @@ export interface AgentSettings {
 }
 
 export type ViewMode = 'terminal' | 'chat';
+
+interface AgentActivityLock {
+    activity: AgentActivity;
+    expiresAt: number;
+}
+
+function dedupeAgentIds(agentIds: string[]): string[] {
+    return Array.from(new Set(agentIds));
+}
+
+export function getVisibleWorldAgentIds(state: {
+    dockAgents?: string[];
+    activeTeamMembers?: Record<string, string>;
+}): string[] {
+    return dedupeAgentIds([
+        'raccoon',
+        ...(state.dockAgents ?? []),
+        ...Object.values(state.activeTeamMembers ?? {}),
+    ]);
+}
+
+export function sanitizePersistedDockAgents(
+    dockAgents: unknown,
+    characterDirMap?: Record<string, string>,
+    agentSettings?: Record<string, AgentSettings>,
+): string[] {
+    const sanitized = Array.isArray(dockAgents)
+        ? dedupeAgentIds(
+              dockAgents.filter(
+                  (agentId): agentId is string =>
+                      typeof agentId === 'string' &&
+                      (agentId === 'raccoon' ||
+                          Boolean(
+                              characterDirMap?.[agentId] ||
+                              agentSettings?.[agentId],
+                          )),
+              ),
+          )
+        : [];
+
+    return sanitized.includes('raccoon')
+        ? sanitized
+        : ['raccoon', ...sanitized];
+}
 
 interface TerminalState {
     tabs: TerminalTab[];
@@ -46,7 +91,9 @@ interface TerminalState {
 
     // PTY 파서 결과 (메모리 only)
     parsedMessages: Record<string, ParsedEvent[]>; // tabId → events
+    lastToolUseByTab: Record<string, string | undefined>;
     addParsedEvent: (tabId: string, event: ParsedEvent) => void;
+    addParsedEvents: (tabId: string, events: ParsedEvent[]) => void;
     clearParsedMessages: (tabId: string) => void;
 
     // 캐릭터별 디렉토리 매핑 (persist)
@@ -55,12 +102,19 @@ interface TerminalState {
 
     // 독에 배치된 에이전트 목록 (persist)
     dockAgents: string[]; // agentId[]
+    pinnedDockAgents: string[];
     addDockAgent: (agentId: string) => void;
     removeDockAgent: (agentId: string) => void;
 
     // 에이전트 활동 상태 (AgentTown 시각화용, 메모리 only)
     agentActivity: Record<string, AgentActivity>;
     setAgentActivity: (agentId: string, status: AgentActivity) => void;
+    agentActivityLocks: Record<string, AgentActivityLock>;
+    hintAgentActivity: (
+        agentId: string,
+        status: AgentActivity,
+        holdMs?: number,
+    ) => void;
 
     // 공식 에이전트 상태 머신 (태스크 배정/추적용, 메모리 only)
     agentStates: Record<string, AgentStateMachine>;
@@ -87,18 +141,118 @@ interface TerminalState {
 
     // 팀원 ↔ 캐릭터 매핑 (비영속)
     activeTeamMembers: Record<string, string>; // teamMemberName → agentId
-    teamAddedAgents: string[]; // 팀으로 인해 dock에 추가된 agentId 목록
     setActiveTeamMembers: (members: string[]) => void;
+    ensureTeamAgent: (agentId: string, memberName?: string) => void;
     clearActiveTeam: () => void;
 
     // 기존 actions
     addTab: (tab: TerminalTab) => void;
+    restoreTabs: (tabs: TerminalTab[]) => void;
     removeTab: (id: string) => void;
     setActiveTab: (id: string | null) => void;
     updateTab: (id: string, patch: Partial<TerminalTab>) => void;
 }
 
 const MAX_PARSED_EVENTS = 500;
+const ACTIVITY_HINT_HOLD_MS = 1800;
+
+function applyAgentActivityState(
+    state: TerminalState,
+    agentId: string,
+    status: AgentActivity,
+    locks: Record<string, AgentActivityLock>,
+): Partial<TerminalState> {
+    const machine = state.agentStates[agentId];
+    let nextStates = state.agentStates;
+    if (machine) {
+        let targetState: AgentState | null = null;
+        if (
+            [
+                'thinking',
+                'working',
+                'needs_input',
+                'reading',
+                'typing',
+                'writing',
+            ].includes(status) &&
+            machine.currentState !== 'working'
+        ) {
+            targetState = 'working';
+        } else if (status === 'success' && machine.currentState !== 'done') {
+            targetState = 'done';
+        } else if (status === 'error' && machine.currentState !== 'error') {
+            targetState = 'error';
+        }
+        if (
+            targetState &&
+            isValidTransition(machine.currentState, targetState)
+        ) {
+            const transition = createTransition(
+                machine.currentState,
+                targetState,
+                `pty-${status}`,
+            );
+            nextStates = {
+                ...state.agentStates,
+                [agentId]: appendTransition(machine, transition),
+            };
+        }
+    }
+
+    return {
+        agentActivity: {
+            ...state.agentActivity,
+            [agentId]: status,
+        },
+        agentStates: nextStates,
+        agentActivityLocks: locks,
+    };
+}
+
+function shouldPreserveHint(
+    lock: AgentActivityLock | undefined,
+    incoming: AgentActivity,
+): boolean {
+    if (!lock) return false;
+    if (Date.now() >= lock.expiresAt) return false;
+    if (incoming === 'success' || incoming === 'error') return false;
+    if (incoming === 'idle') return true;
+    if (
+        incoming === 'thinking' &&
+        ['reading', 'typing', 'writing'].includes(lock.activity)
+    ) {
+        return true;
+    }
+    if (incoming === 'working' && lock.activity === 'writing') {
+        return true;
+    }
+    return false;
+}
+
+function appendParsedEvents(
+    previousEvents: ParsedEvent[],
+    nextEvents: ParsedEvent[],
+): ParsedEvent[] {
+    if (nextEvents.length === 0) return previousEvents;
+
+    const combined = [...previousEvents, ...nextEvents];
+    return combined.length <= MAX_PARSED_EVENTS
+        ? combined
+        : combined.slice(-MAX_PARSED_EVENTS);
+}
+
+function extractLatestToolUse(
+    previousToolName: string | undefined,
+    events: ParsedEvent[],
+): string | undefined {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event.type === 'tool_use' && event.toolName) {
+            return event.toolName;
+        }
+    }
+    return previousToolName;
+}
 
 export const useTerminalStore = create<TerminalState>()(
     persist(
@@ -112,14 +266,16 @@ export const useTerminalStore = create<TerminalState>()(
                 set((s) => ({ panelFullscreen: !s.panelFullscreen })),
             viewMode: {},
             parsedMessages: {},
+            lastToolUseByTab: {},
             characterDirMap: {},
             dockAgents: ['raccoon'],
+            pinnedDockAgents: ['raccoon'],
             agentActivity: {},
+            agentActivityLocks: {},
             agentStates: {},
             agentSettings: {},
             inputHistory: {},
             activeTeamMembers: {},
-            teamAddedAgents: [],
 
             setViewMode: (tabId, mode) =>
                 set((s) => ({
@@ -129,27 +285,50 @@ export const useTerminalStore = create<TerminalState>()(
             addParsedEvent: (tabId, event) =>
                 set((s) => {
                     const prev = s.parsedMessages[tabId] || [];
-                    const next =
-                        prev.length >= MAX_PARSED_EVENTS
-                            ? [
-                                  ...prev.slice(
-                                      prev.length - MAX_PARSED_EVENTS + 1,
-                                  ),
-                                  event,
-                              ]
-                            : [...prev, event];
+                    const next = appendParsedEvents(prev, [event]);
                     return {
                         parsedMessages: {
                             ...s.parsedMessages,
                             [tabId]: next,
                         },
+                        lastToolUseByTab: {
+                            ...s.lastToolUseByTab,
+                            [tabId]: extractLatestToolUse(
+                                s.lastToolUseByTab[tabId],
+                                [event],
+                            ),
+                        },
+                    };
+                }),
+
+            addParsedEvents: (tabId, events) =>
+                set((s) => {
+                    const prev = s.parsedMessages[tabId] || [];
+                    const next = appendParsedEvents(prev, events);
+                    return {
+                        parsedMessages: {
+                            ...s.parsedMessages,
+                            [tabId]: next,
+                        },
+                        lastToolUseByTab: {
+                            ...s.lastToolUseByTab,
+                            [tabId]: extractLatestToolUse(
+                                s.lastToolUseByTab[tabId],
+                                events,
+                            ),
+                        },
                     };
                 }),
 
             clearParsedMessages: (tabId) =>
-                set((s) => ({
-                    parsedMessages: { ...s.parsedMessages, [tabId]: [] },
-                })),
+                set((s) => {
+                    const { [tabId]: _lastTool, ...lastToolUseByTab } =
+                        s.lastToolUseByTab;
+                    return {
+                        parsedMessages: { ...s.parsedMessages, [tabId]: [] },
+                        lastToolUseByTab,
+                    };
+                }),
 
             setCharacterDir: (agentId, dir) =>
                 set((s) => ({
@@ -159,8 +338,21 @@ export const useTerminalStore = create<TerminalState>()(
             addDockAgent: (agentId) =>
                 set((s) => {
                     const agents = s.dockAgents ?? [];
-                    if (agents.includes(agentId)) return s;
-                    return { dockAgents: [...agents, agentId] };
+                    const pinnedDockAgents = s.pinnedDockAgents ?? [];
+                    if (
+                        agents.includes(agentId) &&
+                        pinnedDockAgents.includes(agentId)
+                    ) {
+                        return s;
+                    }
+                    return {
+                        dockAgents: agents.includes(agentId)
+                            ? agents
+                            : [...agents, agentId],
+                        pinnedDockAgents: pinnedDockAgents.includes(agentId)
+                            ? pinnedDockAgents
+                            : [...pinnedDockAgents, agentId],
+                    };
                 }),
 
             removeDockAgent: (agentId) =>
@@ -168,56 +360,54 @@ export const useTerminalStore = create<TerminalState>()(
                     dockAgents: (s.dockAgents ?? ([] as string[])).filter(
                         (id: string) => id !== agentId,
                     ),
+                    pinnedDockAgents: (
+                        s.pinnedDockAgents ?? ([] as string[])
+                    ).filter((id: string) => id !== agentId),
                 })),
 
             setAgentActivity: (agentId, status) =>
                 set((s) => {
-                    // Bridge: PTY activity → state machine transition
-                    const machine = s.agentStates[agentId];
-                    let nextStates = s.agentStates;
-                    if (machine) {
-                        let targetState: AgentState | null = null;
-                        if (
-                            (status === 'thinking' || status === 'working') &&
-                            machine.currentState !== 'working'
-                        ) {
-                            targetState = 'working';
-                        } else if (
-                            status === 'success' &&
-                            machine.currentState !== 'done'
-                        ) {
-                            targetState = 'done';
-                        } else if (
-                            status === 'error' &&
-                            machine.currentState !== 'error'
-                        ) {
-                            targetState = 'error';
-                        }
-                        if (
-                            targetState &&
-                            isValidTransition(machine.currentState, targetState)
-                        ) {
-                            const transition = createTransition(
-                                machine.currentState,
-                                targetState,
-                                `pty-${status}`,
-                            );
-                            nextStates = {
-                                ...s.agentStates,
-                                [agentId]: appendTransition(
-                                    machine,
-                                    transition,
-                                ),
-                            };
-                        }
+                    if (s.agentActivity[agentId] === status) {
+                        return s;
                     }
-                    return {
-                        agentActivity: {
-                            ...s.agentActivity,
-                            [agentId]: status,
+
+                    const activeLock = s.agentActivityLocks[agentId];
+                    if (shouldPreserveHint(activeLock, status)) {
+                        return s;
+                    }
+
+                    const nextLocks = { ...s.agentActivityLocks };
+                    if (activeLock) {
+                        delete nextLocks[agentId];
+                    }
+
+                    return applyAgentActivityState(
+                        s,
+                        agentId,
+                        status,
+                        nextLocks,
+                    );
+                }),
+
+            hintAgentActivity: (
+                agentId,
+                status,
+                holdMs = ACTIVITY_HINT_HOLD_MS,
+            ) =>
+                set((s) => {
+                    const nextLocks = {
+                        ...s.agentActivityLocks,
+                        [agentId]: {
+                            activity: status,
+                            expiresAt: Date.now() + Math.max(0, holdMs),
                         },
-                        agentStates: nextStates,
                     };
+                    return applyAgentActivityState(
+                        s,
+                        agentId,
+                        status,
+                        nextLocks,
+                    );
                 }),
 
             initAgentState: (agentId) =>
@@ -302,26 +492,33 @@ export const useTerminalStore = create<TerminalState>()(
 
             setActiveTeamMembers: (members) =>
                 set((s) => {
-                    const agents = s.dockAgents ?? [];
-                    const mapping = resolveTeamMembers(members, agents);
-                    const newAgentIds = Object.values(mapping);
-                    const toAdd = newAgentIds.filter(
-                        (id) => !agents.includes(id),
+                    const mapping = resolveTeamMembers(
+                        members,
+                        s.dockAgents ?? [],
                     );
                     return {
                         activeTeamMembers: mapping,
-                        teamAddedAgents: toAdd,
-                        dockAgents: [...agents, ...toAdd],
+                    };
+                }),
+
+            ensureTeamAgent: (agentId, memberName) =>
+                set((s) => {
+                    const existingEntry = Object.entries(
+                        s.activeTeamMembers,
+                    ).find(([, id]) => id === agentId)?.[0];
+                    const teamKey = existingEntry ?? memberName ?? agentId;
+
+                    return {
+                        activeTeamMembers: {
+                            ...s.activeTeamMembers,
+                            [teamKey]: agentId,
+                        },
                     };
                 }),
 
             clearActiveTeam: () =>
-                set((s) => ({
+                set(() => ({
                     activeTeamMembers: {},
-                    teamAddedAgents: [],
-                    dockAgents: (s.dockAgents ?? ([] as string[])).filter(
-                        (id: string) => !(s.teamAddedAgents ?? []).includes(id),
-                    ),
                 })),
 
             setAgentSettings: (agentId, settings) =>
@@ -338,6 +535,37 @@ export const useTerminalStore = create<TerminalState>()(
                     activeTabId: tab.id,
                     panelVisible: true,
                 })),
+            restoreTabs: (tabs) =>
+                set((s) => {
+                    if (tabs.length === 0) return s;
+
+                    const merged = [...s.tabs];
+                    for (const tab of tabs) {
+                        const existingIndex = merged.findIndex(
+                            (entry) => entry.id === tab.id,
+                        );
+                        if (existingIndex >= 0) {
+                            merged[existingIndex] = {
+                                ...merged[existingIndex],
+                                ...tab,
+                            };
+                        } else {
+                            merged.push(tab);
+                        }
+                    }
+
+                    const hasActive =
+                        s.activeTabId !== null &&
+                        merged.some((tab) => tab.id === s.activeTabId);
+
+                    return {
+                        tabs: merged,
+                        activeTabId: hasActive
+                            ? s.activeTabId
+                            : (merged[merged.length - 1]?.id ?? null),
+                        panelVisible: true,
+                    };
+                }),
             removeTab: (id) =>
                 set((s) => {
                     const newTabs = s.tabs.filter((t) => t.id !== id);
@@ -349,12 +577,15 @@ export const useTerminalStore = create<TerminalState>()(
                             : s.activeTabId;
                     // Clean up in-memory data for the removed tab to prevent leaks
                     const { [id]: _pm, ...parsedMessages } = s.parsedMessages;
+                    const { [id]: _lt, ...lastToolUseByTab } =
+                        s.lastToolUseByTab;
                     const { [id]: _vm, ...viewMode } = s.viewMode;
                     const { [id]: _ih, ...inputHistory } = s.inputHistory;
                     return {
                         tabs: newTabs,
                         activeTabId: newActive,
                         parsedMessages,
+                        lastToolUseByTab,
                         viewMode,
                         inputHistory,
                     };
@@ -372,6 +603,7 @@ export const useTerminalStore = create<TerminalState>()(
             partialize: (state) => ({
                 characterDirMap: state.characterDirMap,
                 dockAgents: state.dockAgents,
+                pinnedDockAgents: state.pinnedDockAgents,
                 agentSettings: state.agentSettings,
             }),
             merge: (
@@ -382,14 +614,34 @@ export const useTerminalStore = create<TerminalState>()(
                 if (!p) return current;
                 // Only pick partialized keys — never spread raw persisted to avoid
                 // overwriting action functions or non-persisted state with stale values.
+                const persistedCharacterDirMap =
+                    p.characterDirMap ?? current.characterDirMap;
+                const persistedAgentSettings =
+                    p.agentSettings ?? current.agentSettings;
+                const normalizedPinnedDockAgents = Array.isArray(
+                    p.pinnedDockAgents,
+                )
+                    ? dedupeAgentIds(
+                          p.pinnedDockAgents.filter(
+                              (agentId): agentId is string =>
+                                  typeof agentId === 'string',
+                          ),
+                      )
+                    : sanitizePersistedDockAgents(
+                          p.dockAgents,
+                          persistedCharacterDirMap,
+                          persistedAgentSettings,
+                      );
+                const persistedPinnedDockAgents =
+                    normalizedPinnedDockAgents.includes('raccoon')
+                        ? normalizedPinnedDockAgents
+                        : ['raccoon', ...normalizedPinnedDockAgents];
                 return {
                     ...current,
-                    dockAgents: Array.isArray(p.dockAgents)
-                        ? p.dockAgents
-                        : current.dockAgents,
-                    characterDirMap:
-                        p.characterDirMap ?? current.characterDirMap,
-                    agentSettings: p.agentSettings ?? current.agentSettings,
+                    dockAgents: persistedPinnedDockAgents,
+                    pinnedDockAgents: persistedPinnedDockAgents,
+                    characterDirMap: persistedCharacterDirMap,
+                    agentSettings: persistedAgentSettings,
                 };
             },
         },

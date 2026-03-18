@@ -45,6 +45,8 @@ export interface DeskAnimationFrames {
     frameHeight: number;
 }
 
+const DESK_ANIMATED_ANIMALS: ReadonlySet<AnimalType> = new Set(['hamster']);
+
 // ── Per-agent animal visual handle ──
 
 /** Per-agent animal visual runtime */
@@ -155,8 +157,12 @@ const THINK_PULSE_INTERVAL = 2000; // Pulse every 2 seconds
 const SUCCESS_BOUNCE_HEIGHTS = [12, 8, 4]; // Decreasing bounce heights
 const SUCCESS_BOUNCE_DURATION = 300; // Duration per bounce in ms
 
-// Desk animation tuning
-const DESK_ANIM_SPEED = 0.12; // ~7fps: 7/60 ≈ 0.12
+// Desk animation tuning — single-frame mode with code-driven micro-motion.
+// Using one frame eliminates all inter-frame vertical bounce from the sprite sheet.
+// Typing motion is simulated via tiny Y oscillation applied externally.
+const DESK_BASE_FRAME = 0; // Most stable frame from the 8-frame sheet
+const DESK_TYPING_SPEED = 0.006; // Y oscillation speed (radians per ms)
+const DESK_TYPING_AMPLITUDE = 0.4; // Y oscillation in pixels (subtle typing bob)
 
 // Error animation tuning
 const ERROR_SHAKE_AMPLITUDE = 5; // Horizontal shake in pixels
@@ -239,6 +245,10 @@ export async function loadDeskAnimation(): Promise<DeskAnimationFrames> {
     return { frames, frameWidth, frameHeight };
 }
 
+export function supportsDeskAnimation(animalType: AnimalType): boolean {
+    return DESK_ANIMATED_ANIMALS.has(animalType);
+}
+
 // ── Desk animation show/hide ──
 
 /**
@@ -256,20 +266,23 @@ export function showDeskAnimation(
     visual.shadow.visible = false;
 
     if (!visual.deskSprite) {
-        const animSprite = new PIXI.AnimatedSprite(deskFrames.frames);
-        animSprite.anchor.set(0.5, 0.78);
-        const targetHeight = 90;
+        // Single-frame AnimatedSprite — no frame transitions, no bounce.
+        // Typing motion is driven by tickDeskTypingMotion() via Y oscillation.
+        const singleFrame = [deskFrames.frames[DESK_BASE_FRAME]];
+        const animSprite = new PIXI.AnimatedSprite(singleFrame);
+        animSprite.anchor.set(0.5, 0.82);
+        const targetHeight = 130;
         const scale = targetHeight / deskFrames.frameHeight;
         animSprite.scale.set(scale);
-        animSprite.animationSpeed = DESK_ANIM_SPEED;
-        animSprite.loop = true;
+        animSprite.loop = false; // single frame, no animation loop needed
         animSprite.zIndex = 1;
-        animSprite.play();
         visual.container.addChild(animSprite);
         visual.deskSprite = animSprite;
     } else {
+        const scale = 130 / deskFrames.frameHeight;
+        visual.deskSprite.anchor.set(0.5, 0.82);
+        visual.deskSprite.scale.set(scale);
         visual.deskSprite.visible = true;
-        visual.deskSprite.play();
     }
 
     visual.isAtDesk = true;
@@ -800,6 +813,13 @@ export function tickAnimalAnimation(
         shadow.scale.set(1, 1);
         shadow.alpha = 0.12;
         visual.stepPhase = 0;
+    }
+
+    // Code-driven desk typing micro-motion (single-frame mode).
+    // Applies a subtle Y bob to the deskSprite to simulate typing rhythm.
+    if (visual.isAtDesk && visual.deskSprite) {
+        visual.deskSprite.y =
+            Math.sin(now * DESK_TYPING_SPEED) * DESK_TYPING_AMPLITUDE;
     }
 }
 

@@ -71,6 +71,12 @@ export interface WorldObject {
         scale?: number;
         isWalkable?: boolean;
         corners?: { x: number; y: number }[]; // 4-Point distort offsets
+        collisionPadding?: number;
+        collisionInsetX?: number;
+        collisionInsetY?: number;
+        collisionFootprintWidth?: number;
+        collisionFootprintHeight?: number;
+        occlusionOffsetY?: number;
     } & Record<string, unknown>;
 }
 

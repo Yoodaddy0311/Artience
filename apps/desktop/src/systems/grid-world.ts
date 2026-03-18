@@ -522,9 +522,19 @@ export function syncObjectCollision(
         y: number;
         width: number;
         height: number;
-        properties?: { isWalkable?: boolean };
+        properties?: {
+            isWalkable?: boolean;
+            collisionPadding?: number;
+            collisionInsetX?: number;
+            collisionInsetY?: number;
+            collisionFootprintWidth?: number;
+            collisionFootprintHeight?: number;
+        };
     }[],
 ): void {
+    const readNumber = (value: unknown): number | undefined =>
+        typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
     // 1. Clear all object-sourced collision (preserve walls & built-in furniture)
     for (let y = 0; y < world.rows; y++) {
         for (let x = 0; x < world.cols; x++) {
@@ -536,20 +546,46 @@ export function syncObjectCollision(
     }
 
     // 2. Re-apply collision for each object with 1-cell padding, centered on (x,y)
-    const pad = 1;
     for (const obj of objects) {
         // Skip walkable objects (e.g. floor decorations)
         if (obj.properties?.isWalkable) continue;
 
-        // Center the collision footprint around the object's grid position
-        // to match the visual sprite anchor (0.5, 0.7)
-        const halfW = Math.floor(obj.width / 2);
-        const halfH = Math.floor(obj.height / 2);
+        const pad = Math.max(
+            0,
+            Math.round(readNumber(obj.properties?.collisionPadding) ?? 1),
+        );
+        const footprintWidth = Math.max(
+            1,
+            Math.round(
+                readNumber(obj.properties?.collisionFootprintWidth) ??
+                    obj.width,
+            ),
+        );
+        const footprintHeight = Math.max(
+            1,
+            Math.round(
+                readNumber(obj.properties?.collisionFootprintHeight) ??
+                    obj.height,
+            ),
+        );
+        const anchorX =
+            obj.x +
+            Math.round(readNumber(obj.properties?.collisionInsetX) ?? 0);
+        const anchorY =
+            obj.y +
+            Math.round(readNumber(obj.properties?.collisionInsetY) ?? 0);
+        // Keep the collision footprint centered on the object's anchor.
+        // For even sizes we bias the extra cell toward top/left so a 2x2
+        // footprint at (5,5) covers (4..5, 4..5) before padding.
+        const minDx = -Math.floor(footprintWidth / 2) - pad;
+        const maxDx = Math.ceil(footprintWidth / 2) - 1 + pad;
+        const minDy = -Math.floor(footprintHeight / 2) - pad;
+        const maxDy = Math.ceil(footprintHeight / 2) - 1 + pad;
 
-        for (let dy = -halfH - pad; dy <= halfH + pad; dy++) {
-            for (let dx = -halfW - pad; dx <= halfW + pad; dx++) {
-                const cx = obj.x + dx;
-                const cy = obj.y + dy;
+        for (let dy = minDy; dy <= maxDy; dy++) {
+            for (let dx = minDx; dx <= maxDx; dx++) {
+                const cx = anchorX + dx;
+                const cy = anchorY + dy;
                 if (cx >= 0 && cx < world.cols && cy >= 0 && cy < world.rows) {
                     world.cells[cy][cx].collision = true;
                 }

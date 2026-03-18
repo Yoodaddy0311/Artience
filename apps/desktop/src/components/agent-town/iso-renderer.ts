@@ -312,11 +312,15 @@ export async function createRoomSprites(
             sprite.rotation = (obj.properties.rotation as number) || 0;
             sprite.scale.set((obj.properties.scale as number) || 1);
             sprite.alpha = 0.85;
+            const occlusionOffsetY =
+                (obj.properties.occlusionOffsetY as number) || 0;
+            (
+                sprite as PIXI.Container & { __depthOffsetY?: number }
+            ).__depthOffsetY = occlusionOffsetY;
 
-            // Dynamic depth sorting: Base 100 + grid depth.
-            // Characters use a similar formula so they interleve correctly.
-            const depth = obj.x + obj.y;
-            sprite.zIndex = 100 + depth;
+            // Sort by rendered baseline instead of grid depth so tall assets
+            // layer correctly with moving characters.
+            sprite.zIndex = 100 + sprite.y + occlusionOffsetY;
 
             console.log(
                 `[Room] Loaded ${assetStr} at iso(${sprite.x}, ${sprite.y}), scale=${sprite.scale.x}, zIndex=${sprite.zIndex}`,
@@ -547,8 +551,7 @@ export async function createRoomSprites(
                     if (isDragging && !isTransforming) {
                         isDragging = false;
                         sprite.alpha = 0.85;
-                        const depth = obj.x + obj.y;
-                        sprite.zIndex = 100 + depth;
+                        sprite.zIndex = 100 + sprite.y + occlusionOffsetY;
                         if (onObjectMoved) {
                             // Extract grid vs fine offset
                             const rawGrid = isoToGrid(sprite.x, sprite.y);

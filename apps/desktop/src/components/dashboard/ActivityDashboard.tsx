@@ -38,6 +38,12 @@ const STATUS_MAP: Record<AgentActivity, StatusConfig> = {
         label: '작업 중',
         pulse: true,
     },
+    needs_input: {
+        dot: 'bg-purple-500',
+        bg: 'border-purple-300',
+        label: '입력 대기',
+        pulse: true,
+    },
     success: {
         dot: 'bg-emerald-500',
         bg: 'border-emerald-300',

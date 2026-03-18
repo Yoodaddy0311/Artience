@@ -5,6 +5,7 @@ import {
 } from '../../store/useTerminalStore';
 import { DEFAULT_AGENTS, type AgentProfile } from '../../types/platform';
 import { assetPath } from '../../lib/assetPath';
+import { getProviderCliCommand } from '../../lib/provider-command';
 import { HistoryModal } from './HistoryModal';
 import { AgentLevelBadge } from '../growth';
 
@@ -36,6 +37,7 @@ export const BottomDock: React.FC = () => {
     const panelVisible = useTerminalStore((s) => s.panelVisible);
     const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
     const addTab = useTerminalStore((s) => s.addTab);
+    const restoreTabs = useTerminalStore((s) => s.restoreTabs);
     const removeTab = useTerminalStore((s) => s.removeTab);
     const setCharacterDir = useTerminalStore((s) => s.setCharacterDir);
     const characterDirMap = useTerminalStore((s) => s.characterDirMap);
@@ -44,7 +46,6 @@ export const BottomDock: React.FC = () => {
     const removeDockAgent = useTerminalStore((s) => s.removeDockAgent);
     const agentSettings = useTerminalStore((s) => s.agentSettings);
     const setAgentSettings = useTerminalStore((s) => s.setAgentSettings);
-    const teamAddedAgents = useTerminalStore((s) => s.teamAddedAgents);
 
     const [ctxMenu, setCtxMenu] = useState<{
         x: number;
@@ -96,7 +97,10 @@ export const BottomDock: React.FC = () => {
             const result = await api.create(80, 24, {
                 cwd,
                 label: agent.name,
-                autoCommand: 'claude',
+                agentId,
+                autoCommand: getProviderCliCommand(
+                    agentSettings[agentId]?.provider,
+                ),
                 agentSettings: agentSettings[agentId],
             });
 
@@ -163,7 +167,10 @@ export const BottomDock: React.FC = () => {
         const result = await api.create(80, 24, {
             cwd: selected,
             label: agent.name,
-            autoCommand: 'claude',
+            agentId,
+            autoCommand: getProviderCliCommand(
+                agentSettings[agentId]?.provider,
+            ),
             agentSettings: agentSettings[agentId],
         });
         if (result?.id) {
@@ -199,7 +206,6 @@ export const BottomDock: React.FC = () => {
         const agentId = ctxMenu.agentId;
         setCtxMenu(null);
         if (agentId === CTO_ID) return; // CTO는 제거 불가
-        if ((teamAddedAgents ?? []).includes(agentId)) return; // 팀 멤버는 팀 해산 시에만 제거
 
         // 세션/터미널도 정리
         window.dogbaApi?.chat?.closeSession(agentId);
@@ -210,13 +216,12 @@ export const BottomDock: React.FC = () => {
             removeTab(existingTab.id);
         }
         removeDockAgent(agentId);
-    }, [ctxMenu, tabs, removeTab, removeDockAgent, teamAddedAgents]);
+    }, [ctxMenu, tabs, removeTab, removeDockAgent]);
 
     // 즉시 제거 헬퍼 (X 버튼용)
     const removeAgentDirectly = useCallback(
         (agentId: string) => {
             if (agentId === CTO_ID) return;
-            if ((teamAddedAgents ?? []).includes(agentId)) return;
             window.dogbaApi?.chat?.closeSession(agentId);
             const api = window.dogbaApi?.terminal;
             const existingTab = tabs.find((t) => t.agentId === agentId);
@@ -226,7 +231,7 @@ export const BottomDock: React.FC = () => {
             }
             removeDockAgent(agentId);
         },
-        [tabs, removeTab, removeDockAgent, teamAddedAgents],
+        [tabs, removeTab, removeDockAgent],
     );
 
     // --- 설정 팝업 열기 ---
@@ -263,7 +268,8 @@ export const BottomDock: React.FC = () => {
         const result = await api.create(80, 24, {
             cwd,
             label: agent.name,
-            autoCommand: 'claude',
+            agentId,
+            autoCommand: getProviderCliCommand(settingsDraft.provider),
             agentSettings: settingsDraft,
         });
         if (result?.id) {
@@ -309,52 +315,62 @@ export const BottomDock: React.FC = () => {
     // --- 앱 시작 시 세션 자동 복원 (--resume 자동 적용) ---
     const [restoring, setRestoring] = useState(false);
     React.useEffect(() => {
-        // 이미 탭이 있으면 복원 건너뜀 (중복 방지)
         if (tabs.length > 0) return;
 
         const restoreSessions = async () => {
             const api = window.dogbaApi?.terminal;
             if (!api) return;
 
-            // cwd가 설정된 에이전트만 복원 대상
-            const restorable = (dockAgents ?? []).filter((id) => {
-                const agent = AGENT_MAP.get(id);
-                const cwd = characterDirMap[id];
-                return agent && cwd;
-            });
-            if (restorable.length === 0) return;
-
             setRestoring(true);
-
-            for (const agentId of restorable) {
-                const agent = AGENT_MAP.get(agentId)!;
-                const cwd = characterDirMap[agentId];
-
-                // PTY 생성 + claude 인터랙티브 실행 (채팅과 터미널이 동일 세션 공유)
-                const result = await api.create(80, 24, {
-                    cwd,
-                    label: agent.name,
-                    autoCommand: 'claude',
-                    agentSettings: agentSettings[agentId],
-                });
-                if (result?.id) {
-                    addTab({
-                        id: result.id,
-                        agentId,
-                        agentName: agent.name,
-                        label: agent.name,
-                        cwd: result.cwd || cwd,
-                        status: 'connecting',
-                    });
+            try {
+                const liveTerminals = await api.list();
+                if (liveTerminals.length === 0) {
+                    return;
                 }
-            }
 
-            setRestoring(false);
+                const restoredTabs = liveTerminals.map((terminal) => {
+                    const agent = terminal.agentId
+                        ? AGENT_MAP.get(terminal.agentId)
+                        : null;
+                    return {
+                        id: terminal.id,
+                        agentId: terminal.agentId,
+                        agentName: agent?.name ?? terminal.label,
+                        label: terminal.label,
+                        cwd: terminal.cwd,
+                        status: 'connected' as const,
+                        restored: true,
+                    };
+                });
+
+                restoreTabs(restoredTabs);
+
+                const store = useTerminalStore.getState();
+                for (const terminal of liveTerminals) {
+                    if (!terminal.agentId) continue;
+                    addDockAgent(terminal.agentId);
+                    store.initAgentState(terminal.agentId);
+                    if (terminal.activity) {
+                        store.setAgentActivity(
+                            terminal.agentId,
+                            terminal.activity,
+                        );
+                    }
+                }
+            } catch (error) {
+                if (import.meta.env.DEV) {
+                    console.error(
+                        'Failed to restore live terminal sessions:',
+                        error,
+                    );
+                }
+            } finally {
+                setRestoring(false);
+            }
         };
 
         restoreSessions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [addDockAgent, restoreTabs, tabs.length]);
 
     // 독에 없는 에이전트 목록 (추가 팝업용)
     const availableAgents = useMemo(
@@ -484,9 +500,6 @@ export const BottomDock: React.FC = () => {
                         const tab = tabs.find((t) => t.agentId === agentId);
                         const hasTab = !!tab;
                         const isActive = hasTab && tab!.id === activeTabId;
-                        const isTeamMember = (teamAddedAgents ?? []).includes(
-                            agentId,
-                        );
 
                         return (
                             <div
@@ -504,11 +517,7 @@ export const BottomDock: React.FC = () => {
                                     })
                                 }
                                 title={`${agent.name} - ${agent.role}`}
-                                className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 cursor-pointer ${
-                                    isTeamMember
-                                        ? 'border-blue-500'
-                                        : 'border-black'
-                                } ${
+                                className={`relative flex flex-col items-center px-2.5 pt-1.5 pb-1 rounded-2xl transition-all duration-200 bg-white/95 backdrop-blur-sm shadow-[3px_3px_0_0_#000] border-2 border-black cursor-pointer ${
                                     isActive
                                         ? 'bg-[#E8DAFF] -translate-y-2'
                                         : hasTab
@@ -517,24 +526,17 @@ export const BottomDock: React.FC = () => {
                                 }`}
                             >
                                 {/* 팀 뱃지 */}
-                                {isTeamMember && (
-                                    <span className="absolute -top-2 -left-1 bg-blue-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-white z-10">
-                                        T
-                                    </span>
-                                )}
                                 {/* 제거 버튼 (X) */}
-                                {!isTeamMember && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            removeAgentDirectly(agentId);
-                                        }}
-                                        className="absolute -top-2 -right-1 bg-gray-200 hover:bg-red-500 text-gray-600 hover:text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-white shadow-sm z-10 transition-colors"
-                                        title="독바에서 제거"
-                                    >
-                                        ✕
-                                    </button>
-                                )}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeAgentDirectly(agentId);
+                                    }}
+                                    className="absolute -top-2 -right-1 bg-gray-200 hover:bg-red-500 text-gray-600 hover:text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-white shadow-sm z-10 transition-colors"
+                                    title="독바에서 제거"
+                                >
+                                    ✕
+                                </button>
                                 <div className="relative">
                                     <img
                                         src={assetPath(agent.sprite)}
@@ -677,15 +679,14 @@ export const BottomDock: React.FC = () => {
                             터미널 닫기
                         </button>
                     )}
-                    {ctxMenu.agentId !== CTO_ID &&
-                        !(teamAddedAgents ?? []).includes(ctxMenu.agentId) && (
-                            <button
-                                onClick={handleRemoveFromDock}
-                                className="w-full text-left px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors border-t border-gray-200"
-                            >
-                                독에서 제거
-                            </button>
-                        )}
+                    {ctxMenu.agentId !== CTO_ID && (
+                        <button
+                            onClick={handleRemoveFromDock}
+                            className="w-full text-left px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors border-t border-gray-200"
+                        >
+                            독에서 제거
+                        </button>
+                    )}
                 </div>
             )}
 

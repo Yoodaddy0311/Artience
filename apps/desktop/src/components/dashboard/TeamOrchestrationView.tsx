@@ -31,6 +31,11 @@ const ACTIVITY_COLORS: Record<
     idle: { bg: '#E5E7EB', border: '#9CA3AF', label: 'Idle' },
     thinking: { bg: '#FDE68A', border: '#F59E0B', label: 'Thinking' },
     working: { bg: '#86EFAC', border: '#22C55E', label: 'Working' },
+    needs_input: {
+        bg: '#E9D5FF',
+        border: '#A855F7',
+        label: 'Needs Input',
+    },
     success: { bg: '#6EE7B7', border: '#10B981', label: 'Done' },
     error: { bg: '#FCA5A5', border: '#EF4444', label: 'Error' },
     reading: { bg: '#93C5FD', border: '#3B82F6', label: 'Reading' },

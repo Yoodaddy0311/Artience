@@ -118,7 +118,7 @@ export class Connector {
     /**
      * Send a raw message object (for protocol extensions or backward compat).
      */
-    sendRaw(message: Record<string, unknown>): void {
+    sendRaw(message: object): void {
         if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(message));
         } else {

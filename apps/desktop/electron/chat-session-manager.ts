@@ -26,10 +26,14 @@ export interface ChatSession {
     agentName: string;
     proc: ChildProcess | null;
     sessionId?: string; // Claude session ID for --resume
+    sessionKey: string;
     status: 'idle' | 'busy' | 'closed';
     promptFilePath: string; // temp file for system prompt
     cwd: string;
+    extraArgs?: string[];
+    extraArgsSignature: string;
     mode: 'stream-json' | 'fallback';
+    queue: string[];
 }
 
 export interface StreamEvent {
@@ -50,6 +54,29 @@ const sessionStore = new Store({
     },
 });
 
+const SESSION_STARTUP_GRACE_MS = 150;
+
+function normalizeSessionCwd(cwd: string): string {
+    const normalized = path.resolve(cwd);
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function serializeExtraArgs(extraArgs?: string[]): string {
+    return JSON.stringify(extraArgs ?? []);
+}
+
+export function buildChatSessionKey(
+    agentId: string,
+    cwd: string,
+    extraArgs?: string[],
+): string {
+    return [
+        agentId,
+        normalizeSessionCwd(cwd),
+        serializeExtraArgs(extraArgs),
+    ].join('::');
+}
+
 // ── ChatSessionManager ─────────────────────────────────────────────────────
 
 export class ChatSessionManager extends EventEmitter {
@@ -66,9 +93,21 @@ export class ChatSessionManager extends EventEmitter {
         cwd: string,
         extraArgs?: string[],
     ): Promise<string> {
+        const sessionKey = buildChatSessionKey(agentId, cwd, extraArgs);
+        const extraArgsSignature = serializeExtraArgs(extraArgs);
+
         // Reuse existing live session
         const existing = this.sessions.get(agentId);
         if (existing && existing.status !== 'closed') {
+            if (existing.sessionKey === sessionKey) {
+                return agentId;
+            }
+
+            this.closeSession(agentId);
+        }
+
+        const existingScoped = this.sessions.get(sessionKey);
+        if (existingScoped && existingScoped.status !== 'closed') {
             return agentId;
         }
 
@@ -95,11 +134,11 @@ export class ChatSessionManager extends EventEmitter {
         }
 
         // Resume if we have a saved session ID
-        const savedSessionId = this.getSavedSessionId(agentId);
+        const savedSessionId = this.getSavedSessionId(sessionKey);
         if (savedSessionId) {
             args.push('--resume', savedSessionId);
             console.log(
-                `[ChatSessionManager] Resuming session ${savedSessionId} for ${agentId}`,
+                `[ChatSessionManager] Resuming session ${savedSessionId} for ${agentId} (${sessionKey})`,
             );
         }
 
@@ -124,14 +163,21 @@ export class ChatSessionManager extends EventEmitter {
                 agentId,
                 agentName,
                 proc,
+                sessionKey,
                 status: 'idle',
                 promptFilePath: promptPath,
                 cwd,
+                extraArgs: extraArgs ? [...extraArgs] : undefined,
+                extraArgsSignature,
                 mode: 'stream-json',
+                queue: [],
             };
 
             // Handle spawn error (e.g. --input-format not supported)
-            const spawnError = await this.waitForSpawnOrError(proc);
+            const spawnError = await this.waitForSpawnOrError(
+                proc,
+                SESSION_STARTUP_GRACE_MS,
+            );
             if (spawnError) {
                 console.warn(
                     `[ChatSessionManager] stream-json spawn failed for ${agentId}:`,
@@ -142,19 +188,23 @@ export class ChatSessionManager extends EventEmitter {
                     agentId,
                     agentName,
                     proc: null,
+                    sessionKey,
                     status: 'idle',
                     promptFilePath: promptPath,
                     cwd,
+                    extraArgs: extraArgs ? [...extraArgs] : undefined,
+                    extraArgsSignature,
                     mode: 'fallback',
+                    queue: [],
                 };
-                this.sessions.set(agentId, fallbackSession);
+                this.registerSession(fallbackSession);
                 console.log(
                     `[ChatSessionManager] Fallback mode for ${agentId}`,
                 );
                 return agentId;
             }
 
-            this.sessions.set(agentId, session);
+            this.registerSession(session);
             this.setupOutputParser(session);
 
             console.log(
@@ -171,12 +221,16 @@ export class ChatSessionManager extends EventEmitter {
                 agentId,
                 agentName,
                 proc: null,
+                sessionKey,
                 status: 'idle',
                 promptFilePath: promptPath,
                 cwd,
+                extraArgs: extraArgs ? [...extraArgs] : undefined,
+                extraArgsSignature,
                 mode: 'fallback',
+                queue: [],
             };
-            this.sessions.set(agentId, fallbackSession);
+            this.registerSession(fallbackSession);
             return agentId;
         }
     }
@@ -196,13 +250,8 @@ export class ChatSessionManager extends EventEmitter {
             return;
         }
 
-        session.status = 'busy';
-
-        if (session.mode === 'stream-json' && session.proc?.stdin?.writable) {
-            this.sendViaStreamJson(session, message);
-        } else {
-            this.sendViaFallback(session, message);
-        }
+        session.queue.push(message);
+        this.drainSessionQueue(session);
     }
 
     /**
@@ -213,6 +262,7 @@ export class ChatSessionManager extends EventEmitter {
         if (!session) return;
 
         session.status = 'closed';
+        session.queue = [];
 
         if (session.proc && typeof session.proc.kill === 'function') {
             try {
@@ -223,7 +273,7 @@ export class ChatSessionManager extends EventEmitter {
         }
 
         this.cleanupPromptFile(session.promptFilePath);
-        this.sessions.delete(agentId);
+        this.unregisterSession(session);
         this.emit('session:closed', agentId, 0);
 
         console.log(`[ChatSessionManager] Session closed for ${agentId}`);
@@ -248,7 +298,10 @@ export class ChatSessionManager extends EventEmitter {
      * Close all sessions (app shutdown).
      */
     closeAll(): void {
-        for (const agentId of [...this.sessions.keys()]) {
+        const uniqueAgentIds = new Set(
+            [...this.sessions.values()].map((session) => session.agentId),
+        );
+        for (const agentId of uniqueAgentIds) {
             this.closeSession(agentId);
         }
     }
@@ -281,6 +334,10 @@ export class ChatSessionManager extends EventEmitter {
             'stream-json',
             '--verbose',
         ];
+
+        if (session.extraArgs && session.extraArgs.length > 0) {
+            args.push(...session.extraArgs);
+        }
 
         // --resume: reuse session context if available
         if (session.sessionId) {
@@ -324,7 +381,7 @@ export class ChatSessionManager extends EventEmitter {
                 content: err.message,
                 sessionId: session.sessionId,
             } as StreamEvent);
-            session.status = 'idle';
+            this.finishResponse(session);
         });
 
         proc.on('exit', (code) => {
@@ -338,8 +395,8 @@ export class ChatSessionManager extends EventEmitter {
                 }
             }
 
-            session.status = 'idle';
             this.emit('response:end', session.agentId);
+            this.finishResponse(session, false);
 
             if (code !== 0 && code !== null) {
                 console.warn(
@@ -386,13 +443,14 @@ export class ChatSessionManager extends EventEmitter {
                 `[ChatSessionManager] Process error for ${session.agentId}:`,
                 err.message,
             );
-            session.status = 'closed';
             this.emit('stream', session.agentId, {
                 type: 'error',
                 content: err.message,
                 sessionId: session.sessionId,
             } as StreamEvent);
-            this.emit('session:closed', session.agentId, -1);
+            session.mode = 'fallback';
+            session.proc = null;
+            this.finishResponse(session);
         });
 
         session.proc!.on('exit', (code) => {
@@ -408,10 +466,10 @@ export class ChatSessionManager extends EventEmitter {
 
             // Downgrade to fallback mode instead of closing entirely
             session.mode = 'fallback';
-            session.status = 'idle';
             session.proc = null;
             this.cleanupPromptFile(session.promptFilePath);
             this.emit('response:end', session.agentId);
+            this.finishResponse(session, false);
 
             console.log(
                 `[ChatSessionManager] Process exited for ${session.agentId} (code ${code}), switched to fallback mode`,
@@ -425,7 +483,7 @@ export class ChatSessionManager extends EventEmitter {
         // Capture session ID from any message
         if (msg.session_id) {
             session.sessionId = msg.session_id;
-            this.saveSessionId(session.agentId, msg.session_id);
+            this.saveSessionId(session.sessionKey, msg.session_id);
         }
 
         // Token-by-token streaming delta
@@ -491,13 +549,13 @@ export class ChatSessionManager extends EventEmitter {
 
         // Final result — marks end of response
         if (msg.type === 'result') {
-            session.status = 'idle';
             this.emit('stream', session.agentId, {
                 type: 'result',
                 content: msg.result || '',
                 sessionId: session.sessionId,
             } as StreamEvent);
             this.emit('response:end', session.agentId);
+            this.finishResponse(session, false);
             return;
         }
     }
@@ -530,49 +588,138 @@ export class ChatSessionManager extends EventEmitter {
 
     // ── Helper: session ID persistence ─────────────────────────────────────
 
-    private getSavedSessionId(agentId: string): string | undefined {
+    private getSavedSessionId(sessionKey: string): string | undefined {
         const ids = sessionStore.get('sessionIds') as Record<string, string>;
-        return ids[agentId];
+        return ids[sessionKey];
     }
 
-    private saveSessionId(agentId: string, sessionId: string): void {
+    private saveSessionId(sessionKey: string, sessionId: string): void {
         const ids = sessionStore.get('sessionIds') as Record<string, string>;
-        ids[agentId] = sessionId;
+        ids[sessionKey] = sessionId;
         sessionStore.set('sessionIds', ids);
+    }
+
+    private registerSession(session: ChatSession): void {
+        this.sessions.set(session.agentId, session);
+        this.sessions.set(session.sessionKey, session);
+    }
+
+    private unregisterSession(session: ChatSession): void {
+        const mappedByAgent = this.sessions.get(session.agentId);
+        if (mappedByAgent === session) {
+            this.sessions.delete(session.agentId);
+        }
+
+        const mappedByKey = this.sessions.get(session.sessionKey);
+        if (mappedByKey === session) {
+            this.sessions.delete(session.sessionKey);
+        }
+    }
+
+    private drainSessionQueue(session: ChatSession): void {
+        if (session.status !== 'idle' || session.queue.length === 0) {
+            return;
+        }
+
+        const nextMessage = session.queue.shift();
+        if (!nextMessage) return;
+
+        session.status = 'busy';
+
+        if (session.mode === 'stream-json' && session.proc?.stdin?.writable) {
+            this.sendViaStreamJson(session, nextMessage);
+        } else {
+            this.sendViaFallback(session, nextMessage);
+        }
+    }
+
+    private finishResponse(
+        session: ChatSession,
+        emitEnd = true,
+        emitClosed = false,
+    ): void {
+        if (session.status === 'closed') {
+            return;
+        }
+
+        session.status = 'idle';
+
+        if (emitEnd) {
+            this.emit('response:end', session.agentId);
+        }
+
+        if (emitClosed) {
+            this.emit('session:closed', session.agentId, -1);
+        }
+
+        this.drainSessionQueue(session);
     }
 
     // ── Helper: wait briefly to detect spawn failure ───────────────────────
 
-    private waitForSpawnOrError(proc: ChildProcess): Promise<string | null> {
+    private waitForSpawnOrError(
+        proc: ChildProcess,
+        graceMs: number,
+    ): Promise<string | null> {
         return new Promise((resolve) => {
             let settled = false;
+            let startupTimer: ReturnType<typeof setTimeout> | null = null;
+
+            const cleanup = () => {
+                proc.removeListener('error', onError);
+                proc.removeListener('exit', onExit);
+                proc.removeListener('spawn', onSpawn);
+                if (startupTimer) {
+                    clearTimeout(startupTimer);
+                    startupTimer = null;
+                }
+            };
+
+            const finish = (result: string | null) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(result);
+            };
 
             const onError = (err: Error) => {
-                if (!settled) {
-                    settled = true;
-                    resolve(err.message);
-                }
+                finish(err.message);
             };
 
-            const onExit = (code: number | null) => {
-                if (!settled && code !== null && code !== 0) {
-                    settled = true;
-                    resolve(`Process exited with code ${code}`);
-                }
+            const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+                const reason =
+                    code !== null
+                        ? `Process exited with code ${code}`
+                        : `Process exited with signal ${signal ?? 'unknown'}`;
+                finish(reason);
             };
 
-            proc.on('error', onError);
-            proc.on('exit', onExit);
-
-            // If no error within 2s, consider spawn successful
-            setTimeout(() => {
-                if (!settled) {
-                    settled = true;
-                    proc.removeListener('error', onError);
-                    proc.removeListener('exit', onExit);
-                    resolve(null);
+            const onSpawn = () => {
+                if (startupTimer) {
+                    clearTimeout(startupTimer);
                 }
-            }, 2000);
+
+                startupTimer = setTimeout(() => {
+                    if (proc.exitCode != null || proc.killed) {
+                        const exitReason =
+                            proc.exitCode != null
+                                ? `Process exited with code ${proc.exitCode}`
+                                : 'Process exited during startup';
+                        finish(exitReason);
+                        return;
+                    }
+
+                    finish(null);
+                }, graceMs);
+            };
+
+            proc.once('error', onError);
+            proc.once('exit', onExit);
+            proc.once('spawn', onSpawn);
+
+            if (proc.pid) {
+                onSpawn();
+            }
         });
     }
 }

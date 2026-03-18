@@ -3,16 +3,18 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
+const devPort = Number(process.env.DOGBA_VITE_PORT ?? '5173');
+
 export default defineConfig({
     plugins: [react(), tailwindcss()],
     // Electron loads via file:// protocol — assets must use relative paths
     base: './',
     server: {
-        port: 5173,
+        port: devPort,
         strictPort: true,
         hmr: {
             host: 'localhost',
-            port: 5173,
+            port: devPort,
         },
     },
     resolve: {
@@ -21,11 +23,16 @@ export default defineConfig({
         },
     },
     build: {
+        // AgentTown is already lazy-loaded, so allow its optional Pixi chunk
+        // to be slightly larger without treating it as a regression.
+        chunkSizeWarningLimit: 650,
         rollupOptions: {
             output: {
                 manualChunks: {
                     // Split PixiJS into its own chunk (largest dep)
                     'vendor-pixi': ['pixi.js'],
+                    // Split terminal renderer/runtime separately from app shell
+                    'vendor-terminal': ['@xterm/xterm', '@xterm/addon-fit'],
                     // Split React ecosystem
                     'vendor-react': ['react', 'react-dom'],
                     // Split Zustand + other state management

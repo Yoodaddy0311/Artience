@@ -13,7 +13,11 @@
  */
 
 import { type ChatSessionManager } from './chat-session-manager';
-import { AGENT_PERSONAS, buildSystemPrompt } from '../src/data/agent-personas';
+import { AGENT_PERSONAS } from '../src/data/agent-personas';
+import {
+    buildCompactTeamPrompt,
+    selectTeamAgentKeys,
+} from './team-agent-selection';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,7 @@ const CTO_SYSTEM_PROMPT = [
 class CTOController {
     private teamSessionActive = false;
     private chatSessionManager: ChatSessionManager | null = null;
+    private activeTeamAgents: string[] = [];
 
     /**
      * Inject ChatSessionManager instance (called from main.ts after both are created).
@@ -58,18 +63,16 @@ class CTOController {
      * Build the --agents JSON config from AGENT_PERSONAS.
      * Each agent gets: description, prompt (system prompt), model.
      */
-    buildAgentsConfig(): Record<string, AgentConfig> {
+    buildAgentsConfig(agentKeys: string[]): Record<string, AgentConfig> {
         const agents: Record<string, AgentConfig> = {};
 
-        for (const [key, persona] of Object.entries(AGENT_PERSONAS)) {
-            // Skip CTO itself
-            if (key === 'dokba') continue;
+        for (const key of agentKeys) {
+            const persona = AGENT_PERSONAS[key];
+            if (!persona || key === 'dokba') continue;
 
             agents[key] = {
                 description: `${persona.role} ${key.charAt(0).toUpperCase() + key.slice(1)}. ${persona.personality}`,
-                prompt: buildSystemPrompt(
-                    key.charAt(0).toUpperCase() + key.slice(1),
-                ),
+                prompt: buildCompactTeamPrompt(key),
                 model: 'sonnet',
             };
         }
@@ -83,6 +86,8 @@ class CTOController {
      */
     async createTeamSession(
         cwd: string,
+        seedTask?: string,
+        preferredAgents?: string[],
     ): Promise<{ success: boolean; error?: string }> {
         if (!this.chatSessionManager) {
             return {
@@ -91,15 +96,27 @@ class CTOController {
             };
         }
 
+        const selectedAgents = selectTeamAgentKeys({
+            seedTask,
+            preferredAgents,
+        });
+
         if (
             this.teamSessionActive &&
             this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID)
         ) {
-            return { success: true };
+            const canReuseCurrentTeam = selectedAgents.every((agentId) =>
+                this.activeTeamAgents.includes(agentId),
+            );
+            if (canReuseCurrentTeam) {
+                return { success: true };
+            }
+
+            this.closeTeamSession();
         }
 
         try {
-            const agentsConfig = this.buildAgentsConfig();
+            const agentsConfig = this.buildAgentsConfig(selectedAgents);
             const agentsJson = JSON.stringify(agentsConfig);
 
             // Pass --agents as extra CLI args to ChatSessionManager
@@ -113,11 +130,13 @@ class CTOController {
             );
 
             this.teamSessionActive = true;
+            this.activeTeamAgents = selectedAgents;
             console.log(
-                `[CTOController] Team session created with ${Object.keys(agentsConfig).length} agents`,
+                `[CTOController] Team session created with ${Object.keys(agentsConfig).length} agents: ${selectedAgents.join(', ')}`,
             );
             return { success: true };
         } catch (err: any) {
+            this.activeTeamAgents = [];
             console.error(
                 '[CTOController] Failed to create team session:',
                 err.message,
@@ -165,6 +184,7 @@ class CTOController {
     closeTeamSession(): void {
         this.chatSessionManager?.closeSession(CTO_AGENT_ID);
         this.teamSessionActive = false;
+        this.activeTeamAgents = [];
         console.log('[CTOController] Team session closed');
     }
 

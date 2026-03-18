@@ -635,5 +635,29 @@ describe('grid-world', () => {
             expect(world.cells[3][3].collision).toBe(true); // non-walkable → blocked
             expect(world.cells[7][7].collision).toBe(false); // walkable → free
         });
+        it('should honor collision footprint and inset hints from asset properties', () => {
+            const world = createTestGrid(12, 12);
+
+            syncObjectCollision(world, [
+                {
+                    x: 5,
+                    y: 5,
+                    width: 1,
+                    height: 1,
+                    properties: {
+                        collisionPadding: 0,
+                        collisionInsetX: 1,
+                        collisionFootprintWidth: 3,
+                        collisionFootprintHeight: 1,
+                    },
+                },
+            ]);
+
+            expect(world.cells[5][5].collision).toBe(true);
+            expect(world.cells[5][6].collision).toBe(true);
+            expect(world.cells[5][7].collision).toBe(true);
+            expect(world.cells[4][6].collision).toBe(false);
+            expect(world.cells[5][4].collision).toBe(false);
+        });
     });
 });
