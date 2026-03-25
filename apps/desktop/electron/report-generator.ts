@@ -1,11 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { formatDurationKo as formatDuration } from '../src/lib/format-utils';
 import { collectGitInfo as collectGitInfoShared } from './git-utils';
-
-const execFileAsync = promisify(execFile);
 
 export interface ReportData {
     agentId: string;
