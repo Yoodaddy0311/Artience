@@ -325,17 +325,46 @@ describe('parsePtyChunk — team detection', () => {
         ]);
     });
 
-    it('detects team shutdown', () => {
-        const events = parsePtyChunk('shutdown');
+    it('detects team shutdown with agent context', () => {
+        const events = parsePtyChunk('all 3 agents shut down');
         expect(events).toHaveLength(1);
         expect(events[0].type).toBe('team_update');
         expect(events[0].teamMembers).toEqual([]);
+    });
+
+    it('detects teammates shutdown', () => {
+        const events = parsePtyChunk('teammates shutdown');
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe('team_update');
+        expect(events[0].teamMembers).toEqual([]);
+    });
+
+    it('does not false-positive on bare "shutdown" word', () => {
+        const events = parsePtyChunk('shutdown the server gracefully');
+        const teamEvents = events.filter((e) => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(0);
     });
 
     it('does not match single @name as team_update', () => {
         const events = parsePtyChunk('Message from @user about the task');
         expect(events).toHaveLength(1);
         expect(events[0].type).not.toBe('team_update');
+    });
+
+    it('does not false-positive on JSDoc @param @returns', () => {
+        const events = parsePtyChunk(
+            '/** @param name The name @returns string */',
+        );
+        const teamEvents = events.filter((e) => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(0);
+    });
+
+    it('does not false-positive on email addresses', () => {
+        const events = parsePtyChunk(
+            'Contact user@example.com and admin@test.org',
+        );
+        const teamEvents = events.filter((e) => e.type === 'team_update');
+        expect(teamEvents).toHaveLength(0);
     });
 
     it('does not match "agents launched" without subsequent @names', () => {
