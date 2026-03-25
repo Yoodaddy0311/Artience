@@ -109,14 +109,20 @@ PartyMember.displayName = 'PartyMember';
 const MAX_VISIBLE = 10;
 
 export const PartyFrame: React.FC = () => {
-    const dockAgents = useTerminalStore((s) => s.dockAgents);
     const agentStates = useTerminalStore((s) => s.agentStates);
     const agentActivity = useTerminalStore((s) => s.agentActivity);
 
-    // Filter out raccoon (main character, not a party member) and limit
+    // Show only agents with non-idle state (active party members)
     const visibleAgents = useMemo(
-        () => dockAgents.filter((id) => id !== 'raccoon').slice(0, MAX_VISIBLE),
-        [dockAgents],
+        () =>
+            Object.entries(agentStates)
+                .filter(
+                    ([id, sm]) =>
+                        id !== 'raccoon' && sm.currentState !== 'idle',
+                )
+                .map(([id]) => id)
+                .slice(0, MAX_VISIBLE),
+        [agentStates],
     );
 
     if (visibleAgents.length === 0) return null;
