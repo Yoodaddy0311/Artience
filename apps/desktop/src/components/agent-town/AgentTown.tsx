@@ -1399,7 +1399,7 @@ export const AgentTown: React.FC = () => {
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText('connecting'),
+                                        getBubbleText('team_join'),
                                     );
                                     pickDeskSeatDest(agent);
                                 } else if (!inTeam && wasInTeam) {

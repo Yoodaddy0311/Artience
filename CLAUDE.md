@@ -27,5 +27,4 @@ Project: dogba
 - MainLayout.tsx TODO 3개: Studio apply, project import, project export (UI 버튼 있으나 stub)
 - AssetInbox.tsx TODO 1개 (UI stub)
 - RunPanel.tsx TODO 1개 (UI stub)
-- git diff HEAD~1 initial commit 엣지 케이스 처리
 - 테스트 커버리지 확대: electron/ 매니저 전체 미테스트

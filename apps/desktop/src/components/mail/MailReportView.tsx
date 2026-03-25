@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     FileText,
     FileEdit,
@@ -11,6 +11,9 @@ import {
     MessageSquare,
     Eye,
     ExternalLink,
+    Mail,
+    User,
+    Calendar,
 } from 'lucide-react';
 import { MailReportDetail } from './MailReportDetail';
 import type {
@@ -21,6 +24,24 @@ import type {
 import { useMailStore } from '../../store/useMailStore';
 import { FILE_ACTION_ICON } from './mail-icons';
 import { formatDuration } from '../../lib/format-utils';
+
+// ── Frontend noise filter (second pass) ──
+
+const NOISE_RE =
+    /(?:Percolating\.{3}|esc to interrupt|ctrl\+t to show tasks|\[\?2026[hl\]]|⎿|⏺|❯)/i;
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+function cleanBody(raw: string): string {
+    return raw
+        .replace(ANSI_RE, '')
+        .split('\n')
+        .filter((l) => {
+            const t = l.trim();
+            return t && !NOISE_RE.test(t);
+        })
+        .join('\n')
+        .trim();
+}
 
 // ── Status Badge (Neobrutalism) ──
 
@@ -64,42 +85,70 @@ export const MailReportView: React.FC<{ message: MailMessage }> = ({
         setShowCommentInput(false);
     };
 
+    const cleaned = useMemo(
+        () => (message.body ? cleanBody(message.body) : ''),
+        [message.body],
+    );
+
     return (
         <div className="flex flex-col gap-4 h-full overflow-y-auto">
-            {/* Header with Status */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-lg font-black text-black">
-                        {message.subject}
-                    </h2>
-                    <p className="text-xs font-bold text-gray-500 mt-1">
-                        From {message.fromAgentName} --{' '}
-                        {new Date(message.timestamp).toLocaleString('ko-KR')}
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    {report && (
-                        <button
-                            onClick={() => setShowDetail(true)}
-                            className="flex items-center gap-1 text-[10px] font-black px-3 py-1 rounded-lg border-2 border-black bg-yellow-100 text-black shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
+            {/* Email-style Header */}
+            <div className="bg-white rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000]">
+                {/* Top bar: subject + status */}
+                <div className="flex items-center justify-between px-4 py-3 border-b-2 border-black/10">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Mail className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                        <h2 className="text-base font-black text-black truncate">
+                            {message.subject}
+                        </h2>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {report && (
+                            <button
+                                onClick={() => setShowDetail(true)}
+                                className="flex items-center gap-1 text-[10px] font-black px-3 py-1 rounded-lg border-2 border-black bg-yellow-100 text-black shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] active:translate-y-0.5 active:shadow-none transition-all"
+                            >
+                                <ExternalLink className="w-3 h-3" />
+                                Detail
+                            </button>
+                        )}
+                        <span
+                            className={`text-[10px] font-black px-3 py-1 rounded-lg border-2 ${STATUS_STYLES[status]}`}
                         >
-                            <ExternalLink className="w-3 h-3" />
-                            Detail
-                        </button>
-                    )}
-                    <span
-                        className={`text-[10px] font-black px-3 py-1 rounded-lg border-2 ${STATUS_STYLES[status]}`}
-                    >
-                        {STATUS_LABELS[status]}
-                    </span>
+                            {STATUS_LABELS[status]}
+                        </span>
+                    </div>
+                </div>
+                {/* Meta fields: From, Date */}
+                <div className="px-4 py-2 space-y-1 text-xs">
+                    <div className="flex items-center gap-2 text-gray-600">
+                        <User className="w-3 h-3 flex-shrink-0" />
+                        <span className="font-bold text-gray-500 w-10">
+                            From
+                        </span>
+                        <span className="font-black text-black">
+                            {message.fromAgentName}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-600">
+                        <Calendar className="w-3 h-3 flex-shrink-0" />
+                        <span className="font-bold text-gray-500 w-10">
+                            Date
+                        </span>
+                        <span className="font-bold text-gray-700">
+                            {new Date(message.timestamp).toLocaleString(
+                                'ko-KR',
+                            )}
+                        </span>
+                    </div>
                 </div>
             </div>
 
-            {/* Body (plain text fallback) */}
-            {message.body && (
-                <div className="bg-cream-50 rounded-xl p-4 border-2 border-black">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                        {message.body}
+            {/* Body (cleaned, email-style card) */}
+            {cleaned && (
+                <div className="bg-white rounded-xl p-5 border-2 border-black shadow-[2px_2px_0_0_#000]">
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed font-medium">
+                        {cleaned}
                     </p>
                 </div>
             )}

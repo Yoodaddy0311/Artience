@@ -118,6 +118,17 @@ export const BUBBLE_CONFIGS: Record<string, BubbleConfig> = {
         displayFrames: 210,
         fadeFrames: 60,
     },
+    team_join: {
+        emoji: '\u{1F91D}',
+        texts: [
+            '\uD300\uC5D0 \uD569\uB958!',
+            '\uD568\uAED8 \uC77C\uD558\uC790!',
+            '\uB3C4\uC6C0 \uC904\uAC8C!',
+            '\uC900\uBE44 \uC644\uB8CC!',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
     thinking: {
         emoji: '\u{1F914}',
         texts: [
