@@ -1,5 +1,9 @@
 # 독바(DogBa) 플랫폼 마스터 PRD v3
 
+> **⚠️ DEPRECATED (2026-03-25)**: 이 PRD는 v3 (FastAPI+SQLite+Docker 클라이언트-서버 구조) 기준으로 작성되었습니다.
+> 프로젝트가 **Electron 데스크탑 전용**으로 전환되면서 섹션 8(기술 스택), 11(API 엔드포인트), 12(데이터 스키마)는 더 이상 유효하지 않습니다.
+> 현재 아키텍처: Electron + React + Pixi.js + Claude CLI (IPC 기반). 최신 정보는 CLAUDE.md를 참조하세요.
+
 > 날짜: 2026-02-24 | 상태: Claude Code 개발용 확정 스펙
 
 ---

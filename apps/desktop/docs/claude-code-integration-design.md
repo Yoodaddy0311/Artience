@@ -1,5 +1,8 @@
 # Dokba Studio - Claude Code 통합 플랫폼 설계서
 
+> **구현 상태 (2026-03-25)**: Claude Code 200% 활용 체크리스트 ~70% 달성 (14/20).
+> Phase 0-2 핵심 기능 전체 완료. 미사용 CLI 플래그: --allowedTools, --verbose, --add-dir, --chrome, --max-budget-usd, --json-schema
+
 > 작성일: 2026-03-01
 > 상태: Draft
 

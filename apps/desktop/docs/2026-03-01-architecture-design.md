@@ -1,5 +1,8 @@
 # Artience Desktop -- Multi-Terminal + CTO + Mail Integration Architecture Design
 
+> **✅ Phase 1-3 전체 완료 (2026-03-25 검증)**: 멀티터미널, 상태 시각화, 메일박스 모두 구현됨.
+> 일부 Deprecation 항목 (AssetInbox→MailInbox 전환, agent-runtime 병합) 부분 진행.
+
 > Date: 2026-03-01
 > Project: apps/desktop (Electron + React 19 + Zustand + Pixi.js)
 

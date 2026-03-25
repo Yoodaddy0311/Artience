@@ -51,7 +51,7 @@ const ALLOWED_HOSTS = new Set([
   '127.0.0.1',
   '::1',
   '[::1]', // URL-parsed form of IPv6 localhost
-  'artibot-swarm-249539591811.asia-northeast3.run.app',
+  'localhost',
 ]);
 
 // Allow extending the allowlist via environment variable (comma-separated)
@@ -138,7 +138,7 @@ function resolveServerUrl(config) {
   return (
     process.env.ARTIBOT_SWARM_SERVER ||
     config?.serverUrl ||
-    'https://artibot-swarm-249539591811.asia-northeast3.run.app'
+    'http://localhost'
   );
 }
 
