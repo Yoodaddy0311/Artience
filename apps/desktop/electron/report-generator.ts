@@ -3,6 +3,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { formatDurationKo as formatDuration } from '../src/lib/format-utils';
+import { collectGitInfo as collectGitInfoShared } from './git-utils';
 
 const execFileAsync = promisify(execFile);
 
@@ -296,52 +297,7 @@ ${changedFilesTable}${testSection}${snippetSection}${mermaidSection}`;
         commitHash?: string;
         diffStats?: { file: string; additions: number; deletions: number }[];
     }> {
-        try {
-            const [branchRes, hashRes] = await Promise.all([
-                execFileAsync('git', ['branch', '--show-current'], {
-                    cwd: projectDir,
-                }),
-                execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
-                    cwd: projectDir,
-                }),
-            ]);
-
-            const branch = branchRes.stdout.trim();
-            const commitHash = hashRes.stdout.trim();
-
-            let diffStats: {
-                file: string;
-                additions: number;
-                deletions: number;
-            }[] = [];
-            try {
-                const diffRes = await execFileAsync(
-                    'git',
-                    ['diff', '--numstat', 'HEAD~1'],
-                    { cwd: projectDir },
-                );
-                diffStats = diffRes.stdout
-                    .trim()
-                    .split('\n')
-                    .filter((line) => line.trim())
-                    .map((line) => {
-                        const [add, del, file] = line.split('\t');
-                        return {
-                            file: file || '',
-                            additions: parseInt(add, 10) || 0,
-                            deletions: parseInt(del, 10) || 0,
-                        };
-                    })
-                    .filter((s) => s.file);
-            } catch {
-                // initial commit — no HEAD~1, return empty diffStats
-                diffStats = [];
-            }
-
-            return { branch, commitHash, diffStats };
-        } catch {
-            return {};
-        }
+        return collectGitInfoShared(projectDir);
     }
 }
 

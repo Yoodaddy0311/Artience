@@ -93,6 +93,7 @@ import { agentMetrics } from './agent-metrics';
 import { retroGenerator } from './retro-generator';
 import { teamTemplateManager } from './team-template';
 import { messengerBridge } from './messenger-bridge';
+import { collectGitInfo } from './git-utils';
 import { taskScheduler, type EnqueueInput } from './task-scheduler';
 import { agentP2P, type P2PMessage } from './agent-p2p';
 import {
@@ -1403,47 +1404,13 @@ ipcMain.handle(
     }> => {
         const dir = cwd || getProjectDir();
         try {
-            const [branchRes, hashRes] = await Promise.all([
-                execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-                    cwd: dir,
-                }),
-                execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
-                    cwd: dir,
-                }),
-            ]);
-
-            const branch = branchRes.stdout.trim();
-            const commitHash = hashRes.stdout.trim();
-
-            let diffStats: {
-                file: string;
-                additions: number;
-                deletions: number;
-            }[] = [];
-            try {
-                const diffRes = await execFileAsync(
-                    'git',
-                    ['diff', '--numstat', 'HEAD~1'],
-                    { cwd: dir },
-                );
-                diffStats = diffRes.stdout
-                    .trim()
-                    .split('\n')
-                    .filter((line) => line.trim())
-                    .map((line) => {
-                        const [add, del, file] = line.split('\t');
-                        return {
-                            file: file || '',
-                            additions: parseInt(add, 10) || 0,
-                            deletions: parseInt(del, 10) || 0,
-                        };
-                    })
-                    .filter((s) => s.file);
-            } catch {
-                // initial commit — no HEAD~1, return empty diffStats
-            }
-
-            return { success: true, branch, commitHash, diffStats };
+            const info = await collectGitInfo(dir);
+            return {
+                success: true,
+                branch: info.branch,
+                commitHash: info.commitHash,
+                diffStats: info.diffStats,
+            };
         } catch (err: any) {
             return {
                 success: false,
