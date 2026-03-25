@@ -73,6 +73,9 @@ const LevelProgress = React.lazy(() =>
 const ToastContainer = React.lazy(() =>
     import('../ui/Toast').then((m) => ({ default: m.ToastContainer })),
 );
+const PartyFrame = React.lazy(() =>
+    import('../party/PartyFrame').then((m) => ({ default: m.PartyFrame })),
+);
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
 import { useTerminalStore } from '../../store/useTerminalStore';
@@ -535,6 +538,11 @@ export const MainLayout: React.FC = () => {
                                             )}
                                         </button>
                                     </div>
+
+                                    {/* Party Frame (WoW-style agent status) */}
+                                    <Suspense fallback={null}>
+                                        <PartyFrame />
+                                    </Suspense>
                                 </div>
 
                                 {/* Top-Right Controls */}
