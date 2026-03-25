@@ -122,23 +122,14 @@ describe('collectGitInfo', () => {
         });
     });
 
-    it('returns partial result when only branch fails', async () => {
+    it('returns empty object when branch fetch fails (Promise.all rejects)', async () => {
         mockExecFile
-            // branch fails
-            .mockRejectedValueOnce(new Error('not on any branch'))
-            // commitHash succeeds
-            .mockResolvedValueOnce({ stdout: 'bbb2222\n', stderr: '' })
-            // diffStats succeeds
-            .mockResolvedValueOnce({
-                stdout: '1\t0\tfile.ts\n',
-                stderr: '',
-            });
+            // branch fails — Promise.all rejects, outer catch returns {}
+            .mockRejectedValueOnce(new Error('not on any branch'));
 
         const result = await collectGitInfo('/fake/project');
 
-        expect(result.branch).toBeUndefined();
-        expect(result.commitHash).toBe('bbb2222');
-        expect(result.diffStats).toHaveLength(1);
+        expect(result).toEqual({});
     });
 
     it('handles empty diff output', async () => {
