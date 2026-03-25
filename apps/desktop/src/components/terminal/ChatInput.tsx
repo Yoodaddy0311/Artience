@@ -581,11 +581,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
             useTerminalStore.getState().addInputHistory(tabId, trimmed);
         } else {
-            // Build final message: text + attachment paths
+            // Build final message: text + attachment paths (single line to avoid ink TUI newline issues)
             let message = trimmed;
             if (paths.length > 0) {
-                const pathList = paths.join('\n');
-                message = message ? `${message}\n\n${pathList}` : pathList;
+                const pathList = paths.join(' ');
+                message = message ? `${message} ${pathList}` : pathList;
             }
 
             if (message) {
