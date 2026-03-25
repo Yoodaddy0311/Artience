@@ -73,6 +73,8 @@ import {
     parsePtyChunk,
     detectActivity,
     summarizeEvents,
+    stripAnsi,
+    isNoiseLine,
     type ParsedEvent,
     type AgentActivity,
 } from '../src/lib/pty-parser';
@@ -109,6 +111,26 @@ import {
     type McpBridge,
 } from './mcp-artience-server';
 import { createAuthStatusCache } from './auth-status-cache';
+
+/** PTY noise patterns to filter from mail report bodies */
+const REPORT_NOISE_RE =
+    /(?:Percolating\.{3}|esc to interrupt|ctrl\+t to show tasks|\[\?2026[hl\]]|⎿|⏺|❯|\u276F)/gi;
+
+/** Clean raw text for use in mail report body: strip ANSI, filter noise lines */
+function cleanReportBody(raw: string): string {
+    const stripped = stripAnsi(raw);
+    return stripped
+        .split('\n')
+        .filter((line) => {
+            const t = line.trim();
+            if (!t) return false;
+            if (isNoiseLine(t)) return false;
+            if (REPORT_NOISE_RE.test(t)) return false;
+            return true;
+        })
+        .join('\n')
+        .trim();
+}
 
 // Dev 환경에서 Vite HMR을 위한 unsafe-eval 관련 보안 경고 무시
 if (!app.isPackaged) {
@@ -538,7 +560,7 @@ function processParsedEvents(
                     fromAgentId: agentLabel.toLowerCase(),
                     fromAgentName: agentLabel,
                     subject: '작업 완료 보고',
-                    body: summary.slice(0, 500),
+                    body: cleanReportBody(summary).slice(0, 500),
                     type: 'report' as const,
                     timestamp: Date.now(),
                 });
@@ -1041,7 +1063,7 @@ async function drainChat(
                     fromAgentId: agentId,
                     fromAgentName: resolveAgentName(agentName),
                     subject: '작업 실패',
-                    body: chunk.content.slice(0, 500),
+                    body: cleanReportBody(chunk.content).slice(0, 500),
                     type: 'error',
                     timestamp: Date.now(),
                 });
@@ -1056,7 +1078,7 @@ async function drainChat(
             fromAgentId: agentId,
             fromAgentName: resolveAgentName(agentName),
             subject: '작업 실패',
-            body: errorMsg.slice(0, 500),
+            body: cleanReportBody(errorMsg).slice(0, 500),
             type: 'error',
             timestamp: Date.now(),
         });
@@ -1069,7 +1091,7 @@ async function drainChat(
         fromAgentId: agentId,
         fromAgentName: resolveAgentName(agentName),
         subject: '작업 완료 보고',
-        body: fullText.slice(0, 500),
+        body: cleanReportBody(fullText).slice(0, 500),
         type: 'report',
         timestamp: Date.now(),
     });
@@ -1576,7 +1598,7 @@ const mcpBridge: McpBridge = {
                 fromAgentId: from,
                 fromAgentName: from,
                 subject,
-                body: body.slice(0, 500),
+                body: cleanReportBody(body).slice(0, 500),
                 type,
                 timestamp: Date.now(),
             });
@@ -2175,7 +2197,7 @@ ipcMain.handle(
                         fromAgentId: agentNameOrRecipeId.toLowerCase(),
                         fromAgentName: resolveAgentName(agentNameOrRecipeId),
                         subject: `작업 실패(${jobId})`,
-                        body: chunk.content.slice(0, 500),
+                        body: cleanReportBody(chunk.content).slice(0, 500),
                         type: 'error',
                         timestamp: Date.now(),
                     });
@@ -2190,7 +2212,7 @@ ipcMain.handle(
                 fromAgentId: agentNameOrRecipeId.toLowerCase(),
                 fromAgentName: resolveAgentName(agentNameOrRecipeId),
                 subject: `작업 실패(${jobId})`,
-                body: errorMsg.slice(0, 500),
+                body: cleanReportBody(errorMsg).slice(0, 500),
                 type: 'error',
                 timestamp: Date.now(),
             });
@@ -2228,7 +2250,7 @@ ipcMain.handle(
             fromAgentId: agentNameOrRecipeId.toLowerCase(),
             fromAgentName: resolveAgentName(agentNameOrRecipeId),
             subject: `작업 완료 보고(${jobId})`,
-            body: fullText.slice(0, 500),
+            body: cleanReportBody(fullText).slice(0, 500),
             type: 'report',
             timestamp: Date.now(),
         });
