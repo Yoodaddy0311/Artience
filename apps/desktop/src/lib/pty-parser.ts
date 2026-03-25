@@ -152,14 +152,22 @@ const ERROR_PATTERNS = [
  *  Matches Claude Code's team status bar, e.g. "@main @frontend-dev @planner · ↓ to expand" */
 const TEAM_MEMBER_RE = /@(\w[\w-]*)/g;
 
+/** Known false-positive @-prefixed tokens (JSDoc tags, TS decorators, etc.) */
+const EXCLUDED_AT_NAMES =
+    /^(param|returns?|type|typedef|example|see|throws|deprecated|override|Injectable|Controller|Component|Module|author|date|since|version|todo|fixme|link|inheritdoc|callback|template|property|enum|interface|readonly|private|protected|public)$/i;
+
+/** Email-like pattern: word@word.word — not a team mention */
+const EMAIL_RE = /\w@\w+\.\w+/;
+
 /** Multi-line team launch: "N agents launched" header followed by indented @name lines */
 const AGENTS_LAUNCHED_RE = /^\d+\s+agents?\s+launched/i;
 
 /** Single @name on an indented line (multi-line team output) */
 const INDENTED_AGENT_RE = /^\s+@(\w[\w-]*)/;
 
-/** Team dissolution patterns */
-const TEAM_SHUTDOWN_RE = /\bshutdown\b/i;
+/** Team dissolution patterns — must mention agents/team context, not just "shutdown" */
+const TEAM_SHUTDOWN_RE =
+    /(?:all\s+\d+\s+agents?\s+shut\s*down|team(?:mates?)?\s+shut\s*down|agents?\s+(?:shut\s*down|disbanded|terminated))/i;
 
 /** Tool result patterns — usually follow tool_use with output content */
 const TOOL_RESULT_PATTERNS = [
@@ -238,15 +246,21 @@ export function parsePtyChunk(rawData: string): ParsedEvent[] {
 
         // 0b. Single-line team detection: 2+ @name patterns on one line
         //     e.g. "@main @frontend-dev @planner · ↓ to expand"
-        const atMatches = [...trimmed.matchAll(TEAM_MEMBER_RE)];
-        if (atMatches.length >= 2) {
-            events.push({
-                type: 'team_update',
-                content: trimmed,
-                teamMembers: atMatches.map((m) => m[1]),
-                timestamp: now,
-            });
-            continue;
+        //     Skip lines containing email addresses (word@domain.tld)
+        if (!EMAIL_RE.test(trimmed)) {
+            const atMatches = [...trimmed.matchAll(TEAM_MEMBER_RE)];
+            const validNames = atMatches
+                .map((m) => m[1])
+                .filter((name) => !EXCLUDED_AT_NAMES.test(name));
+            if (validNames.length >= 2) {
+                events.push({
+                    type: 'team_update',
+                    content: trimmed,
+                    teamMembers: validNames,
+                    timestamp: now,
+                });
+                continue;
+            }
         }
 
         // 0c. Team shutdown detection

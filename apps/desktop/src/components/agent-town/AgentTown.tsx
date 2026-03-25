@@ -1389,9 +1389,8 @@ export const AgentTown: React.FC = () => {
                                 );
 
                                 if (inTeam && !wasInTeam) {
-                                    // 새로 팀에 합류: 보이게 + WORK ZONE으로 이동
-                                    agent.visible = true;
-                                    agent.visual.container.visible = true;
+                                    // 새로 팀에 합류: 상태 업데이트 + WORK ZONE으로 이동
+                                    // visibility는 ticker가 getVisibleWorldAgentIds()로 결정
                                     agent.state = 'IDLE';
                                     agent.visual.animState = 'idle';
                                     updateAnimalStateDot(
@@ -1404,9 +1403,7 @@ export const AgentTown: React.FC = () => {
                                     );
                                     pickDeskSeatDest(agent);
                                 } else if (!inTeam && wasInTeam) {
-                                    // 팀에서 제거: 숨김 + 상태 초기화
-                                    agent.visible = false;
-                                    agent.visual.container.visible = false;
+                                    // 팀에서 제거: 상태 초기화 (visibility는 ticker가 처리)
                                     agent.path = [];
                                     agent.state = 'IDLE';
                                     agent.visual.animState = 'idle';
