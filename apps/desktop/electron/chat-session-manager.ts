@@ -686,7 +686,10 @@ export class ChatSessionManager extends EventEmitter {
                 finish(err.message);
             };
 
-            const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+            const onExit = (
+                code: number | null,
+                signal: NodeJS.Signals | null,
+            ) => {
                 const reason =
                     code !== null
                         ? `Process exited with code ${code}`

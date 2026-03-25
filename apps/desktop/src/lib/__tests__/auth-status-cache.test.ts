@@ -3,8 +3,9 @@ import { createAuthStatusCache } from '../../../electron/auth-status-cache';
 
 describe('createAuthStatusCache', () => {
     it('dedupes inflight loads', async () => {
-        let resolveLoader: ((value: { authenticated: boolean }) => void) | null =
-            null;
+        let resolveLoader:
+            | ((value: { authenticated: boolean }) => void)
+            | null = null;
         const loader = vi.fn(
             () =>
                 new Promise<{ authenticated: boolean }>((resolve) => {

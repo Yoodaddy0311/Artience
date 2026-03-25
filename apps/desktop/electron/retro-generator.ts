@@ -5,7 +5,7 @@ import {
     type AgentMetrics,
     type TaskMetric,
 } from './agent-metrics';
-import { formatDuration } from './format-utils';
+import { formatDurationKo as formatDuration } from '../src/lib/format-utils';
 
 export interface RetroReport {
     period: 'daily' | 'weekly';

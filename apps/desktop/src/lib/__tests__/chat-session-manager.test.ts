@@ -176,8 +176,6 @@ describe('ChatSessionManager', () => {
 
         expect(mockState.spawnCalls).toHaveLength(2);
         expect(mockState.spawnCalls[1].args).toContain('--agents');
-        expect(mockState.spawnCalls[1].args).toContain(
-            '{"reviewer":true}',
-        );
+        expect(mockState.spawnCalls[1].args).toContain('{"reviewer":true}');
     });
 });

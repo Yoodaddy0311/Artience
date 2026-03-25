@@ -13,12 +13,10 @@ export function createAuthStatusCache(options: AuthStatusCacheOptions = {}) {
     const positiveTtlMs = options.positiveTtlMs ?? 60_000;
     const negativeTtlMs = options.negativeTtlMs ?? 10_000;
 
-    let cached:
-        | {
-              value: AuthStatusResult;
-              expiresAt: number;
-          }
-        | null = null;
+    let cached: {
+        value: AuthStatusResult;
+        expiresAt: number;
+    } | null = null;
     let inflight: Promise<AuthStatusResult> | null = null;
 
     return {

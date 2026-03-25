@@ -802,9 +802,7 @@ export const TerminalPanel: React.FC = () => {
             clearChatIdleTimer(agentId);
             const timer = setTimeout(() => {
                 useTerminalStore.getState().setAgentActivity(agentId, 'idle');
-                useTimelineStore
-                    .getState()
-                    .recordTransition(agentId, 'idle');
+                useTimelineStore.getState().recordTransition(agentId, 'idle');
                 chatIdleTimersRef.current.delete(agentId);
             }, 3000);
             chatIdleTimersRef.current.set(agentId, timer);

@@ -389,16 +389,13 @@ export const AgentTown: React.FC = () => {
                     rotation?: number,
                 ) => {
                     if (offsetX !== undefined && offsetY !== undefined) {
-                        useAppStore.getState().updateWorldObjectFull(
-                            id,
-                            col,
-                            row,
-                            {
+                        useAppStore
+                            .getState()
+                            .updateWorldObjectFull(id, col, row, {
                                 offsetX,
                                 offsetY,
                                 rotation,
-                            },
-                        );
+                            });
                     } else {
                         updateWorldObject(id, col, row);
                     }
@@ -1083,11 +1080,7 @@ export const AgentTown: React.FC = () => {
                                     } else {
                                         useAppStore
                                             .getState()
-                                            .updateWorldObject(
-                                                oid,
-                                                col,
-                                                row,
-                                            );
+                                            .updateWorldObject(oid, col, row);
                                     }
                                     useAppStore.getState().saveProject();
                                     refreshCollision();
@@ -1214,11 +1207,7 @@ export const AgentTown: React.FC = () => {
                                     } else {
                                         useAppStore
                                             .getState()
-                                            .updateWorldObject(
-                                                oid,
-                                                col,
-                                                row,
-                                            );
+                                            .updateWorldObject(oid, col, row);
                                     }
                                     useAppStore.getState().saveProject();
                                     refreshCollision();
@@ -1311,11 +1300,15 @@ export const AgentTown: React.FC = () => {
                     }
 
                     // Save to store
-                    state.updateWorldObjectProperties(id, {
-                        offsetX: ox,
-                        offsetY: oy,
-                        rotation: rot,
-                    }, { trackUndo: false });
+                    state.updateWorldObjectProperties(
+                        id,
+                        {
+                            offsetX: ox,
+                            offsetY: oy,
+                            rotation: rot,
+                        },
+                        { trackUndo: false },
+                    );
                     state.saveProject();
                 };
 

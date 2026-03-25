@@ -86,3 +86,8 @@ NVIDIA Corporation/
 test-results/
 playwright-report/
 blob-report/
+
+# -----------------------------------------------------------------------------
+# Claude Code local config
+# -----------------------------------------------------------------------------
+CLAUDE.local.md

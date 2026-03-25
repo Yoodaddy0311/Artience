@@ -16,16 +16,20 @@ describe('useAppStore undo controls', () => {
     it('skips undo snapshots for live world-property updates when requested', () => {
         const targetId = DEFAULT_PROJECT.world.layers.objects[0].id;
 
-        useAppStore.getState().updateWorldObjectProperties(
-            targetId,
-            { offsetX: 12 },
-            { trackUndo: false },
-        );
+        useAppStore
+            .getState()
+            .updateWorldObjectProperties(
+                targetId,
+                { offsetX: 12 },
+                { trackUndo: false },
+            );
 
         expect(useAppStore.getState().undoStack).toHaveLength(0);
         const target = useAppStore
             .getState()
-            .projectConfig.world.layers.objects.find((obj) => obj.id === targetId);
+            .projectConfig.world.layers.objects.find(
+                (obj) => obj.id === targetId,
+            );
         expect(target?.properties?.offsetX).toBe(12);
     });
 
@@ -40,7 +44,9 @@ describe('useAppStore undo controls', () => {
         expect(useAppStore.getState().undoStack).toHaveLength(1);
         const updated = useAppStore
             .getState()
-            .projectConfig.world.layers.objects.find((obj) => obj.id === target.id);
+            .projectConfig.world.layers.objects.find(
+                (obj) => obj.id === target.id,
+            );
         expect(updated?.x).toBe(10);
         expect(updated?.y).toBe(11);
         expect(updated?.properties?.offsetX).toBe(4);

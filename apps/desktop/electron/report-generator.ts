@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { formatDuration } from './format-utils';
+import { formatDurationKo as formatDuration } from '../src/lib/format-utils';
 
 const execFileAsync = promisify(execFile);
 

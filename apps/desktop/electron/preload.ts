@@ -19,8 +19,9 @@ try {
             getVersion: () => process.env.npm_package_version,
             markStartup: (name: string, detail?: string): void =>
                 ipcRenderer.send('app:startup-mark', name, detail),
-            getStartupMetrics: (): Promise<import('../src/lib/startup-metrics').StartupMetricsSnapshot> =>
-                ipcRenderer.invoke('app:get-startup-metrics'),
+            getStartupMetrics: (): Promise<
+                import('../src/lib/startup-metrics').StartupMetricsSnapshot
+            > => ipcRenderer.invoke('app:get-startup-metrics'),
         },
 
         // ── Terminal ──

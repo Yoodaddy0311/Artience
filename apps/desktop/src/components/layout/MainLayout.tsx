@@ -451,7 +451,9 @@ export const MainLayout: React.FC = () => {
                                             </div>
                                         }
                                     >
-                                        {studioTab === 'inbox' && <AssetInbox />}
+                                        {studioTab === 'inbox' && (
+                                            <AssetInbox />
+                                        )}
                                         {studioTab === 'builder' && (
                                             <AssetsPanel />
                                         )}
