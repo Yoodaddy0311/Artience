@@ -146,10 +146,10 @@ describe('uploadWeights()', () => {
 
   it('uses ARTIBOT_SWARM_SERVER env var when set', async () => {
     // Use the default allowed host to test env var override
-    process.env.ARTIBOT_SWARM_SERVER = 'https://artibot-swarm-249539591811.asia-northeast3.run.app';
+    process.env.ARTIBOT_SWARM_SERVER = 'https://localhost';
     await uploadWeights({ tools: {} }, {});
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('artibot-swarm-249539591811.asia-northeast3.run.app'),
+      expect.stringContaining('localhost'),
       expect.anything(),
     );
     delete process.env.ARTIBOT_SWARM_SERVER;
@@ -379,8 +379,8 @@ describe('SSRF Protection - validateUrl()', () => {
   });
 
   it('allows the default swarm server host', () => {
-    const url = validateUrl('https://artibot-swarm-249539591811.asia-northeast3.run.app/api/v1/weights');
-    expect(url.hostname).toBe('artibot-swarm-249539591811.asia-northeast3.run.app');
+    const url = validateUrl('https://localhost/api/v1/weights');
+    expect(url.hostname).toBe('localhost');
   });
 
   it('blocks hosts not in the allowlist', () => {
@@ -409,7 +409,7 @@ describe('SSRF Protection - validateUrl()', () => {
     expect(ALLOWED_HOSTS.has('localhost')).toBe(true);
     expect(ALLOWED_HOSTS.has('127.0.0.1')).toBe(true);
     expect(ALLOWED_HOSTS.has('::1')).toBe(true);
-    expect(ALLOWED_HOSTS.has('artibot-swarm-249539591811.asia-northeast3.run.app')).toBe(true);
+    expect(ALLOWED_HOSTS.has('localhost')).toBe(true);
   });
 });
 
