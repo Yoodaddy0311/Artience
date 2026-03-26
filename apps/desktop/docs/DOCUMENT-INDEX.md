@@ -29,6 +29,7 @@
 | Character Growth        | `docs/DESIGN-CHARACTER-GROWTH.md`        | -    | Design spec  |
 | Character Memory        | `docs/DESIGN-CHARACTER-MEMORY.md`        | -    | Design spec  |
 | Job System              | `docs/DESIGN-JOB-SYSTEM.md`              | -    | Design spec  |
+| Team Meeting Flow       | `docs/DESIGN-TEAM-MEETING-FLOW.md`       | -    | Planning note |
 | Claude Code Integration | `docs/claude-code-integration-design.md` | -    | Design spec  |
 | Chat PTY Architecture   | `docs/chat-pty-architecture.md`          | -    | Architecture |
 
