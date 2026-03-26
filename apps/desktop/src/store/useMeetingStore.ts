@@ -5,6 +5,7 @@
  */
 
 import { create } from 'zustand';
+import type { AgentActivity } from '../lib/pty-parser';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,11 +35,20 @@ export interface Meeting {
     createdAt: number;
 }
 
+export interface PendingMeetingDelegation {
+    routedAgentId: string;
+    routedAgentName: string;
+    taskMessage: string;
+    initiatorAgentId?: string | null;
+    targetActivity: AgentActivity;
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────
 
 interface MeetingState {
     meetings: Meeting[];
     activeMeetingId: string | null;
+    pendingDelegations: Record<string, PendingMeetingDelegation>;
 
     addMeeting: (meeting: Meeting) => void;
     updateMeeting: (meetingId: string, updates: Partial<Meeting>) => void;
@@ -55,15 +65,25 @@ interface MeetingState {
     ) => void;
     setActiveMeetingId: (id: string | null) => void;
     removeMeeting: (meetingId: string) => void;
+    queuePendingDelegation: (
+        meetingId: string,
+        delegation: PendingMeetingDelegation,
+    ) => void;
+    clearPendingDelegation: (meetingId: string) => void;
 }
 
 export const useMeetingStore = create<MeetingState>((set) => ({
     meetings: [],
     activeMeetingId: null,
+    pendingDelegations: {},
 
     addMeeting: (meeting) =>
         set((state) => ({
-            meetings: [...state.meetings, meeting],
+            meetings: state.meetings.some((entry) => entry.id === meeting.id)
+                ? state.meetings.map((entry) =>
+                      entry.id === meeting.id ? { ...entry, ...meeting } : entry,
+                  )
+                : [...state.meetings, meeting],
         })),
 
     updateMeeting: (meetingId, updates) =>
@@ -117,5 +137,27 @@ export const useMeetingStore = create<MeetingState>((set) => ({
                 state.activeMeetingId === meetingId
                     ? null
                     : state.activeMeetingId,
+            pendingDelegations: Object.fromEntries(
+                Object.entries(state.pendingDelegations).filter(
+                    ([id]) => id !== meetingId,
+                ),
+            ),
+        })),
+
+    queuePendingDelegation: (meetingId, delegation) =>
+        set((state) => ({
+            pendingDelegations: {
+                ...state.pendingDelegations,
+                [meetingId]: delegation,
+            },
+        })),
+
+    clearPendingDelegation: (meetingId) =>
+        set((state) => ({
+            pendingDelegations: Object.fromEntries(
+                Object.entries(state.pendingDelegations).filter(
+                    ([id]) => id !== meetingId,
+                ),
+            ),
         })),
 }));

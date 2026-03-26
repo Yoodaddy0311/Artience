@@ -490,7 +490,11 @@ try {
                 cwd?: string,
                 seedTask?: string,
                 preferredAgents?: string[],
-            ): Promise<{ success: boolean; error?: string }> =>
+            ): Promise<{
+                success: boolean;
+                teamMembers?: string[];
+                error?: string;
+            }> =>
                 ipcRenderer.invoke(
                     'agent:create-team',
                     cwd,

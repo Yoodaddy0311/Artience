@@ -16,6 +16,7 @@ import {
     getVisibleWorldAgentIds,
     useTerminalStore,
 } from '../../store/useTerminalStore';
+import { useMeetingStore } from '../../store/useMeetingStore';
 import { processActivityChange } from '../../lib/growth-bridge';
 
 // Isometric coordinate system
@@ -231,6 +232,7 @@ export const AgentTown: React.FC = () => {
         const buildingSpritesMap = new Map<string, PIXI.Container>();
         let canvasElRef: HTMLCanvasElement | null = null;
         let unsubTerminal: (() => void) | null = null;
+        let unsubMeeting: (() => void) | null = null;
         let unsubApp: (() => void) | null = null;
 
         const setSelectedBuilding = (id: string | null) => {
@@ -758,6 +760,42 @@ export const AgentTown: React.FC = () => {
                         seat.y,
                     );
                     agent.path = path;
+                };
+
+                const isAgentInZone = (
+                    agent: IsoAgent,
+                    zone: ZoneType,
+                ): boolean => {
+                    const cells = getZoneCellsCached(zone);
+                    return cells.some(
+                        (cell) =>
+                            cell.x === agent.gridX && cell.y === agent.gridY,
+                    );
+                };
+
+                const getActiveMeetingParticipantIds = (
+                    meetingState = useMeetingStore.getState(),
+                ): Set<string> => {
+                    const activeMeeting = meetingState.activeMeetingId
+                        ? meetingState.meetings.find(
+                              (meeting) =>
+                                  meeting.id === meetingState.activeMeetingId,
+                          )
+                        : null;
+
+                    if (
+                        !activeMeeting ||
+                        (activeMeeting.status !== 'waiting' &&
+                            activeMeeting.status !== 'in_progress')
+                    ) {
+                        return new Set<string>();
+                    }
+
+                    return new Set(
+                        activeMeeting.participants.map(
+                            (participant) => participant.agentId,
+                        ),
+                    );
                 };
 
                 // ── Helper: get bubble text for activity, with optional tool-specific text ──
@@ -1393,6 +1431,8 @@ export const AgentTown: React.FC = () => {
                                 if (inTeam && !wasInTeam) {
                                     // 새로 팀에 합류: 상태 업데이트 + WORK ZONE으로 이동
                                     // visibility는 ticker가 getVisibleWorldAgentIds()로 결정
+                                    const meetingParticipants =
+                                        getActiveMeetingParticipantIds();
                                     agent.state = 'IDLE';
                                     agent.visual.animState = 'idle';
                                     updateAnimalStateDot(
@@ -1403,7 +1443,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('team_join'),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (meetingParticipants.has(agent.id)) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                 } else if (!inTeam && wasInTeam) {
                                     // 팀에서 제거: 상태 초기화 (visibility는 ticker가 처리)
                                     agent.path = [];
@@ -1483,6 +1527,8 @@ export const AgentTown: React.FC = () => {
 
                             const agent = isoAgentMap.get(agentId);
                             if (!agent || agent.id === 'cto') continue;
+                            const isInActiveMeeting =
+                                getActiveMeetingParticipantIds().has(agentId);
 
                             // 활동 상태 변경 시 idle 디바운스 리셋
                             if (activity !== 'idle') {
@@ -1502,7 +1548,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('thinking'),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (isInActiveMeeting) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                     break;
                                 case 'working': {
                                     agent.state = 'RUNNING';
@@ -1522,7 +1572,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('working', lastToolName),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (isInActiveMeeting) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                     break;
                                 }
                                 case 'needs_input': {
@@ -1537,7 +1591,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('needs_input'),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (isInActiveMeeting) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                     break;
                                 }
                                 case 'reading': {
@@ -1579,7 +1637,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('typing', lastToolName),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (isInActiveMeeting) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                     break;
                                 }
                                 case 'writing': {
@@ -1600,7 +1662,11 @@ export const AgentTown: React.FC = () => {
                                         agent.visual as AnimalVisual,
                                         getBubbleText('writing', lastToolName),
                                     );
-                                    pickDeskSeatDest(agent);
+                                    if (isInActiveMeeting) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    } else {
+                                        pickDeskSeatDest(agent);
+                                    }
                                     break;
                                 }
                                 case 'success': {
@@ -1696,6 +1762,69 @@ export const AgentTown: React.FC = () => {
                 // ══════════════════════════════════════════════════════
                 // ── Animation Loop ──
                 // ══════════════════════════════════════════════════════
+                unsubMeeting = useMeetingStore.subscribe(
+                    (state, prevState) => {
+                        const currentParticipants =
+                            getActiveMeetingParticipantIds(state);
+                        const previousParticipants =
+                            getActiveMeetingParticipantIds(prevState);
+
+                        if (
+                            currentParticipants.size ===
+                                previousParticipants.size &&
+                            [...currentParticipants].every((agentId) =>
+                                previousParticipants.has(agentId),
+                            )
+                        ) {
+                            return;
+                        }
+
+                        for (const agent of isoAgents) {
+                            if (agent.id === 'raccoon' || agent.id === 'cto') {
+                                continue;
+                            }
+
+                            const isMeetingParticipant =
+                                currentParticipants.has(agent.id);
+                            const wasMeetingParticipant =
+                                previousParticipants.has(agent.id);
+
+                            if (isMeetingParticipant && !wasMeetingParticipant) {
+                                showAnimalBubble(
+                                    agent.visual as AnimalVisual,
+                                    '🗣️ 회의 중',
+                                );
+                                pickIsoZoneDest(agent, 'meeting');
+                                continue;
+                            }
+
+                            if (
+                                !isMeetingParticipant &&
+                                wasMeetingParticipant &&
+                                isAgentInZone(agent, 'meeting')
+                            ) {
+                                const activity =
+                                    useTerminalStore.getState().agentActivity[
+                                        agent.id
+                                    ];
+                                showAnimalBubble(
+                                    agent.visual as AnimalVisual,
+                                    '✅ 회의 종료',
+                                );
+                                if (
+                                    activity === 'thinking' ||
+                                    activity === 'working' ||
+                                    activity === 'needs_input' ||
+                                    activity === 'typing' ||
+                                    activity === 'writing'
+                                ) {
+                                    pickDeskSeatDest(agent);
+                                }
+                            }
+                        }
+                    },
+                );
+
                 app.ticker.add(() => {
                     const now = Date.now();
 
@@ -1967,7 +2096,15 @@ export const AgentTown: React.FC = () => {
                             const pauseFrames = 120 + Math.random() * 180;
                             if (agent.pauseTimer >= pauseFrames) {
                                 agent.pauseTimer = 0;
-                                if (
+                                const isMeetingParticipant =
+                                    getActiveMeetingParticipantIds().has(
+                                        agent.id,
+                                    );
+                                if (isMeetingParticipant) {
+                                    if (!isAgentInZone(agent, 'meeting')) {
+                                        pickIsoZoneDest(agent, 'meeting');
+                                    }
+                                } else if (
                                     agent.state === 'IDLE' ||
                                     agent.state === 'WALK' ||
                                     agent.state === 'SLEEPING'
@@ -2071,6 +2208,10 @@ export const AgentTown: React.FC = () => {
             if (unsubTerminal) {
                 unsubTerminal();
                 unsubTerminal = null;
+            }
+            if (unsubMeeting) {
+                unsubMeeting();
+                unsubMeeting = null;
             }
             if (unsubApp) {
                 unsubApp();

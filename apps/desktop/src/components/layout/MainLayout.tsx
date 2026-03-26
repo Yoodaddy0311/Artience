@@ -76,10 +76,14 @@ const ToastContainer = React.lazy(() =>
 const PartyFrame = React.lazy(() =>
     import('../party/PartyFrame').then((m) => ({ default: m.PartyFrame })),
 );
+const MeetingView = React.lazy(() =>
+    import('../meeting/MeetingView').then((m) => ({ default: m.default })),
+);
 import { useAppStore } from '../../store/useAppStore';
 import { useMailStore } from '../../store/useMailStore';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useGrowthStore } from '../../store/useGrowthStore';
+import { useMeetingStore } from '../../store/useMeetingStore';
 const LevelUpNotification = React.lazy(() =>
     import('../growth').then((m) => ({ default: m.LevelUpNotification })),
 );
@@ -260,6 +264,8 @@ export const MainLayout: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [showDeferredTown, setShowDeferredTown] = useState(false);
     const [showDeferredDock, setShowDeferredDock] = useState(false);
+    const activeMeetingId = useMeetingStore((s) => s.activeMeetingId);
+    const setActiveMeetingId = useMeetingStore((s) => s.setActiveMeetingId);
     const isInboxOpen = useMailStore((s) => s.isInboxOpen);
     const toggleInbox = useMailStore((s) => s.toggleInbox);
     const mailUnreadCount = useMailStore((s) => s.unreadCount);
@@ -277,6 +283,114 @@ export const MainLayout: React.FC = () => {
             unsub();
         };
     }, []);
+
+    useEffect(() => {
+        const api = window.dogbaApi?.meeting;
+        if (!api) return;
+
+        const unsubRound = api.onRoundUpdate((meetingId, round) => {
+            const store = useMeetingStore.getState();
+            const existingRound = store.meetings
+                .find((meeting) => meeting.id === meetingId)
+                ?.rounds.find(
+                    (entry) => entry.roundNumber === round.roundNumber,
+                );
+
+            if (!existingRound) {
+                store.addRound(meetingId, round);
+                return;
+            }
+
+            store.setConsensus(meetingId, round.roundNumber, round.consensus);
+            for (const opinion of round.opinions || []) {
+                const exists = existingRound.opinions.some(
+                    (entry) => entry.agentId === opinion.agentId,
+                );
+                if (!exists) {
+                    store.addOpinion(meetingId, round.roundNumber, opinion);
+                }
+            }
+        });
+
+        const unsubEnd = api.onMeetingEnd(async (meetingId, result) => {
+            const meetingStore = useMeetingStore.getState();
+            meetingStore.updateMeeting(meetingId, {
+                status: result.status || 'completed',
+            });
+
+            const pending = meetingStore.pendingDelegations[meetingId];
+            if (!pending) {
+                return;
+            }
+
+            meetingStore.clearPendingDelegation(meetingId);
+
+            if (
+                result.status !== 'completed' ||
+                result.finalConsensus !== 'approved'
+            ) {
+                addToast({
+                    type: 'info',
+                    message:
+                        '회의 결과가 보류되어 작업 배정을 시작하지 않았습니다.',
+                });
+                return;
+            }
+
+            const agentApi = window.dogbaApi?.agent;
+            if (!agentApi) {
+                addToast({
+                    type: 'error',
+                    message:
+                        '회의는 끝났지만 에이전트 API가 없어 작업을 넘기지 못했습니다.',
+                });
+                return;
+            }
+
+            const terminalStore = useTerminalStore.getState();
+            if (pending.initiatorAgentId) {
+                terminalStore.hintAgentActivity(
+                    pending.initiatorAgentId,
+                    'thinking',
+                    1800,
+                );
+            }
+            terminalStore.hintAgentActivity(
+                pending.routedAgentId,
+                pending.targetActivity,
+                3200,
+            );
+
+            const delegateResult = await agentApi.delegateTask(
+                pending.routedAgentName,
+                pending.taskMessage,
+            );
+            if (!delegateResult.success) {
+                terminalStore.hintAgentActivity(
+                    pending.routedAgentId,
+                    'error',
+                    1500,
+                );
+                addToast({
+                    type: 'error',
+                    message:
+                        delegateResult.error ||
+                        '회의 이후 작업 위임에 실패했습니다.',
+                });
+                return;
+            }
+
+            addToast({
+                type: 'success',
+                message: `${pending.routedAgentName}에게 회의 결과를 반영한 작업을 배정했습니다.`,
+            });
+        });
+
+        return () => {
+            unsubRound();
+            unsubEnd();
+        };
+    }, [addToast]);
 
     useEffect(() => {
         let cancelled = false;
@@ -543,6 +657,40 @@ export const MainLayout: React.FC = () => {
                                     <Suspense fallback={null}>
                                         <PartyFrame />
                                     </Suspense>
+
+                                    {activeMeetingId && (
+                                        <div className="w-[360px] bg-[#1D2130]/95 text-white border-4 border-black shadow-[6px_6px_0_0_#000] rounded-2xl overflow-hidden">
+                                            <div className="flex items-center justify-between px-4 py-2 border-b-2 border-black bg-[#FFD100] text-black">
+                                                <span className="text-[12px] font-black uppercase tracking-wide">
+                                                    Team Meeting
+                                                </span>
+                                                <button
+                                                    onClick={() =>
+                                                        setActiveMeetingId(null)
+                                                    }
+                                                    className="w-7 h-7 rounded-md border-2 border-black bg-white text-[12px] font-black leading-none hover:-translate-y-0.5 transition-transform"
+                                                    aria-label="Close meeting panel"
+                                                >
+                                                    X
+                                                </button>
+                                            </div>
+                                            <div className="h-[280px]">
+                                                <Suspense
+                                                    fallback={
+                                                        <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white/60">
+                                                            Loading meeting...
+                                                        </div>
+                                                    }
+                                                >
+                                                    <MeetingView
+                                                        meetingId={
+                                                            activeMeetingId
+                                                        }
+                                                    />
+                                                </Suspense>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Top-Right Controls */}

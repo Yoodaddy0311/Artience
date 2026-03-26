@@ -31,6 +31,10 @@ export const TEAM_ROLE_TO_AGENT: Record<string, string> = {
     main: 'raccoon', // Dokba (CTO) — @main은 리더
 };
 
+for (const agent of DEFAULT_AGENTS) {
+    TEAM_ROLE_TO_AGENT[agent.name.toLowerCase()] = agent.id;
+}
+
 // All agent IDs from DEFAULT_AGENTS (for random fallback)
 const ALL_AGENT_IDS = DEFAULT_AGENTS.filter((a) => a.id !== 'cto').map(
     (a) => a.id,
@@ -74,6 +78,14 @@ export function resolveTeamMember(
 
     randomAssignments.set(normalized, agentId);
     return agentId;
+}
+
+/**
+ * Clear random assignments. Call when a team session ends
+ * so the next session starts with a fresh assignment pool.
+ */
+export function clearRandomAssignments(): void {
+    randomAssignments.clear();
 }
 
 /**

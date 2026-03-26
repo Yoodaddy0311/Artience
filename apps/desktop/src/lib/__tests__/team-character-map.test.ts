@@ -37,6 +37,13 @@ describe('team-character-map', () => {
         it('maps main to raccoon (CTO)', () => {
             expect(TEAM_ROLE_TO_AGENT['main']).toBe('raccoon');
         });
+
+        it('maps direct persona names to their canonical world agents', () => {
+            expect(TEAM_ROLE_TO_AGENT['sera']).toBe('a01');
+            expect(TEAM_ROLE_TO_AGENT['rio']).toBe('a02');
+            expect(TEAM_ROLE_TO_AGENT['luna']).toBe('a03');
+            expect(TEAM_ROLE_TO_AGENT['ara']).toBe('a05');
+        });
     });
 
     describe('resolveTeamMember', () => {

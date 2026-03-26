@@ -19,6 +19,8 @@ import { ChatInput } from './ChatInput';
 import type { ParsedEvent } from '../../lib/pty-parser';
 import type { ViewMode } from '../../store/useTerminalStore';
 import { useTimelineStore } from '../../store/useTimelineStore';
+import { useMeetingStore } from '../../store/useMeetingStore';
+import { resolveTeamMembers } from '../../lib/team-character-map';
 
 // ── 상대 시간 포맷 ──
 function relativeTime(ts: number): string {
@@ -583,34 +585,80 @@ export const TerminalPanel: React.FC = () => {
                         addToast({
                             type: 'error',
                             message:
-                                '작업을 전달할 대상 또는 내용이 비어 있습니다.',
+                                '??? ??? ?? ?? ??? ?? ????.',
                         });
                         return;
                     }
 
                     const agentApi = window.dogbaApi?.agent;
+                    const meetingApi = window.dogbaApi?.meeting;
                     const projectDir =
                         currentTab.cwd ||
                         useAppStore.getState().appSettings.projectDir;
                     if (!agentApi || !projectDir) {
                         addToast({
                             type: 'error',
-                            message: '대상 에이전트 세션을 열지 못했습니다.',
+                            message: '?? ???? ??? ?? ?????.',
                         });
                         return;
                     }
 
+                    const targetIntent =
+                        classifyAgentCommandIntent(taskMessage);
+                    const routedAgentName = getAgentDisplayName(routedAgentId);
+                    const delegateImmediately = async () => {
+                        state.ensureTeamAgent(routedAgentId, routedAgentName);
+                        state.initAgentState(routedAgentId);
+                        if (currentTab.agentId) {
+                            state.hintAgentActivity(
+                                currentTab.agentId,
+                                'thinking',
+                                2400,
+                            );
+                        }
+                        state.hintAgentActivity(
+                            routedAgentId,
+                            targetIntent.activity,
+                            2800,
+                        );
+
+                        const delegateResult = await agentApi.delegateTask(
+                            routedAgentName,
+                            taskMessage,
+                        );
+                        if (!delegateResult.success) {
+                            state.hintAgentActivity(
+                                routedAgentId,
+                                'error',
+                                1500,
+                            );
+                            addToast({
+                                type: 'error',
+                                message:
+                                    delegateResult.error ||
+                                    '?? ????? ??? ???? ?????.',
+                            });
+                            return false;
+                        }
+
+                        addToast({
+                            type: 'success',
+                            message: `${routedAgentName}?? ??? ??????.`,
+                        });
+                        return true;
+                    };
+
                     const teamResult = await agentApi.createTeam(
                         projectDir,
                         taskMessage,
-                        [getAgentDisplayName(routedAgentId)],
+                        [routedAgentName],
                     );
                     if (!teamResult.success) {
                         addToast({
                             type: 'error',
                             message:
                                 teamResult.error ||
-                                '? ?몄뀡???쒖옉?섏? 紐삵뻽?듬땲??',
+                                '? ??? ???? ?????.',
                         });
                         if (currentTab.agentId) {
                             state.hintAgentActivity(
@@ -622,43 +670,109 @@ export const TerminalPanel: React.FC = () => {
                         return;
                     }
 
-                    const targetIntent =
-                        classifyAgentCommandIntent(taskMessage);
-                    state.ensureTeamAgent(
-                        routedAgentId,
-                        getAgentDisplayName(routedAgentId),
+                    const teamMembers = teamResult.teamMembers ?? [];
+                    const meetingStore = useMeetingStore.getState();
+                    const resolvedTeamMembers = resolveTeamMembers(
+                        teamMembers,
+                        useTerminalStore.getState().dockAgents,
                     );
-                    state.initAgentState(routedAgentId);
+                    if (
+                        !meetingApi ||
+                        teamMembers.length < 2 ||
+                        Object.keys(resolvedTeamMembers).length < 2
+                    ) {
+                        await delegateImmediately();
+                        return;
+                    }
+
+                    const meetingTitle =
+                        taskMessage.length > 56
+                            ? `? ???: ${taskMessage.slice(0, 56)}...`
+                            : `? ???: ${taskMessage}`;
+                    const meetingResult = await meetingApi.create(
+                        meetingTitle,
+                        teamMembers,
+                    );
+                    if (!meetingResult.success || !meetingResult.meetingId) {
+                        addToast({
+                            type: 'info',
+                            message:
+                                '? ??? ?? ?? ?? ?? ???? ?????.',
+                        });
+                        await delegateImmediately();
+                        return;
+                    }
+
+                    const meetingId = meetingResult.meetingId as string;
+                    const meetingParticipants: Array<{
+                        agentId: string;
+                        agentName: string;
+                    }> = Object.entries(
+                        resolvedTeamMembers,
+                    ).map(([memberName, worldAgentId]) => ({
+                        agentId: worldAgentId,
+                        agentName:
+                            memberName.charAt(0).toUpperCase() +
+                            memberName.slice(1),
+                    }));
+
+                    meetingStore.addMeeting({
+                        id: meetingId,
+                        topic: meetingTitle,
+                        participants: meetingParticipants,
+                        rounds: [],
+                        status: 'waiting',
+                        createdAt: Date.now(),
+                    });
+                    meetingStore.setActiveMeetingId(meetingId);
+                    meetingStore.queuePendingDelegation(meetingId, {
+                        routedAgentId,
+                        routedAgentName,
+                        taskMessage,
+                        initiatorAgentId: currentTab.agentId ?? null,
+                        targetActivity: targetIntent.activity,
+                    });
+
+                    state.setActiveTeamMembers(teamMembers);
+                    for (const participant of meetingParticipants) {
+                        state.initAgentState(participant.agentId);
+                        state.hintAgentActivity(
+                            participant.agentId,
+                            'reading',
+                            4200,
+                        );
+                    }
                     if (currentTab.agentId) {
                         state.hintAgentActivity(
                             currentTab.agentId,
                             'thinking',
-                            2400,
+                            3200,
                         );
                     }
-                    state.hintAgentActivity(
-                        routedAgentId,
-                        targetIntent.activity,
-                        2800,
-                    );
 
-                    const delegateResult = await agentApi.delegateTask(
-                        getAgentDisplayName(routedAgentId),
-                        taskMessage,
-                    );
-                    if (!delegateResult.success) {
-                        state.hintAgentActivity(routedAgentId, 'error', 1500);
-                        addToast({
-                            type: 'error',
-                            message:
-                                delegateResult.error ||
-                                '????먯씠?꾪듃 ?꾩엫??諛곗젙?섏? 紐삵뻽?듬땲??',
+                    const meetingStartResult = await meetingApi.start(meetingId);
+                    if (!meetingStartResult.success) {
+                        meetingStore.clearPendingDelegation(meetingId);
+                        meetingStore.updateMeeting(meetingId, {
+                            status: 'cancelled',
                         });
+                        meetingStore.setActiveMeetingId(null);
+                        addToast({
+                            type: 'info',
+                            message:
+                                '? ?? ??? ??? ?? ?? ???? ?????.',
+                        });
+                        await delegateImmediately();
                         return;
                     }
+
+                    meetingStore.updateMeeting(meetingId, {
+                        status: 'in_progress',
+                    });
                     addToast({
-                        type: 'success',
-                        message: `${getAgentDisplayName(routedAgentId)}에게 작업을 전달했습니다.`,
+                        type: 'info',
+                        message:
+                            '?? ???? ?? ?? ??? ???? ????.',
                     });
                     return;
                 }

@@ -32,19 +32,6 @@ interface AgentConfig {
 const CTO_AGENT_ID = 'raccoon';
 const CTO_AGENT_NAME = 'Dokba';
 
-// CTO 전용 시스템 프롬프트
-const CTO_SYSTEM_PROMPT = [
-    `너는 Dokba, 이 프로젝트의 CTO야. 팀원들에게 작업을 지시하고 결과를 관리해.`,
-    `사용 가능한 팀원: ${Object.entries(AGENT_PERSONAS)
-        .filter(([key]) => key !== 'dokba')
-        .map(([, p]) => `${p.role}`)
-        .join(', ')}`,
-    `유저가 특정 팀원에게 작업을 지시하면, 적절한 지시를 만들어서 해당 팀원에게 전달해.`,
-    `각 팀원의 작업 결과를 유저에게 보고해.`,
-    `한국어로 대화하고, 친근한 반말체를 사용해.`,
-    `답변은 간결하게 해줘.`,
-].join('\n');
-
 // ── CTO Controller ────────────────────────────────────────────────────────
 
 class CTOController {
@@ -88,7 +75,7 @@ class CTOController {
         cwd: string,
         seedTask?: string,
         preferredAgents?: string[],
-    ): Promise<{ success: boolean; error?: string }> {
+    ): Promise<{ success: boolean; teamMembers?: string[]; error?: string }> {
         if (!this.chatSessionManager) {
             return {
                 success: false,
@@ -109,7 +96,7 @@ class CTOController {
                 this.activeTeamAgents.includes(agentId),
             );
             if (canReuseCurrentTeam) {
-                return { success: true };
+                return { success: true, teamMembers: [...this.activeTeamAgents] };
             }
 
             this.closeTeamSession();
@@ -134,7 +121,7 @@ class CTOController {
             console.log(
                 `[CTOController] Team session created with ${Object.keys(agentsConfig).length} agents: ${selectedAgents.join(', ')}`,
             );
-            return { success: true };
+            return { success: true, teamMembers: [...selectedAgents] };
         } catch (err: any) {
             this.activeTeamAgents = [];
             console.error(
@@ -196,13 +183,6 @@ class CTOController {
             this.teamSessionActive &&
             (this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID) ?? false)
         );
-    }
-
-    /**
-     * Get the CTO system prompt (for writeSystemPrompt override if needed).
-     */
-    getCTOSystemPrompt(): string {
-        return CTO_SYSTEM_PROMPT;
     }
 }
 

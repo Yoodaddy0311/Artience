@@ -279,7 +279,11 @@ interface DogbaAgentApi {
         cwd?: string,
         seedTask?: string,
         preferredAgents?: string[],
-    ): Promise<{ success: boolean; error?: string }>;
+    ): Promise<{
+        success: boolean;
+        teamMembers?: string[];
+        error?: string;
+    }>;
     delegateTask(
         agentName: string,
         task: string,

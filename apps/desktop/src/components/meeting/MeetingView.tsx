@@ -6,7 +6,6 @@
  * 진행 중 라운드: pulse 애니메이션
  */
 
-import { useEffect } from 'react';
 import {
     useMeetingStore,
     type MeetingRound,
@@ -83,14 +82,13 @@ function RoundSection({
         CONSENSUS_STYLES[round.consensus] || CONSENSUS_STYLES.pending;
 
     return (
-        <div
-            className={`border border-white/10 rounded-lg p-4 ${
-                isActive ? 'animate-pulse' : ''
-            }`}
-        >
+        <div className="border border-white/10 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-white/80">
                     Round {round.roundNumber}
+                    {isActive && (
+                        <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse ml-2 align-middle" />
+                    )}
                 </h3>
                 <span
                     className={`text-xs px-3 py-1 rounded-full border ${consensusInfo.bg}`}
@@ -129,49 +127,6 @@ export default function MeetingView({ meetingId }: { meetingId: string }) {
     const meeting = useMeetingStore((s) =>
         s.meetings.find((m) => m.id === meetingId),
     );
-
-    // Subscribe to IPC events
-    useEffect(() => {
-        const api = window.dogbaApi?.meeting;
-        if (!api) return;
-
-        const unsubRound = api.onRoundUpdate((id, round) => {
-            if (id !== meetingId) return;
-            const store = useMeetingStore.getState();
-            const existing = store.meetings
-                .find((m) => m.id === id)
-                ?.rounds.find((r) => r.roundNumber === round.roundNumber);
-            if (existing) {
-                // Update consensus
-                if (round.consensus) {
-                    store.setConsensus(id, round.roundNumber, round.consensus);
-                }
-                // Add new opinions
-                for (const op of round.opinions || []) {
-                    const hasOp = existing.opinions.some(
-                        (o) => o.agentId === op.agentId,
-                    );
-                    if (!hasOp) {
-                        store.addOpinion(id, round.roundNumber, op);
-                    }
-                }
-            } else {
-                store.addRound(id, round);
-            }
-        });
-
-        const unsubEnd = api.onMeetingEnd((id, result) => {
-            if (id !== meetingId) return;
-            useMeetingStore.getState().updateMeeting(id, {
-                status: result.status || 'completed',
-            });
-        });
-
-        return () => {
-            unsubRound();
-            unsubEnd();
-        };
-    }, [meetingId]);
 
     if (!meeting) {
         return (
