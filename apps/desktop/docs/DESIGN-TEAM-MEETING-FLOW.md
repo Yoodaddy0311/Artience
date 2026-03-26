@@ -39,19 +39,19 @@ This is meant to feel like a real office simulation, not just a terminal wrapper
 
 - All active participants move to the meeting zone.
 - The meeting view should display:
-  - participants
-  - round timeline
-  - opinions
-  - current consensus
+    - participants
+    - round timeline
+    - opinions
+    - current consensus
 - World animation should make it visually obvious that the team is "in a meeting".
 
 ### Phase 4. Consensus
 
 - Meeting manager runs one or more rounds.
 - Consensus produces:
-  - final approach
-  - per-agent assignment
-  - optional review/cross-check plan
+    - final approach
+    - per-agent assignment
+    - optional review/cross-check plan
 
 ### Phase 5. Work execution
 
@@ -75,8 +75,8 @@ The current codebase already contains several pieces of this flow:
 - `MeetingView` exists and can render round-by-round opinion timelines.
 - `AgentTown` already has both meeting and work zones.
 - `AgentTown` can move agents to:
-  - meeting zone for `reading`
-  - work desks for `thinking`, `working`, `typing`, `writing`
+    - meeting zone for `reading`
+    - work desks for `thinking`, `working`, `typing`, `writing`
 - `activeTeamMembers` already exists as the current team roster model.
 
 In short: the building blocks are present.
@@ -117,16 +117,16 @@ The intended flow is **not** fully connected end-to-end yet.
 When this work resumes, implement in this order:
 
 1. Add explicit meeting activities/states.
-   - Example: `meeting_gathering`, `meeting_active`, `post_meeting_assignment`
+    - Example: `meeting_gathering`, `meeting_active`, `post_meeting_assignment`
 
 2. Change team summon behavior.
-   - New team members should go to the meeting zone first, not directly to desks.
+    - New team members should go to the meeting zone first, not directly to desks.
 
 3. Make meeting creation automatic for team tasks.
-   - Team task starts should call `meeting:create` and `meeting:start`.
+    - Team task starts should call `meeting:create` and `meeting:start`.
 
 4. Wire consensus output into assignments.
-   - Convert the final meeting result into per-agent task instructions.
+    - Convert the final meeting result into per-agent task instructions.
 
 5. Transition members from meeting zone to work zone only after consensus.
 
@@ -141,4 +141,3 @@ The office simulation should follow this rule:
 > Team work begins with a meeting, and desk work begins only after agreement.
 
 This should be treated as the canonical orchestration model for multi-agent collaboration.
-

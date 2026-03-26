@@ -584,8 +584,7 @@ export const TerminalPanel: React.FC = () => {
                     if (!routedAgentId || !taskMessage) {
                         addToast({
                             type: 'error',
-                            message:
-                                '??? ??? ?? ?? ??? ?? ????.',
+                            message: '??? ??? ?? ?? ??? ?? ????.',
                         });
                         return;
                     }
@@ -656,9 +655,7 @@ export const TerminalPanel: React.FC = () => {
                     if (!teamResult.success) {
                         addToast({
                             type: 'error',
-                            message:
-                                teamResult.error ||
-                                '? ??? ???? ?????.',
+                            message: teamResult.error || '? ??? ???? ?????.',
                         });
                         if (currentTab.agentId) {
                             state.hintAgentActivity(
@@ -696,8 +693,7 @@ export const TerminalPanel: React.FC = () => {
                     if (!meetingResult.success || !meetingResult.meetingId) {
                         addToast({
                             type: 'info',
-                            message:
-                                '? ??? ?? ?? ?? ?? ???? ?????.',
+                            message: '? ??? ?? ?? ?? ?? ???? ?????.',
                         });
                         await delegateImmediately();
                         return;
@@ -707,14 +703,14 @@ export const TerminalPanel: React.FC = () => {
                     const meetingParticipants: Array<{
                         agentId: string;
                         agentName: string;
-                    }> = Object.entries(
-                        resolvedTeamMembers,
-                    ).map(([memberName, worldAgentId]) => ({
-                        agentId: worldAgentId,
-                        agentName:
-                            memberName.charAt(0).toUpperCase() +
-                            memberName.slice(1),
-                    }));
+                    }> = Object.entries(resolvedTeamMembers).map(
+                        ([memberName, worldAgentId]) => ({
+                            agentId: worldAgentId,
+                            agentName:
+                                memberName.charAt(0).toUpperCase() +
+                                memberName.slice(1),
+                        }),
+                    );
 
                     meetingStore.addMeeting({
                         id: meetingId,
@@ -750,7 +746,8 @@ export const TerminalPanel: React.FC = () => {
                         );
                     }
 
-                    const meetingStartResult = await meetingApi.start(meetingId);
+                    const meetingStartResult =
+                        await meetingApi.start(meetingId);
                     if (!meetingStartResult.success) {
                         meetingStore.clearPendingDelegation(meetingId);
                         meetingStore.updateMeeting(meetingId, {
@@ -759,8 +756,7 @@ export const TerminalPanel: React.FC = () => {
                         meetingStore.setActiveMeetingId(null);
                         addToast({
                             type: 'info',
-                            message:
-                                '? ?? ??? ??? ?? ?? ???? ?????.',
+                            message: '? ?? ??? ??? ?? ?? ???? ?????.',
                         });
                         await delegateImmediately();
                         return;
@@ -771,8 +767,7 @@ export const TerminalPanel: React.FC = () => {
                     });
                     addToast({
                         type: 'info',
-                        message:
-                            '?? ???? ?? ?? ??? ???? ????.',
+                        message: '?? ???? ?? ?? ??? ???? ????.',
                     });
                     return;
                 }

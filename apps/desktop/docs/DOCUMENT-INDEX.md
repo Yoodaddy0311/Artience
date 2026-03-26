@@ -22,16 +22,16 @@
 
 ## Design Documents
 
-| Document                | Path                                     | Date | Status       |
-| ----------------------- | ---------------------------------------- | ---- | ------------ |
-| Affinity System         | `docs/DESIGN-AFFINITY-SYSTEM.md`         | -    | Design spec  |
-| Agent Heartbeat         | `docs/DESIGN-AGENT-HEARTBEAT.md`         | -    | Design spec  |
-| Character Growth        | `docs/DESIGN-CHARACTER-GROWTH.md`        | -    | Design spec  |
-| Character Memory        | `docs/DESIGN-CHARACTER-MEMORY.md`        | -    | Design spec  |
-| Job System              | `docs/DESIGN-JOB-SYSTEM.md`              | -    | Design spec  |
+| Document                | Path                                     | Date | Status        |
+| ----------------------- | ---------------------------------------- | ---- | ------------- |
+| Affinity System         | `docs/DESIGN-AFFINITY-SYSTEM.md`         | -    | Design spec   |
+| Agent Heartbeat         | `docs/DESIGN-AGENT-HEARTBEAT.md`         | -    | Design spec   |
+| Character Growth        | `docs/DESIGN-CHARACTER-GROWTH.md`        | -    | Design spec   |
+| Character Memory        | `docs/DESIGN-CHARACTER-MEMORY.md`        | -    | Design spec   |
+| Job System              | `docs/DESIGN-JOB-SYSTEM.md`              | -    | Design spec   |
 | Team Meeting Flow       | `docs/DESIGN-TEAM-MEETING-FLOW.md`       | -    | Planning note |
-| Claude Code Integration | `docs/claude-code-integration-design.md` | -    | Design spec  |
-| Chat PTY Architecture   | `docs/chat-pty-architecture.md`          | -    | Architecture |
+| Claude Code Integration | `docs/claude-code-integration-design.md` | -    | Design spec   |
+| Chat PTY Architecture   | `docs/chat-pty-architecture.md`          | -    | Architecture  |
 
 ## Art & Design Guides
 

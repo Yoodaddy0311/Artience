@@ -81,7 +81,9 @@ export const useMeetingStore = create<MeetingState>((set) => ({
         set((state) => ({
             meetings: state.meetings.some((entry) => entry.id === meeting.id)
                 ? state.meetings.map((entry) =>
-                      entry.id === meeting.id ? { ...entry, ...meeting } : entry,
+                      entry.id === meeting.id
+                          ? { ...entry, ...meeting }
+                          : entry,
                   )
                 : [...state.meetings, meeting],
         })),

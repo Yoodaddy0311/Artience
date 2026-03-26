@@ -96,7 +96,10 @@ class CTOController {
                 this.activeTeamAgents.includes(agentId),
             );
             if (canReuseCurrentTeam) {
-                return { success: true, teamMembers: [...this.activeTeamAgents] };
+                return {
+                    success: true,
+                    teamMembers: [...this.activeTeamAgents],
+                };
             }
 
             this.closeTeamSession();
