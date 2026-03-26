@@ -1117,6 +1117,98 @@ try {
                 ipcRenderer.invoke('affinity:resetPair', fromId, toId),
         },
 
+        // ── Job Runner ──
+        jobRunner: {
+            getDefinition: (jobId: string): Promise<any> =>
+                ipcRenderer.invoke('jobRunner:getDefinition', jobId),
+            getAllDefinitions: (): Promise<Record<string, any>> =>
+                ipcRenderer.invoke('jobRunner:getAllDefinitions'),
+            getDefinitionsByCategory: (category: string): Promise<any[]> =>
+                ipcRenderer.invoke(
+                    'jobRunner:getDefinitionsByCategory',
+                    category,
+                ),
+            saveDefinition: (definition: any): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('jobRunner:saveDefinition', definition),
+            deleteDefinition: (jobId: string): Promise<boolean> =>
+                ipcRenderer.invoke('jobRunner:deleteDefinition', jobId),
+            startRun: (
+                jobId: string,
+                inputs: Record<string, unknown>,
+            ): Promise<{ run: any; error?: string }> =>
+                ipcRenderer.invoke('jobRunner:startRun', jobId, inputs),
+            getActiveRun: (runId: string): Promise<any> =>
+                ipcRenderer.invoke('jobRunner:getActiveRun', runId),
+            getAllActiveRuns: (): Promise<any[]> =>
+                ipcRenderer.invoke('jobRunner:getAllActiveRuns'),
+            getRunProgress: (runId: string): Promise<any> =>
+                ipcRenderer.invoke('jobRunner:getRunProgress', runId),
+            cancelRun: (runId: string): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('jobRunner:cancelRun', runId),
+            getHistory: (limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('jobRunner:getHistory', limit),
+            getSettings: (): Promise<any> =>
+                ipcRenderer.invoke('jobRunner:getSettings'),
+            updateSettings: (settings: any): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('jobRunner:updateSettings', settings),
+            checkCanRun: (
+                jobId: string,
+                characterLevel: number,
+            ): Promise<{ canRun: boolean; reason?: string }> =>
+                ipcRenderer.invoke(
+                    'jobRunner:checkCanRun',
+                    jobId,
+                    characterLevel,
+                ),
+        },
+
+        // ── Heartbeat ──
+        heartbeat: {
+            start: (
+                agentId: string,
+            ): Promise<{ success: boolean; reason?: string }> =>
+                ipcRenderer.invoke('heartbeat:start', agentId),
+            stop: (agentId: string): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('heartbeat:stop', agentId),
+            stopAll: (): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('heartbeat:stopAll'),
+            getStatus: (
+                agentId: string,
+            ): Promise<'running' | 'idle' | 'disabled'> =>
+                ipcRenderer.invoke('heartbeat:getStatus', agentId),
+            runOnce: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('heartbeat:runOnce', agentId),
+            getConfig: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('heartbeat:getConfig', agentId),
+            setConfig: (
+                agentId: string,
+                config: any,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('heartbeat:setConfig', agentId, config),
+            setAutonomy: (
+                agentId: string,
+                level: number,
+            ): Promise<{ success: boolean; reason?: string }> =>
+                ipcRenderer.invoke('heartbeat:setAutonomy', agentId, level),
+            getLogs: (agentId: string, limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('heartbeat:getLogs', agentId, limit),
+            getStats: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('heartbeat:getStats', agentId),
+            getAllStats: (): Promise<Record<string, any>> =>
+                ipcRenderer.invoke('heartbeat:getAllStats'),
+            getPendingApprovals: (): Promise<any[]> =>
+                ipcRenderer.invoke('heartbeat:getPendingApprovals'),
+            approve: (
+                approvalId: string,
+            ): Promise<{ success: boolean; reason?: string }> =>
+                ipcRenderer.invoke('heartbeat:approve', approvalId),
+            reject: (
+                approvalId: string,
+                reason?: string,
+            ): Promise<{ success: boolean; reason?: string }> =>
+                ipcRenderer.invoke('heartbeat:reject', approvalId, reason),
+        },
+
         // ── App Notifications (from MCP server / main process) ──
         notification: {
             onToast: (

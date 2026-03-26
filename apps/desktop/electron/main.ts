@@ -114,6 +114,8 @@ import { createAuthStatusCache } from './auth-status-cache';
 import { characterMemoryManager } from './character-memory';
 import { characterGrowthManager } from './character-growth-manager';
 import { affinityManager } from './affinity-manager';
+import { jobRunner } from './job-runner';
+import { heartbeatDaemon } from './heartbeat-daemon';
 
 /** PTY noise patterns to filter from mail report bodies */
 const REPORT_NOISE_RE =
@@ -3240,6 +3242,137 @@ ipcMain.handle('affinity:applyDecay', () => {
 ipcMain.handle('affinity:resetPair', (_e, fromId: string, toId: string) => {
     return affinityManager.resetPair(fromId, toId);
 });
+
+// ── Job Runner IPC ──────────────────────────────────────────────────────────
+
+ipcMain.handle('jobRunner:getDefinition', (_e, jobId: string) => {
+    return jobRunner.getDefinition(jobId);
+});
+
+ipcMain.handle('jobRunner:getAllDefinitions', () => {
+    return jobRunner.getAllDefinitions();
+});
+
+ipcMain.handle('jobRunner:getDefinitionsByCategory', (_e, category: string) => {
+    return jobRunner.getDefinitionsByCategory(category);
+});
+
+ipcMain.handle('jobRunner:saveDefinition', (_e, definition: any) => {
+    jobRunner.saveDefinition(definition);
+    return { success: true };
+});
+
+ipcMain.handle('jobRunner:deleteDefinition', (_e, jobId: string) => {
+    return jobRunner.deleteDefinition(jobId);
+});
+
+ipcMain.handle(
+    'jobRunner:startRun',
+    (_e, jobId: string, inputs: Record<string, unknown>) => {
+        return jobRunner.startRun(jobId, inputs);
+    },
+);
+
+ipcMain.handle('jobRunner:getActiveRun', (_e, runId: string) => {
+    return jobRunner.getActiveRun(runId);
+});
+
+ipcMain.handle('jobRunner:getAllActiveRuns', () => {
+    return jobRunner.getAllActiveRuns();
+});
+
+ipcMain.handle('jobRunner:getRunProgress', (_e, runId: string) => {
+    return jobRunner.getRunProgress(runId);
+});
+
+ipcMain.handle('jobRunner:cancelRun', (_e, runId: string) => {
+    jobRunner.cancelRun(runId);
+    return { success: true };
+});
+
+ipcMain.handle('jobRunner:getHistory', (_e, limit?: number) => {
+    return jobRunner.getHistory(limit);
+});
+
+ipcMain.handle('jobRunner:getSettings', () => {
+    return jobRunner.getSettings();
+});
+
+ipcMain.handle('jobRunner:updateSettings', (_e, settings: any) => {
+    jobRunner.updateSettings(settings);
+    return { success: true };
+});
+
+ipcMain.handle(
+    'jobRunner:checkCanRun',
+    (_e, jobId: string, characterLevel: number) => {
+        return jobRunner.checkCanRun(jobId, characterLevel);
+    },
+);
+
+// ── Heartbeat Daemon IPC ────────────────────────────────────────────────────
+
+ipcMain.handle('heartbeat:start', (_e, agentId: string) => {
+    return heartbeatDaemon.start(agentId);
+});
+
+ipcMain.handle('heartbeat:stop', (_e, agentId: string) => {
+    return heartbeatDaemon.stop(agentId);
+});
+
+ipcMain.handle('heartbeat:stopAll', () => {
+    return heartbeatDaemon.stopAll();
+});
+
+ipcMain.handle('heartbeat:getStatus', (_e, agentId: string) => {
+    return heartbeatDaemon.getStatus(agentId);
+});
+
+ipcMain.handle('heartbeat:runOnce', async (_e, agentId: string) => {
+    return heartbeatDaemon.runOnce(agentId);
+});
+
+ipcMain.handle('heartbeat:getConfig', (_e, agentId: string) => {
+    return heartbeatDaemon.getConfig(agentId);
+});
+
+ipcMain.handle('heartbeat:setConfig', (_e, agentId: string, config: any) => {
+    return heartbeatDaemon.setConfig(agentId, config);
+});
+
+ipcMain.handle(
+    'heartbeat:setAutonomy',
+    (_e, agentId: string, level: number) => {
+        return heartbeatDaemon.setAutonomy(agentId, level as any);
+    },
+);
+
+ipcMain.handle('heartbeat:getLogs', (_e, agentId: string, limit?: number) => {
+    return heartbeatDaemon.getLogs(agentId, limit);
+});
+
+ipcMain.handle('heartbeat:getStats', (_e, agentId: string) => {
+    return heartbeatDaemon.getStats(agentId);
+});
+
+ipcMain.handle('heartbeat:getAllStats', () => {
+    return heartbeatDaemon.getAllStats();
+});
+
+ipcMain.handle('heartbeat:getPendingApprovals', () => {
+    return heartbeatDaemon.getPendingApprovals();
+});
+
+ipcMain.handle('heartbeat:approve', (_e, approvalId: string) => {
+    return heartbeatDaemon.approve(approvalId);
+});
+
+ipcMain.handle(
+    'heartbeat:reject',
+    (_e, approvalId: string, _reason?: string) => {
+        return heartbeatDaemon.reject(approvalId);
+    },
+);
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

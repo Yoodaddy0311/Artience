@@ -804,6 +804,81 @@ interface DogbaAffinityApi {
     resetPair(fromId: string, toId: string): Promise<boolean>;
 }
 
+// ── Job Runner API ──
+
+interface DogbaJobRunnerApi {
+    getDefinition(
+        jobId: string,
+    ): Promise<import('./job-system').JobDefinition | null>;
+    getAllDefinitions(): Promise<
+        Record<string, import('./job-system').JobDefinition>
+    >;
+    getDefinitionsByCategory(
+        category: string,
+    ): Promise<import('./job-system').JobDefinition[]>;
+    saveDefinition(
+        definition: import('./job-system').JobDefinition,
+    ): Promise<{ success: boolean }>;
+    deleteDefinition(jobId: string): Promise<boolean>;
+    startRun(
+        jobId: string,
+        inputs: Record<string, unknown>,
+    ): Promise<{
+        run: import('./job-system').JobRun;
+        error?: string;
+    }>;
+    getActiveRun(runId: string): Promise<import('./job-system').JobRun | null>;
+    getAllActiveRuns(): Promise<import('./job-system').JobRun[]>;
+    getRunProgress(
+        runId: string,
+    ): Promise<import('./job-system').JobProgress | null>;
+    cancelRun(runId: string): Promise<{ success: boolean }>;
+    getHistory(limit?: number): Promise<import('./job-system').JobRun[]>;
+    getSettings(): Promise<import('./job-system').JobGlobalSettings>;
+    updateSettings(
+        settings: Partial<import('./job-system').JobGlobalSettings>,
+    ): Promise<{ success: boolean }>;
+    checkCanRun(
+        jobId: string,
+        characterLevel: number,
+    ): Promise<{ canRun: boolean; reason?: string }>;
+}
+
+// ── Heartbeat API ──
+
+interface DogbaHeartbeatApi {
+    start(agentId: string): Promise<{ success: boolean; reason?: string }>;
+    stop(agentId: string): Promise<{ success: boolean }>;
+    stopAll(): Promise<{ success: boolean }>;
+    getStatus(agentId: string): Promise<'running' | 'idle' | 'disabled'>;
+    runOnce(agentId: string): Promise<import('./heartbeat').HeartbeatLog>;
+    getConfig(agentId: string): Promise<import('./heartbeat').HeartbeatConfig>;
+    setConfig(
+        agentId: string,
+        config: Partial<import('./heartbeat').HeartbeatConfig>,
+    ): Promise<{ success: boolean }>;
+    setAutonomy(
+        agentId: string,
+        level: import('./heartbeat').AutonomyLevel,
+    ): Promise<{ success: boolean; reason?: string }>;
+    getLogs(
+        agentId: string,
+        limit?: number,
+    ): Promise<import('./heartbeat').HeartbeatLog[]>;
+    getStats(
+        agentId: string,
+    ): Promise<import('./heartbeat').HeartbeatAgentStats>;
+    getAllStats(): Promise<
+        Record<string, import('./heartbeat').HeartbeatAgentStats>
+    >;
+    getPendingApprovals(): Promise<import('./heartbeat').ApprovalRequest[]>;
+    approve(approvalId: string): Promise<{ success: boolean; reason?: string }>;
+    reject(
+        approvalId: string,
+        reason?: string,
+    ): Promise<{ success: boolean; reason?: string }>;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -841,6 +916,8 @@ interface DogbaApi {
     characterMemory: DogbaCharacterMemoryApi;
     characterGrowth: DogbaCharacterGrowthApi;
     affinity: DogbaAffinityApi;
+    jobRunner: DogbaJobRunnerApi;
+    heartbeat: DogbaHeartbeatApi;
 }
 
 interface IncomingMessengerMessage {
