@@ -23,12 +23,17 @@ export interface WorktreeInfo {
     head: string;
 }
 
+/** Validate agentId to prevent path traversal / command injection */
+export function validateAgentId(agentId: string): boolean {
+    return /^[a-zA-Z0-9_-]+$/.test(agentId) && agentId.length <= 64;
+}
+
 // ── Worktree Manager ───────────────────────────────────────────────────────
 
 class WorktreeManager {
     /** Validate agentId to prevent path traversal / command injection */
     private validateAgentId(agentId: string): boolean {
-        return /^[a-zA-Z0-9_-]+$/.test(agentId) && agentId.length <= 64;
+        return validateAgentId(agentId);
     }
 
     /**

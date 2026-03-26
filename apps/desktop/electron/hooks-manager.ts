@@ -32,7 +32,7 @@ interface ClaudeSettings {
     };
 }
 
-interface PackageJson {
+export interface PackageJson {
     name?: string;
     scripts?: Record<string, string>;
     dependencies?: Record<string, string>;
@@ -193,10 +193,7 @@ class HooksManager {
         return !!(pkg.dependencies?.[dep] || pkg.devDependencies?.[dep]);
     }
 
-    private buildClaudeMdContent(
-        pkg: PackageJson | null,
-        projectDir: string,
-    ): string {
+    buildClaudeMdContent(pkg: PackageJson | null, projectDir: string): string {
         const lines: string[] = ['# Project Instructions', ''];
 
         // Project name

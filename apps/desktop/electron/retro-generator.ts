@@ -26,7 +26,7 @@ export interface RetroReport {
     recommendations: string[];
 }
 
-function formatDateISO(date: Date): string {
+export function formatDateISO(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
 

@@ -19,7 +19,7 @@ interface TeamTemplateSchema {
     customTemplates: Record<string, TeamTemplate>;
 }
 
-const DEFAULT_TEMPLATES: TeamTemplate[] = [
+export const DEFAULT_TEMPLATES: TeamTemplate[] = [
     {
         id: 'fullstack-dev',
         name: '풀스택 개발',

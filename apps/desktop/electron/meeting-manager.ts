@@ -551,6 +551,60 @@ class MeetingManager extends EventEmitter {
     }
 }
 
+// ── Exported pure functions (for testing) ──────────────────────────────────
+
+export function resolveConsensus(
+    opinions: MeetingOpinion[],
+): 'approved' | 'hold' | 'revision' | 'pending' {
+    if (opinions.length === 0) return 'pending';
+    const votes = opinions.map((o) => o.vote);
+    const approveCount = votes.filter((v) => v === 'approve').length;
+    const reviseCount = votes.filter((v) => v === 'revise').length;
+    const total = votes.length;
+    if (approveCount >= Math.ceil((total * 2) / 3)) return 'approved';
+    if (reviseCount > 0) return 'revision';
+    return 'hold';
+}
+
+export function parseOpinion(agentId: string, text: string): MeetingOpinion {
+    const lower = text.toLowerCase();
+    let vote: 'approve' | 'hold' | 'revise' = 'hold';
+    if (/투표\s*:\s*approve/i.test(text) || /\bapprove\b/i.test(lower)) {
+        vote = 'approve';
+    } else if (/투표\s*:\s*revise/i.test(text) || /\brevise\b/i.test(lower)) {
+        vote = 'revise';
+    }
+    const opinionMatch = text.match(/의견\s*:\s*(.+)/);
+    const opinion = opinionMatch
+        ? opinionMatch[1].trim()
+        : text.slice(0, 200).trim() || '(의견 없음)';
+    return { agentId, opinion, vote };
+}
+
+export function buildOpinionPrompt(
+    topic: string,
+    participant: MeetingParticipant,
+    roundNumber: number,
+    prevContext: string,
+): string {
+    const persona = AGENT_PERSONAS[participant.agentId];
+    const roleDesc = persona ? `${persona.role} 역할의` : '';
+    return [
+        `[미팅 라운드 ${roundNumber}]`,
+        `너는 ${roleDesc} ${participant.agentName}이야.`,
+        `주제: "${topic}"`,
+        prevContext,
+        '',
+        '다음 형식으로 답변해줘:',
+        '투표: approve / hold / revise 중 하나',
+        '의견: 한두 문장으로 간결하게',
+        '',
+        '예시:',
+        '투표: approve',
+        '의견: 이 방향이 좋습니다. 구현해도 됩니다.',
+    ].join('\n');
+}
+
 // ── Singleton export ───────────────────────────────────────────────────────
 
 export const meetingManager = new MeetingManager();

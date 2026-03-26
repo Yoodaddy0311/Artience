@@ -32,7 +32,7 @@ export interface ReportSummary {
     filePath: string;
 }
 
-function toTaskSlug(description: string): string {
+export function toTaskSlug(description: string): string {
     return description
         .replace(/[^a-zA-Z0-9가-힣\s-]/g, '')
         .trim()
@@ -40,7 +40,7 @@ function toTaskSlug(description: string): string {
         .slice(0, 30);
 }
 
-function formatDate(date: Date): string {
+export function formatDate(date: Date): string {
     const pad = (n: number) => String(n).padStart(2, '0');
     const y = date.getFullYear();
     const mo = pad(date.getMonth() + 1);
@@ -50,7 +50,7 @@ function formatDate(date: Date): string {
     return `${y}-${mo}-${d}_${h}-${mi}`;
 }
 
-function formatDateReadable(date: Date): string {
+export function formatDateReadable(date: Date): string {
     const pad = (n: number) => String(n).padStart(2, '0');
     const y = date.getFullYear();
     const mo = pad(date.getMonth() + 1);
@@ -60,7 +60,7 @@ function formatDateReadable(date: Date): string {
     return `${y}-${mo}-${d} ${h}:${mi}`;
 }
 
-function generateDependencyMermaid(
+export function generateDependencyMermaid(
     changedFiles: { file: string; action: string }[],
 ): string {
     if (changedFiles.length === 0) return '';
@@ -104,7 +104,7 @@ function generateDependencyMermaid(
     return lines.join('\n');
 }
 
-function generateArchitectureMermaid(arch: {
+export function generateArchitectureMermaid(arch: {
     nodes: { id: string; label: string; type?: string }[];
     edges: { from: string; to: string; label?: string }[];
 }): string {

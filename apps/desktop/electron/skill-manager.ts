@@ -283,17 +283,17 @@ export function getAgentSkills(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function extractMarkdownTitle(content: string): string | null {
+export function extractMarkdownTitle(content: string): string | null {
     const match = content.match(/^#\s+(.+)/m);
     return match ? match[1].trim() : null;
 }
 
-function extractMarkdownDescription(content: string): string | null {
+export function extractMarkdownDescription(content: string): string | null {
     const match = content.match(/^##\s+Description\s*\n+(.+)/m);
     return match ? match[1].trim() : null;
 }
 
-function findAgentForSkill(skillId: string): string | undefined {
+export function findAgentForSkill(skillId: string): string | undefined {
     const def = DEFAULT_SKILLS.find((s) => s.id === skillId);
     if (def) return def.agent;
 

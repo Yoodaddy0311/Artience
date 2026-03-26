@@ -24,7 +24,7 @@ export interface ApplyResult {
     error?: string;
 }
 
-const DEFAULT_PACKS: WorkflowPack[] = [
+export const DEFAULT_PACKS: WorkflowPack[] = [
     {
         id: 'dev',
         name: '개발 팩',

@@ -66,7 +66,7 @@ export interface ArtibotRegistry {
 
 // ── YAML Frontmatter Parser (lightweight, no dependency) ───────────────────
 
-function parseFrontmatter(content: string): Record<string, any> {
+export function parseFrontmatter(content: string): Record<string, any> {
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!match) return {};
 

@@ -333,7 +333,7 @@ const SKILL_TO_DOMAIN: Record<string, string> = {
 
 // ── Core recommendation function ────────────────────────────────────────────
 
-function extractDomainScores(text: string): Map<string, number> {
+export function extractDomainScores(text: string): Map<string, number> {
     const lower = text.toLowerCase();
     const scores = new Map<string, number>();
 

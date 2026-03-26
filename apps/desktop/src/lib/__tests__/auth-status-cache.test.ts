@@ -77,4 +77,57 @@ describe('createAuthStatusCache', () => {
 
         expect(loader).toHaveBeenCalledTimes(2);
     });
+
+    it('returns cached value within TTL without calling loader again', async () => {
+        let now = 0;
+        const cache = createAuthStatusCache({
+            now: () => now,
+            positiveTtlMs: 1000,
+        });
+        const loader = vi
+            .fn<() => Promise<{ authenticated: boolean }>>()
+            .mockResolvedValue({ authenticated: true });
+
+        await cache.get(loader);
+        now += 500; // Still within TTL
+        const result = await cache.get(loader);
+
+        expect(loader).toHaveBeenCalledTimes(1);
+        expect(result.authenticated).toBe(true);
+    });
+
+    it('handles loader rejection gracefully', async () => {
+        const cache = createAuthStatusCache();
+        const loader = vi
+            .fn<() => Promise<{ authenticated: boolean }>>()
+            .mockRejectedValueOnce(new Error('Network error'))
+            .mockResolvedValueOnce({ authenticated: false });
+
+        await expect(cache.get(loader)).rejects.toThrow('Network error');
+        // After rejection, inflight should be cleared, allowing retry
+        const result = await cache.get(loader);
+        expect(result.authenticated).toBe(false);
+        expect(loader).toHaveBeenCalledTimes(2);
+    });
+
+    it('negative result uses shorter TTL', async () => {
+        let now = 0;
+        const cache = createAuthStatusCache({
+            now: () => now,
+            positiveTtlMs: 1000,
+            negativeTtlMs: 100,
+        });
+        const loader = vi
+            .fn<() => Promise<{ authenticated: boolean }>>()
+            .mockResolvedValue({ authenticated: false });
+
+        await cache.get(loader);
+        now += 50; // Within negative TTL
+        await cache.get(loader);
+        expect(loader).toHaveBeenCalledTimes(1);
+
+        now += 60; // Past negative TTL (total 110 > 100)
+        await cache.get(loader);
+        expect(loader).toHaveBeenCalledTimes(2);
+    });
 });

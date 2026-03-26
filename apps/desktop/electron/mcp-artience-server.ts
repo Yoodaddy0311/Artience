@@ -50,7 +50,7 @@ interface McpToolDefinition {
 
 // ── Tool Definitions ────────────────────────────────────────────────────────
 
-const TOOLS: McpToolDefinition[] = [
+export const TOOLS: McpToolDefinition[] = [
     {
         name: 'artience_notify',
         description:
