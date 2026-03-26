@@ -24,7 +24,4 @@ Project: dogba
 
 ## 후속 작업 (TODO)
 
-- MainLayout.tsx TODO 3개: Studio apply, project import, project export (UI 버튼 있으나 stub)
-- AssetInbox.tsx TODO 1개 (UI stub)
-- RunPanel.tsx TODO 1개 (UI stub)
-- 테스트 커버리지 확대: electron/ 매니저 전체 미테스트
+- 테스트 커버리지 확대: electron/ 매니저 23개 미테스트
