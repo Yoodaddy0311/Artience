@@ -17,6 +17,7 @@
 import { EventEmitter } from 'events';
 import { type ChatSessionManager } from './chat-session-manager';
 import { AGENT_PERSONAS } from '../src/data/agent-personas';
+import { taskScheduler } from './task-scheduler';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -229,6 +230,14 @@ class MeetingManager extends EventEmitter {
         };
 
         this.emit('meeting:end', meeting.id, result);
+
+        // Fan out consensus into per-agent tasks
+        if (
+            result.finalConsensus === 'approved' ||
+            result.status === 'completed'
+        ) {
+            this.fanOutConsensus(meeting);
+        }
 
         // Send as mail report to mainWindow
         this.emitMailReport(meeting);
@@ -465,6 +474,44 @@ class MeetingManager extends EventEmitter {
         }
 
         return 'hold';
+    }
+
+    // ── Internal: fan out consensus into per-agent tasks ──────────────────
+
+    private fanOutConsensus(meeting: Meeting): void {
+        const lastRound = meeting.rounds[meeting.rounds.length - 1];
+        if (!lastRound) return;
+
+        const approvedOpinions = lastRound.opinions.filter(
+            (o) => o.vote === 'approve',
+        );
+
+        // Create a task for each participant based on the meeting topic
+        // and their stated opinion (which typically contains their approach)
+        for (const participant of meeting.participants) {
+            const opinion = lastRound.opinions.find(
+                (o) => o.agentId === participant.agentId,
+            );
+
+            const description = opinion
+                ? `[미팅 합의] ${meeting.topic} — ${opinion.opinion}`
+                : `[미팅 합의] ${meeting.topic}`;
+
+            const taskId = taskScheduler.enqueue({
+                description,
+                priority: 'high',
+                assignedAgent: participant.agentId,
+            });
+
+            console.log(
+                `[MeetingManager] Fan-out task ${taskId} → ${participant.agentId}`,
+            );
+        }
+
+        this.emit('fanout:complete', meeting.id, {
+            taskCount: meeting.participants.length,
+            participantIds: meeting.participants.map((p) => p.agentId),
+        });
     }
 
     // ── Internal: emit mail report ─────────────────────────────────────────

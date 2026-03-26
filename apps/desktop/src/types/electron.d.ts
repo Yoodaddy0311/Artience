@@ -157,6 +157,16 @@ interface DogbaProjectApi {
         data: import('../types/project').ProjectData,
     ): Promise<{ success: boolean; error?: string }>;
     selectDir(): Promise<string | null>;
+    import(): Promise<{
+        success: boolean;
+        filePath?: string;
+        error?: string;
+    }>;
+    export(): Promise<{
+        success: boolean;
+        filePath?: string;
+        error?: string;
+    }>;
 }
 
 interface DogbaFileApi {
@@ -175,6 +185,13 @@ interface DogbaFileApi {
     saveTempFile(
         base64: string,
         filename: string,
+    ): Promise<{ success: boolean; filePath?: string; error?: string }>;
+    openInFolder(
+        filePath: string,
+    ): Promise<{ success: boolean; error?: string }>;
+    copy(
+        srcPath: string,
+        destPath: string,
     ): Promise<{ success: boolean; filePath?: string; error?: string }>;
 }
 

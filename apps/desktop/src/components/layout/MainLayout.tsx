@@ -450,15 +450,25 @@ export const MainLayout: React.FC = () => {
     const panelFullscreen = useTerminalStore((s) => s.panelFullscreen);
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        // File input is kept for backwards compat, but we use Electron dialog
+        e.target.value = '';
         try {
-            const api = window.dogbaApi?.file;
-            if (!api) throw new Error('File API not available');
-            // TODO: implement import via IPC (read file, parse, load project)
-            addToast({ type: 'success', message: '프로젝트를 가져왔습니다.' });
-        } catch {
-            addToast({ type: 'error', message: '가져오기에 실패했습니다.' });
+            const api = window.dogbaApi?.project;
+            if (!api) throw new Error('Project API not available');
+            const result = await api.import();
+            if (!result.success) {
+                if (result.error === 'canceled') return;
+                throw new Error(result.error);
+            }
+            addToast({
+                type: 'success',
+                message: `프로젝트를 가져왔습니다: ${result.filePath}`,
+            });
+        } catch (err: any) {
+            addToast({
+                type: 'error',
+                message: err?.message || '가져오기에 실패했습니다.',
+            });
         }
         if (importInputRef.current) {
             importInputRef.current.value = '';
@@ -469,10 +479,20 @@ export const MainLayout: React.FC = () => {
         try {
             const api = window.dogbaApi?.project;
             if (!api) throw new Error('Project API not available');
-            // TODO: implement export via IPC (save project to file dialog)
-            addToast({ type: 'success', message: '프로젝트를 내보냈습니다.' });
-        } catch {
-            addToast({ type: 'error', message: '내보내기에 실패했습니다.' });
+            const result = await api.export();
+            if (!result.success) {
+                if (result.error === 'canceled') return;
+                throw new Error(result.error);
+            }
+            addToast({
+                type: 'success',
+                message: `프로젝트를 내보냈습니다: ${result.filePath}`,
+            });
+        } catch (err: any) {
+            addToast({
+                type: 'error',
+                message: err?.message || '내보내기에 실패했습니다.',
+            });
         }
     };
 

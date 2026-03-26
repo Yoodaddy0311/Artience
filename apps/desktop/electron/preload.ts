@@ -304,6 +304,16 @@ try {
                 ipcRenderer.invoke('project:save', data),
             selectDir: (): Promise<string | null> =>
                 ipcRenderer.invoke('project:selectDir'),
+            import: (): Promise<{
+                success: boolean;
+                filePath?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('project:import'),
+            export: (): Promise<{
+                success: boolean;
+                filePath?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('project:export'),
         },
 
         // ── File Import / Export / Read ──
@@ -336,6 +346,18 @@ try {
                 filePath?: string;
                 error?: string;
             }> => ipcRenderer.invoke('file:saveTempFile', base64, filename),
+            openInFolder: (
+                filePath: string,
+            ): Promise<{ success: boolean; error?: string }> =>
+                ipcRenderer.invoke('file:openInFolder', filePath),
+            copy: (
+                srcPath: string,
+                destPath: string,
+            ): Promise<{
+                success: boolean;
+                filePath?: string;
+                error?: string;
+            }> => ipcRenderer.invoke('file:copy', srcPath, destPath),
         },
 
         // ── Studio ──

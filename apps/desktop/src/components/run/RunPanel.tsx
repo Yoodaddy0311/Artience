@@ -174,10 +174,17 @@ export const RunPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
 
     // P1-11: Open artifact path via shell (Electron local file)
-    const downloadFile = async (_path: string, _filename: string) => {
-        // TODO: implement via dogbaApi.file.read or shell.openPath
-        if (import.meta.env.DEV)
-            console.log('Download artifact:', _path, _filename);
+    const downloadFile = async (filePath: string, _filename: string) => {
+        try {
+            const api = window.dogbaApi?.file;
+            if (!api) throw new Error('File API not available');
+            const result = await api.openInFolder(filePath);
+            if (!result.success) {
+                console.warn('Failed to open in folder:', result.error);
+            }
+        } catch (err) {
+            console.warn('Download artifact error:', err);
+        }
     };
 
     // Count agents by state

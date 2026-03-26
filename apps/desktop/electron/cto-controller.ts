@@ -188,6 +188,50 @@ class CTOController {
             (this.chatSessionManager?.hasActiveSession(CTO_AGENT_ID) ?? false)
         );
     }
+
+    /**
+     * Create a team meeting for a task, then start it.
+     * Call this after createTeamSession() to ensure agents gather
+     * in the meeting room before work begins.
+     *
+     * Returns the meetingId so callers can track the meeting lifecycle.
+     */
+    createTeamMeeting(
+        topic: string,
+        participantIds?: string[],
+    ): { success: boolean; meetingId?: string; error?: string } {
+        const participants = participantIds ?? this.activeTeamAgents;
+        if (participants.length < 2) {
+            return {
+                success: false,
+                error: 'Need at least 2 team members for a meeting',
+            };
+        }
+
+        const result = meetingManager.createMeeting(topic, participants);
+        if (!result.success || !result.meetingId) {
+            return result;
+        }
+
+        // Start the meeting asynchronously
+        meetingManager.startMeeting(result.meetingId).catch((err) => {
+            console.error(
+                `[CTOController] Failed to start meeting: ${err.message}`,
+            );
+        });
+
+        console.log(
+            `[CTOController] Team meeting created: ${result.meetingId} (${participants.length} participants)`,
+        );
+        return { success: true, meetingId: result.meetingId };
+    }
+
+    /**
+     * Get current active team agents.
+     */
+    getActiveTeamAgents(): string[] {
+        return [...this.activeTeamAgents];
+    }
 }
 
 // ── Singleton export ───────────────────────────────────────────────────────

@@ -120,8 +120,14 @@ export const AssetInbox: React.FC = () => {
                 return;
             }
             try {
-                // For local-first: files are already on disk, just mark as ready
-                // TODO: implement file copy via dogbaApi.file.copy when project dir is set
+                // Copy file to project assets directory if project dir is available
+                const projectDir = (await window.dogbaApi?.project?.load())
+                    ?.data as any;
+                const targetDir = projectDir?.meta?.dir;
+                if (targetDir && asset.file.path) {
+                    const destPath = `${targetDir}/assets/${asset.name}`;
+                    await fileApi.copy(asset.file.path, destPath);
+                }
                 setAssets((prev) =>
                     prev.map((a) =>
                         a.id === asset.id
