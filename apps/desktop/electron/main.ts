@@ -111,6 +111,9 @@ import {
     type McpBridge,
 } from './mcp-artience-server';
 import { createAuthStatusCache } from './auth-status-cache';
+import { characterMemoryManager } from './character-memory';
+import { characterGrowthManager } from './character-growth-manager';
+import { affinityManager } from './affinity-manager';
 
 /** PTY noise patterns to filter from mail report bodies */
 const REPORT_NOISE_RE =
@@ -3052,6 +3055,190 @@ ipcMain.handle('retro:weekly', () => {
 ipcMain.handle('retro:save', (_e, report: any, projectDir?: string) => {
     const dir = projectDir || getProjectDir();
     return retroGenerator.saveReport(report, dir);
+});
+
+// ── Character Memory IPC ────────────────────────────────────────────────────
+
+ipcMain.handle('characterMemory:getCore', (_e, agentId: string) => {
+    return characterMemoryManager.getCore(agentId);
+});
+
+ipcMain.handle(
+    'characterMemory:updateCore',
+    (_e, agentId: string, updates: any) => {
+        return characterMemoryManager.updateCore(agentId, updates);
+    },
+);
+
+ipcMain.handle(
+    'characterMemory:getDailyLog',
+    (_e, agentId: string, date?: string) => {
+        return characterMemoryManager.getDailyLog(agentId, date);
+    },
+);
+
+ipcMain.handle(
+    'characterMemory:appendTask',
+    (_e, agentId: string, entry: any) => {
+        return characterMemoryManager.appendTaskEntry(agentId, entry);
+    },
+);
+
+ipcMain.handle(
+    'characterMemory:appendInteraction',
+    (_e, agentId: string, interaction: any) => {
+        return characterMemoryManager.appendInteraction(agentId, interaction);
+    },
+);
+
+ipcMain.handle('characterMemory:getKnowledge', (_e, agentId: string) => {
+    return characterMemoryManager.getKnowledge(agentId);
+});
+
+ipcMain.handle(
+    'characterMemory:searchKnowledge',
+    (_e, agentId: string, keyword: string) => {
+        return characterMemoryManager.searchKnowledge(agentId, keyword);
+    },
+);
+
+ipcMain.handle('characterMemory:buildContext', (_e, agentId: string) => {
+    return characterMemoryManager.buildContextPacket(agentId);
+});
+
+ipcMain.handle('characterMemory:getStats', (_e, agentId: string) => {
+    return characterMemoryManager.getMemoryStats(agentId);
+});
+
+ipcMain.handle('characterMemory:triggerPromotion', (_e, agentId: string) => {
+    return characterMemoryManager.triggerPromotion(agentId);
+});
+
+ipcMain.handle('characterMemory:resetMemory', (_e, agentId: string) => {
+    return characterMemoryManager.resetMemory(agentId);
+});
+
+ipcMain.handle('characterMemory:exportMemory', (_e, agentId: string) => {
+    return characterMemoryManager.exportMemory(agentId);
+});
+
+// ── Character Growth IPC ────────────────────────────────────────────────────
+
+ipcMain.handle('characterGrowth:getSheet', (_e, agentId: string) => {
+    return characterGrowthManager.getSheet(agentId);
+});
+
+ipcMain.handle('characterGrowth:getAllSheets', () => {
+    return characterGrowthManager.getAllSheets();
+});
+
+ipcMain.handle(
+    'characterGrowth:addExp',
+    (_e, agentId: string, amount: number) => {
+        return characterGrowthManager.addExp(agentId, amount);
+    },
+);
+
+ipcMain.handle(
+    'characterGrowth:applyActivity',
+    (_e, agentId: string, activity: string, toolName?: string) => {
+        return characterGrowthManager.applyActivityGains(
+            agentId,
+            activity,
+            toolName,
+        );
+    },
+);
+
+ipcMain.handle(
+    'characterGrowth:allocateStat',
+    (_e, agentId: string, statKey: string) => {
+        return characterGrowthManager.allocateStatPoint(
+            agentId,
+            statKey as any,
+        );
+    },
+);
+
+ipcMain.handle(
+    'characterGrowth:allocateSpec',
+    (_e, agentId: string, specKey: string) => {
+        return characterGrowthManager.allocateSpecPoint(
+            agentId,
+            specKey as any,
+        );
+    },
+);
+
+ipcMain.handle('characterGrowth:autoAllocate', (_e, agentId: string) => {
+    return characterGrowthManager.autoAllocate(agentId);
+});
+
+ipcMain.handle(
+    'characterGrowth:equipSkill',
+    (_e, agentId: string, skillId: string) => {
+        return characterGrowthManager.equipSkill(agentId, skillId);
+    },
+);
+
+ipcMain.handle(
+    'characterGrowth:unequipSkill',
+    (_e, agentId: string, skillId: string) => {
+        return characterGrowthManager.unequipSkill(agentId, skillId);
+    },
+);
+
+ipcMain.handle('characterGrowth:runSkillDetection', (_e, agentId: string) => {
+    return characterGrowthManager.runSkillDetection(agentId, []);
+});
+
+ipcMain.handle('characterGrowth:getLevelInfo', (_e, agentId: string) => {
+    return characterGrowthManager.getLevelInfo(agentId);
+});
+
+ipcMain.handle('characterGrowth:getLevelUpHistory', () => {
+    return characterGrowthManager.getLevelUpHistory();
+});
+
+// ── Affinity IPC ────────────────────────────────────────────────────────────
+
+ipcMain.handle('affinity:getMatrix', () => {
+    return affinityManager.getMatrix();
+});
+
+ipcMain.handle('affinity:getScore', (_e, fromId: string, toId: string) => {
+    return affinityManager.getScore(fromId, toId);
+});
+
+ipcMain.handle('affinity:recordEvent', (_e, event: any) => {
+    return affinityManager.recordEvent(event);
+});
+
+ipcMain.handle('affinity:getRelationships', (_e, agentId: string) => {
+    return affinityManager.getAgentRelationships(agentId);
+});
+
+ipcMain.handle('affinity:getTopPairs', (_e, limit?: number) => {
+    return affinityManager.getTopPairs(limit);
+});
+
+ipcMain.handle(
+    'affinity:getSynergyBonus',
+    (_e, fromId: string, toId: string) => {
+        return affinityManager.getSynergyBonus(fromId, toId);
+    },
+);
+
+ipcMain.handle('affinity:calculateTeamSynergy', (_e, agentIds: string[]) => {
+    return affinityManager.calculateTeamSynergy(agentIds);
+});
+
+ipcMain.handle('affinity:applyDecay', () => {
+    return affinityManager.applyDecay();
+});
+
+ipcMain.handle('affinity:resetPair', (_e, fromId: string, toId: string) => {
+    return affinityManager.resetPair(fromId, toId);
 });
 
 app.on('window-all-closed', () => {

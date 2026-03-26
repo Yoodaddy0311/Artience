@@ -968,6 +968,155 @@ try {
                 ipcRenderer.invoke('feedback:getHistory', agentId),
         },
 
+        // ── Character Memory ──
+        characterMemory: {
+            getCore: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterMemory:getCore', agentId),
+            updateCore: (
+                agentId: string,
+                updates: any,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke(
+                    'characterMemory:updateCore',
+                    agentId,
+                    updates,
+                ),
+            getDailyLog: (agentId: string, date?: string): Promise<any> =>
+                ipcRenderer.invoke(
+                    'characterMemory:getDailyLog',
+                    agentId,
+                    date,
+                ),
+            appendTask: (
+                agentId: string,
+                entry: any,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke(
+                    'characterMemory:appendTask',
+                    agentId,
+                    entry,
+                ),
+            appendInteraction: (
+                agentId: string,
+                interaction: any,
+            ): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke(
+                    'characterMemory:appendInteraction',
+                    agentId,
+                    interaction,
+                ),
+            getKnowledge: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterMemory:getKnowledge', agentId),
+            searchKnowledge: (
+                agentId: string,
+                keyword: string,
+            ): Promise<string[]> =>
+                ipcRenderer.invoke(
+                    'characterMemory:searchKnowledge',
+                    agentId,
+                    keyword,
+                ),
+            buildContext: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterMemory:buildContext', agentId),
+            getStats: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterMemory:getStats', agentId),
+            triggerPromotion: (
+                agentId: string,
+            ): Promise<{ promoted: string[] }> =>
+                ipcRenderer.invoke('characterMemory:triggerPromotion', agentId),
+            resetMemory: (agentId: string): Promise<{ success: boolean }> =>
+                ipcRenderer.invoke('characterMemory:resetMemory', agentId),
+            exportMemory: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterMemory:exportMemory', agentId),
+        },
+
+        // ── Character Growth ──
+        characterGrowth: {
+            getSheet: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterGrowth:getSheet', agentId),
+            getAllSheets: (): Promise<Record<string, any>> =>
+                ipcRenderer.invoke('characterGrowth:getAllSheets'),
+            addExp: (agentId: string, amount: number): Promise<any[]> =>
+                ipcRenderer.invoke('characterGrowth:addExp', agentId, amount),
+            applyActivity: (
+                agentId: string,
+                activity: string,
+                toolName?: string,
+            ): Promise<void> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:applyActivity',
+                    agentId,
+                    activity,
+                    toolName,
+                ),
+            allocateStat: (
+                agentId: string,
+                statKey: string,
+            ): Promise<boolean> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:allocateStat',
+                    agentId,
+                    statKey,
+                ),
+            allocateSpec: (
+                agentId: string,
+                specKey: string,
+            ): Promise<boolean> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:allocateSpec',
+                    agentId,
+                    specKey,
+                ),
+            autoAllocate: (agentId: string): Promise<Record<string, number>> =>
+                ipcRenderer.invoke('characterGrowth:autoAllocate', agentId),
+            equipSkill: (agentId: string, skillId: string): Promise<boolean> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:equipSkill',
+                    agentId,
+                    skillId,
+                ),
+            unequipSkill: (
+                agentId: string,
+                skillId: string,
+            ): Promise<boolean> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:unequipSkill',
+                    agentId,
+                    skillId,
+                ),
+            runSkillDetection: (agentId: string): Promise<any[]> =>
+                ipcRenderer.invoke(
+                    'characterGrowth:runSkillDetection',
+                    agentId,
+                ),
+            getLevelInfo: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('characterGrowth:getLevelInfo', agentId),
+            getLevelUpHistory: (): Promise<any[]> =>
+                ipcRenderer.invoke('characterGrowth:getLevelUpHistory'),
+        },
+
+        // ── Affinity ──
+        affinity: {
+            getMatrix: (): Promise<any> =>
+                ipcRenderer.invoke('affinity:getMatrix'),
+            getScore: (fromId: string, toId: string): Promise<any> =>
+                ipcRenderer.invoke('affinity:getScore', fromId, toId),
+            recordEvent: (event: any): Promise<any> =>
+                ipcRenderer.invoke('affinity:recordEvent', event),
+            getRelationships: (agentId: string): Promise<any> =>
+                ipcRenderer.invoke('affinity:getRelationships', agentId),
+            getTopPairs: (limit?: number): Promise<any[]> =>
+                ipcRenderer.invoke('affinity:getTopPairs', limit),
+            getSynergyBonus: (fromId: string, toId: string): Promise<any> =>
+                ipcRenderer.invoke('affinity:getSynergyBonus', fromId, toId),
+            calculateTeamSynergy: (agentIds: string[]): Promise<number> =>
+                ipcRenderer.invoke('affinity:calculateTeamSynergy', agentIds),
+            applyDecay: (): Promise<{ decayed: number; tierChanges: number }> =>
+                ipcRenderer.invoke('affinity:applyDecay'),
+            resetPair: (fromId: string, toId: string): Promise<boolean> =>
+                ipcRenderer.invoke('affinity:resetPair', fromId, toId),
+        },
+
         // ── App Notifications (from MCP server / main process) ──
         notification: {
             onToast: (

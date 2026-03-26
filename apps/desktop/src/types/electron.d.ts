@@ -693,6 +693,117 @@ interface DogbaFeedbackApi {
     getHistory(agentId: string): Promise<{ history: FeedbackResult[] }>;
 }
 
+// ── Character Memory API ──
+
+interface DogbaCharacterMemoryApi {
+    getCore(agentId: string): Promise<import('./character-memory').CoreMemory>;
+    updateCore(
+        agentId: string,
+        updates: Partial<import('./character-memory').CoreMemory>,
+    ): Promise<{ success: boolean }>;
+    getDailyLog(
+        agentId: string,
+        date?: string,
+    ): Promise<import('./character-memory').DailyLog | null>;
+    appendTask(
+        agentId: string,
+        entry: import('./character-memory').DailyTaskEntry,
+    ): Promise<{ success: boolean }>;
+    appendInteraction(
+        agentId: string,
+        interaction: import('./character-memory').DailyInteraction,
+    ): Promise<{ success: boolean }>;
+    getKnowledge(
+        agentId: string,
+    ): Promise<import('./character-memory').DeepKnowledge>;
+    searchKnowledge(agentId: string, keyword: string): Promise<string[]>;
+    buildContext(
+        agentId: string,
+    ): Promise<import('./character-memory').MemoryContextPacket>;
+    getStats(agentId: string): Promise<{
+        coreSizeBytes: number;
+        dailyLogCount: number;
+        knowledgeItemCount: number;
+        lastUpdated: number;
+    }>;
+    triggerPromotion(agentId: string): Promise<{ promoted: string[] }>;
+    resetMemory(agentId: string): Promise<{ success: boolean }>;
+    exportMemory(agentId: string): Promise<{
+        success: boolean;
+        data: import('./character-memory').AgentMemoryStoreSchema;
+    }>;
+}
+
+// ── Character Growth API ──
+
+interface DogbaCharacterGrowthApi {
+    getSheet(
+        agentId: string,
+    ): Promise<import('./character-growth').CharacterSheet>;
+    getAllSheets(): Promise<
+        Record<string, import('./character-growth').CharacterSheet>
+    >;
+    addExp(
+        agentId: string,
+        amount: number,
+    ): Promise<import('./character-growth').LevelUpEvent[]>;
+    applyActivity(
+        agentId: string,
+        activity: string,
+        toolName?: string,
+    ): Promise<void>;
+    allocateStat(agentId: string, statKey: string): Promise<boolean>;
+    allocateSpec(agentId: string, specKey: string): Promise<boolean>;
+    autoAllocate(agentId: string): Promise<Record<string, number>>;
+    equipSkill(agentId: string, skillId: string): Promise<boolean>;
+    unequipSkill(agentId: string, skillId: string): Promise<boolean>;
+    runSkillDetection(
+        agentId: string,
+    ): Promise<import('./character-growth').SkillCandidate[]>;
+    getLevelInfo(agentId: string): Promise<{
+        level: number;
+        exp: number;
+        expToNext: number;
+        totalExp: number;
+    }>;
+    getLevelUpHistory(): Promise<import('./character-growth').LevelUpEvent[]>;
+}
+
+// ── Affinity API ──
+
+interface DogbaAffinityApi {
+    getMatrix(): Promise<import('./affinity').AffinityMatrix>;
+    getScore(
+        fromId: string,
+        toId: string,
+    ): Promise<import('./affinity').AffinityScore>;
+    recordEvent(event: import('./affinity').AffinityEvent): Promise<{
+        success: boolean;
+        fromDelta: { trust: number; rapport: number };
+        toDelta: { trust: number; rapport: number };
+        tierChanged: boolean;
+        newTier?: import('./affinity').AffinityTier;
+    }>;
+    getRelationships(agentId: string): Promise<{
+        outgoing: import('./affinity').AffinityScore[];
+        incoming: import('./affinity').AffinityScore[];
+    }>;
+    getTopPairs(limit?: number): Promise<
+        {
+            pair: [string, string];
+            synergy: number;
+            tier: import('./affinity').AffinityTier;
+        }[]
+    >;
+    getSynergyBonus(
+        fromId: string,
+        toId: string,
+    ): Promise<import('./affinity').SynergyBonus>;
+    calculateTeamSynergy(agentIds: string[]): Promise<number>;
+    applyDecay(): Promise<{ decayed: number; tierChanges: number }>;
+    resetPair(fromId: string, toId: string): Promise<boolean>;
+}
+
 interface DogbaApi {
     app: {
         getVersion: () => string | undefined;
@@ -727,6 +838,9 @@ interface DogbaApi {
     p2p: DogbaP2PApi;
     retro: DogbaRetroApi;
     feedback: DogbaFeedbackApi;
+    characterMemory: DogbaCharacterMemoryApi;
+    characterGrowth: DogbaCharacterGrowthApi;
+    affinity: DogbaAffinityApi;
 }
 
 interface IncomingMessengerMessage {
