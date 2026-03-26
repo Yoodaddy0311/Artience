@@ -1482,7 +1482,7 @@ export const AgentTown: React.FC = () => {
                                     );
                                     showAnimalBubble(
                                         agent.visual as AnimalVisual,
-                                        getBubbleText('connecting'),
+                                        getBubbleText('team_join'),
                                     );
                                 } else if (tab.status === 'connected') {
                                     agent.state = 'IDLE';
@@ -1762,68 +1762,68 @@ export const AgentTown: React.FC = () => {
                 // ══════════════════════════════════════════════════════
                 // ── Animation Loop ──
                 // ══════════════════════════════════════════════════════
-                unsubMeeting = useMeetingStore.subscribe(
-                    (state, prevState) => {
-                        const currentParticipants =
-                            getActiveMeetingParticipantIds(state);
-                        const previousParticipants =
-                            getActiveMeetingParticipantIds(prevState);
+                unsubMeeting = useMeetingStore.subscribe((state, prevState) => {
+                    const currentParticipants =
+                        getActiveMeetingParticipantIds(state);
+                    const previousParticipants =
+                        getActiveMeetingParticipantIds(prevState);
+
+                    if (
+                        currentParticipants.size ===
+                            previousParticipants.size &&
+                        [...currentParticipants].every((agentId) =>
+                            previousParticipants.has(agentId),
+                        )
+                    ) {
+                        return;
+                    }
+
+                    for (const agent of isoAgents) {
+                        if (agent.id === 'raccoon' || agent.id === 'cto') {
+                            continue;
+                        }
+
+                        const isMeetingParticipant = currentParticipants.has(
+                            agent.id,
+                        );
+                        const wasMeetingParticipant = previousParticipants.has(
+                            agent.id,
+                        );
+
+                        if (isMeetingParticipant && !wasMeetingParticipant) {
+                            showAnimalBubble(
+                                agent.visual as AnimalVisual,
+                                '🗣️ 회의 중',
+                            );
+                            pickIsoZoneDest(agent, 'meeting');
+                            continue;
+                        }
 
                         if (
-                            currentParticipants.size ===
-                                previousParticipants.size &&
-                            [...currentParticipants].every((agentId) =>
-                                previousParticipants.has(agentId),
-                            )
+                            !isMeetingParticipant &&
+                            wasMeetingParticipant &&
+                            isAgentInZone(agent, 'meeting')
                         ) {
-                            return;
-                        }
-
-                        for (const agent of isoAgents) {
-                            if (agent.id === 'raccoon' || agent.id === 'cto') {
-                                continue;
-                            }
-
-                            const isMeetingParticipant =
-                                currentParticipants.has(agent.id);
-                            const wasMeetingParticipant =
-                                previousParticipants.has(agent.id);
-
-                            if (isMeetingParticipant && !wasMeetingParticipant) {
-                                showAnimalBubble(
-                                    agent.visual as AnimalVisual,
-                                    '🗣️ 회의 중',
-                                );
-                                pickIsoZoneDest(agent, 'meeting');
-                                continue;
-                            }
-
+                            const activity =
+                                useTerminalStore.getState().agentActivity[
+                                    agent.id
+                                ];
+                            showAnimalBubble(
+                                agent.visual as AnimalVisual,
+                                '✅ 회의 종료',
+                            );
                             if (
-                                !isMeetingParticipant &&
-                                wasMeetingParticipant &&
-                                isAgentInZone(agent, 'meeting')
+                                activity === 'thinking' ||
+                                activity === 'working' ||
+                                activity === 'needs_input' ||
+                                activity === 'typing' ||
+                                activity === 'writing'
                             ) {
-                                const activity =
-                                    useTerminalStore.getState().agentActivity[
-                                        agent.id
-                                    ];
-                                showAnimalBubble(
-                                    agent.visual as AnimalVisual,
-                                    '✅ 회의 종료',
-                                );
-                                if (
-                                    activity === 'thinking' ||
-                                    activity === 'working' ||
-                                    activity === 'needs_input' ||
-                                    activity === 'typing' ||
-                                    activity === 'writing'
-                                ) {
-                                    pickDeskSeatDest(agent);
-                                }
+                                pickDeskSeatDest(agent);
                             }
                         }
-                    },
-                );
+                    }
+                });
 
                 app.ticker.add(() => {
                     const now = Date.now();
