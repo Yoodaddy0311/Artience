@@ -18,6 +18,7 @@ import {
     buildCompactTeamPrompt,
     selectTeamAgentKeys,
 } from './team-agent-selection';
+import { meetingManager } from './meeting-manager';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

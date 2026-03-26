@@ -1,18 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockExecFile = vi.fn();
+const mockExecFileAsync = vi.fn();
 
-vi.mock('child_process', () => ({
-    execFile: mockExecFile,
-}));
-
-vi.mock('util', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('util')>();
-    return {
-        ...actual,
-        promisify: () => mockExecFile,
-    };
+// In jsdom environment, Node.js built-in `util` cannot be dynamically imported
+// via importOriginal. Instead, mock child_process with __promisify__ on execFile
+// so that the real util.promisify picks it up, and also mock util.promisify
+// directly as a simple function factory.
+vi.mock('child_process', () => {
+    const execFileFn = Object.assign(
+        (...args: unknown[]) => {
+            const cb = args[args.length - 1];
+            if (typeof cb === 'function') cb(null, '', '');
+        },
+        { __promisify__: mockExecFileAsync },
+    );
+    return { default: { execFile: execFileFn }, execFile: execFileFn };
 });
+
+vi.mock('util', () => ({
+    default: { promisify: () => mockExecFileAsync },
+    promisify: () => mockExecFileAsync,
+}));
 
 describe('collectGitInfo', () => {
     let collectGitInfo: (projectDir: string) => Promise<{
@@ -23,7 +31,7 @@ describe('collectGitInfo', () => {
 
     beforeEach(async () => {
         vi.resetModules();
-        mockExecFile.mockReset();
+        mockExecFileAsync.mockReset();
         const mod = await import('../../../electron/git-utils');
         collectGitInfo = mod.collectGitInfo;
     });
@@ -33,8 +41,8 @@ describe('collectGitInfo', () => {
     });
 
     it('returns branch, commitHash, and diffStats for normal repo', async () => {
-        mockExecFile
-            // git branch --show-current (or rev-parse --abbrev-ref HEAD)
+        mockExecFileAsync
+            // git rev-parse --abbrev-ref HEAD
             .mockResolvedValueOnce({ stdout: 'main\n', stderr: '' })
             // git rev-parse --short HEAD
             .mockResolvedValueOnce({ stdout: 'abc1234\n', stderr: '' })
@@ -55,7 +63,7 @@ describe('collectGitInfo', () => {
     });
 
     it('falls back to diff-tree/show for initial commit (HEAD~1 fails)', async () => {
-        mockExecFile
+        mockExecFileAsync
             // branch
             .mockResolvedValueOnce({ stdout: 'main\n', stderr: '' })
             // commitHash
@@ -64,7 +72,7 @@ describe('collectGitInfo', () => {
             .mockRejectedValueOnce(
                 new Error('fatal: ambiguous argument HEAD~1'),
             )
-            // fallback: git diff-tree or git show
+            // fallback: git diff-tree
             .mockResolvedValueOnce({
                 stdout: '5\t0\tpackage.json\n12\t0\tsrc/main.ts\n',
                 stderr: '',
@@ -81,7 +89,7 @@ describe('collectGitInfo', () => {
     });
 
     it('returns empty object when git is not available', async () => {
-        mockExecFile.mockRejectedValue(new Error('spawn git ENOENT'));
+        mockExecFileAsync.mockRejectedValue(new Error('spawn git ENOENT'));
 
         const result = await collectGitInfo('/not-a-git-repo');
 
@@ -89,7 +97,7 @@ describe('collectGitInfo', () => {
     });
 
     it('handles binary files with dash numstat entries', async () => {
-        mockExecFile
+        mockExecFileAsync
             // branch
             .mockResolvedValueOnce({ stdout: 'feature/img\n', stderr: '' })
             // commitHash
@@ -123,7 +131,7 @@ describe('collectGitInfo', () => {
     });
 
     it('returns empty object when branch fetch fails (Promise.all rejects)', async () => {
-        mockExecFile
+        mockExecFileAsync
             // branch fails — Promise.all rejects, outer catch returns {}
             .mockRejectedValueOnce(new Error('not on any branch'));
 
@@ -133,7 +141,7 @@ describe('collectGitInfo', () => {
     });
 
     it('handles empty diff output', async () => {
-        mockExecFile
+        mockExecFileAsync
             .mockResolvedValueOnce({ stdout: 'main\n', stderr: '' })
             .mockResolvedValueOnce({ stdout: 'ccc3333\n', stderr: '' })
             .mockResolvedValueOnce({ stdout: '', stderr: '' });

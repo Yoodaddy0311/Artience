@@ -129,6 +129,26 @@ export const BUBBLE_CONFIGS: Record<string, BubbleConfig> = {
         displayFrames: 210,
         fadeFrames: 60,
     },
+    meeting_gathering: {
+        emoji: '\u{1F3E2}',
+        texts: [
+            '\uD68C\uC758\uC2E4\uB85C \uC774\uB3D9 \uC911...',
+            '\uBAA8\uC784 \uC900\uBE44 \uC911!',
+            '\uD300\uC6D0 \uBAA8\uC774\uB294 \uC911~',
+        ],
+        displayFrames: 210,
+        fadeFrames: 60,
+    },
+    meeting_active: {
+        emoji: '\u{1F5E3}\u{FE0F}',
+        texts: [
+            '\uD68C\uC758 \uC911...',
+            '\uC758\uACAC \uB098\uB204\uB294 \uC911',
+            '\uD1A0\uB860 \uC911!',
+        ],
+        displayFrames: 0,
+        fadeFrames: 60,
+    },
     thinking: {
         emoji: '\u{1F914}',
         texts: [

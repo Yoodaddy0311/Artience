@@ -6,6 +6,7 @@ import {
     Tray,
     Menu,
     nativeImage,
+    shell,
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -1542,6 +1543,92 @@ ipcMain.handle(
         }
     },
 );
+
+// ── Project Import / Export IPC ────────────────────────────────────────────
+
+ipcMain.handle('project:import', async () => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'Project Files', extensions: ['json', 'zip'] },
+            { name: 'All Files', extensions: ['*'] },
+        ],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'canceled' };
+    }
+    try {
+        const srcPath = result.filePaths[0];
+        const projectDir = (store.get('projectData') as any)?.meta?.dir;
+        if (!projectDir) {
+            return { success: false, error: 'No project directory set' };
+        }
+        const destPath = path.join(projectDir, path.basename(srcPath));
+        fs.copyFileSync(srcPath, destPath);
+        return { success: true, filePath: destPath };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('project:export', async () => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const projectDir = (store.get('projectData') as any)?.meta?.dir;
+    if (!projectDir) {
+        return { success: false, error: 'No project directory set' };
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Export destination',
+    });
+    if (result.canceled || !result.filePaths[0]) {
+        return { success: false, error: 'canceled' };
+    }
+    try {
+        const destDir = result.filePaths[0];
+        const projectName = path.basename(projectDir);
+        const destPath = path.join(destDir, projectName);
+        // Copy project directory recursively
+        fs.cpSync(projectDir, destPath, { recursive: true });
+        return { success: true, filePath: destPath };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+// ── File Utility IPC ──────────────────────────────────────────────────────
+
+ipcMain.handle('file:openInFolder', async (_e, filePath: string) => {
+    try {
+        const resolved = path.resolve(filePath);
+        if (!fs.existsSync(resolved)) {
+            return { success: false, error: 'File not found' };
+        }
+        shell.showItemInFolder(resolved);
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('file:copy', async (_e, srcPath: string, destPath: string) => {
+    try {
+        const resolvedSrc = path.resolve(srcPath);
+        if (!fs.existsSync(resolvedSrc)) {
+            return { success: false, error: 'Source file not found' };
+        }
+        const resolvedDest = path.resolve(destPath);
+        const destDir = path.dirname(resolvedDest);
+        if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true });
+        }
+        fs.copyFileSync(resolvedSrc, resolvedDest);
+        return { success: true, filePath: resolvedDest };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+});
 
 // ── MCP Bridge (Artience MCP Server ↔ main process) ────────────────────────
 

@@ -1791,9 +1791,19 @@ export const AgentTown: React.FC = () => {
                         );
 
                         if (isMeetingParticipant && !wasMeetingParticipant) {
+                            // Determine if meeting is in_progress or still gathering
+                            const activeMeeting = state.activeMeetingId
+                                ? state.meetings.find(
+                                      (m) => m.id === state.activeMeetingId,
+                                  )
+                                : null;
+                            const bubbleKey =
+                                activeMeeting?.status === 'in_progress'
+                                    ? 'meeting_active'
+                                    : 'meeting_gathering';
                             showAnimalBubble(
                                 agent.visual as AnimalVisual,
-                                '🗣️ 회의 중',
+                                getBubbleText(bubbleKey),
                             );
                             pickIsoZoneDest(agent, 'meeting');
                             continue;
