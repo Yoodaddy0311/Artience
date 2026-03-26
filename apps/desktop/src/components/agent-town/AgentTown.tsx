@@ -210,7 +210,9 @@ export const AgentTown: React.FC = () => {
 
     // Mutable ref so closures in initPixi can read latest activeView
     const activeViewRef = useRef(activeView);
-    activeViewRef.current = activeView;
+    useEffect(() => {
+        activeViewRef.current = activeView;
+    }, [activeView]);
 
     useEffect(() => {
         let isMounted = true;

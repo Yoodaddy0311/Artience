@@ -314,8 +314,8 @@ export class ChatSessionManager extends EventEmitter {
             message: { content: [{ type: 'text', text: message }] },
         });
 
-        if (!session.proc) return;
-        session.proc.stdin!.write(input + '\n');
+        if (!session.proc?.stdin?.writable) return;
+        session.proc.stdin.write(input + '\n');
     }
 
     // ── fallback: -p + --output-format stream-json (매 호출 spawn) ─────────

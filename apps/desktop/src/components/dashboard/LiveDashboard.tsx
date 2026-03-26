@@ -88,8 +88,8 @@ export const LiveDashboard: React.FC = () => {
     const fetchData = useCallback(async () => {
         try {
             const [tasks, performers] = await Promise.all([
-                window.dogbaApi?.taskQueue.list(),
-                window.dogbaApi?.metrics.topPerformers(5),
+                window.dogbaApi?.taskQueue?.list(),
+                window.dogbaApi?.metrics?.topPerformers(5),
             ]);
             if (tasks) setTaskData(tasks);
             if (performers) setTopPerformers(performers);

@@ -520,10 +520,6 @@ export const VersionHistory: React.FC = () => {
     // Rollback confirm state
     const [rollbackTarget, setRollbackTarget] = useState<Snapshot | null>(null);
 
-    useEffect(() => {
-        fetchHistory();
-    }, []);
-
     const fetchHistory = async () => {
         const studioApi = window.dogbaApi?.studio;
         if (!studioApi) {
@@ -548,6 +544,10 @@ export const VersionHistory: React.FC = () => {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        fetchHistory();
+    }, []);
 
     const rollback = async (id: string) => {
         setMessage('');

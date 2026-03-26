@@ -34,7 +34,9 @@ export const LevelUpNotification: React.FC<LevelUpNotificationProps> = ({
 }) => {
     const [visible, setVisible] = useState(false);
     const onCloseRef = useRef(onClose);
-    onCloseRef.current = onClose;
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
     const slideOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
